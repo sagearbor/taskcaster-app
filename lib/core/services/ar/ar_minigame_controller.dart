@@ -98,7 +98,14 @@ class ArMinigameController extends ChangeNotifier {
     // Spawn the initial objects one at a time (sequential awaits) rather than
     // firing all placements concurrently — concurrent spawns raced on both the
     // model-file write and the native addNode, intermittently failing nodes.
+    // The countdown is started from inside _spawnInitial, only once the first
+    // balloon is actually live, so the clock never ticks during scanning/loading.
     _spawnInitial();
+    _safeNotify();
+  }
+
+  void _startClocks() {
+    if (_countdown != null) return; // already running
     _countdown = Timer.periodic(const Duration(seconds: 1), _onTick);
     if (config.respawnOnHit) {
       _bobTimer = Timer.periodic(const Duration(milliseconds: 120), _onBob);
@@ -110,6 +117,8 @@ class ArMinigameController extends ChangeNotifier {
     for (var i = 0; i < config.objectCount; i++) {
       if (_disposed || finished) return;
       await _spawnOne();
+      // Start the clock as soon as the first balloon is actually on screen.
+      if (hasLiveObjects) _startClocks();
     }
   }
 
@@ -184,12 +193,15 @@ class ArMinigameController extends ChangeNotifier {
   }
 
   ArVector3 _randomPosition() {
-    // Spread objects across a ~140° arc, 1.0–2.5 m out, around eye level.
-    final angle = (_random.nextDouble() * 2 - 1) * 1.2; // ±~70°
-    final dist = 1.0 + _random.nextDouble() * 1.5;
+    // Spread objects across a ~90° arc IN FRONT of the player, 1.3–2.3 m out —
+    // close enough to reach and tap, far enough not to engulf the camera. Keep
+    // them within a comfortable vertical band around eye level so the player
+    // isn't forced to look straight up or down.
+    final angle = (_random.nextDouble() * 2 - 1) * 0.8; // ±~45°
+    final dist = 1.3 + _random.nextDouble() * 1.0; // 1.3–2.3 m
     final x = sin(angle) * dist;
     final z = -cos(angle) * dist; // forward is -z
-    final y = -0.3 + _random.nextDouble() * 1.2;
+    final y = -0.2 + _random.nextDouble() * 0.8; // ~knee to just above eye level
     return ArVector3(x, y, z);
   }
 

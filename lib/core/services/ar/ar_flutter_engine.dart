@@ -89,8 +89,13 @@ class ArFlutterEngine implements ArEngine {
     _anchorManager = anchorManager;
 
     sessionManager.onInitialize(
+      // Keep the game view clean: no dotted plane grid, no feature-point dots,
+      // and no animated "wave your phone" hand guide. Plane DETECTION still runs
+      // (it's driven by the session config, not the renderer), so spawning is
+      // unaffected — we just don't draw the scanning clutter over the balloons.
+      showAnimatedGuide: false,
       showFeaturePoints: false,
-      showPlanes: true,
+      showPlanes: false,
       handleTaps: true,
     );
     objectManager.onInitialize();
@@ -199,7 +204,10 @@ class ArFlutterEngine implements ArEngine {
       uri: localPath,
       name: name,
       position: vm.Vector3(position.x, position.y, position.z),
-      scale: vm.Vector3(1.0, 1.0, 1.0),
+      // The native side reads scale.x as SceneView's `scaleToUnits` — i.e. it
+      // normalizes the model so its largest dimension is this many METRES. 1.0
+      // gave a 1-metre balloon that engulfed the camera; 0.25 = a ~25 cm balloon.
+      scale: vm.Vector3(0.25, 0.25, 0.25),
     );
 
     final added = await _addNodeSerialized(node);
