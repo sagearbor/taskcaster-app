@@ -97,6 +97,13 @@ class ArFlutterEngine implements ArEngine {
       showFeaturePoints: false,
       showPlanes: false,
       handleTaps: true,
+      // CRITICAL: the plugin's native handleTransformNode is gated behind
+      // `if (handlePans || handleRotation)`. With both off, EVERY position/move
+      // update we send is silently dropped, so all nodes sit stacked at the
+      // origin. Enabling rotation opens that gate (so [spawn]/[move] can place
+      // nodes) WITHOUT making balloons draggable by a one-finger pan (which would
+      // fight tap-to-pop). Two-finger rotation is harmless in a tap game.
+      handleRotation: true,
     );
     objectManager.onInitialize();
 
@@ -215,6 +222,18 @@ class ArFlutterEngine implements ArEngine {
       throw StateError('Failed to add AR node "$name" (uri: $localPath).');
     }
     _nodes[name] = node;
+    // The native addNode IGNORES the position above (it only reads scaleToUnits),
+    // so every node would otherwise stack at the origin. Apply the real world
+    // transform now — translation to [position], identity rotation, unit scale
+    // (the model is ~0.24 m natively, so scale 1.0 keeps it a sensible balloon
+    // size). Mutating `transform` fires the node's transformNotifier, which the
+    // plugin forwards as a transform update the native side honors (now that
+    // handleRotation is enabled). THIS is what actually spreads the balloons out.
+    node.transform = vm.Matrix4.compose(
+      vm.Vector3(position.x, position.y, position.z),
+      vm.Quaternion.identity(),
+      vm.Vector3(1.0, 1.0, 1.0),
+    );
     return ArNode(name);
   }
 
