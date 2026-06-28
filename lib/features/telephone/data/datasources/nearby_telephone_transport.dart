@@ -79,6 +79,12 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
   /// An endpoint disconnected (or its connection failed/rejected).
   void Function(String endpointId)? onEndpointDisconnected;
 
+  /// Optional diagnostic sink — every advertise/discover/connection event and
+  /// any thrown plugin error is reported here for the on-screen debug panel.
+  void Function(String line)? onLog;
+
+  void _log(String line) => onLog?.call(line);
+
   // ---- Discovery state -----------------------------------------------------
 
   final _discovered = <String, NearbyDevice>{};
@@ -112,14 +118,22 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
   Future<bool> startAdvertising(String advertisedName) async {
     if (!_supported) return false;
     _myName = advertisedName;
-    return Nearby().startAdvertising(
-      advertisedName,
-      _strategy,
-      serviceId: serviceId,
-      onConnectionInitiated: _onConnectionInitiated,
-      onConnectionResult: _onConnectionResult,
-      onDisconnected: _onDisconnected,
-    );
+    _log('HOST advertising as "$advertisedName" (service=$serviceId)…');
+    try {
+      final ok = await Nearby().startAdvertising(
+        advertisedName,
+        _strategy,
+        serviceId: serviceId,
+        onConnectionInitiated: _onConnectionInitiated,
+        onConnectionResult: _onConnectionResult,
+        onDisconnected: _onDisconnected,
+      );
+      _log(ok ? 'HOST advertising started ✓' : 'HOST advertising returned FALSE');
+      return ok;
+    } catch (e) {
+      _log('HOST advertising ERROR: $e');
+      return false;
+    }
   }
 
   Future<void> stopAdvertising() async {
@@ -136,19 +150,29 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
     _myName = selfName;
     _discovered.clear();
     _emitDiscovered();
-    return Nearby().startDiscovery(
-      selfName,
-      _strategy,
-      serviceId: serviceId,
-      onEndpointFound: (endpointId, endpointName, sid) {
-        _discovered[endpointId] = NearbyDevice(endpointId, endpointName);
-        _emitDiscovered();
-      },
-      onEndpointLost: (endpointId) {
-        if (endpointId != null) _discovered.remove(endpointId);
-        _emitDiscovered();
-      },
-    );
+    _log('PEER discovery starting as "$selfName" (service=$serviceId)…');
+    try {
+      final ok = await Nearby().startDiscovery(
+        selfName,
+        _strategy,
+        serviceId: serviceId,
+        onEndpointFound: (endpointId, endpointName, sid) {
+          _discovered[endpointId] = NearbyDevice(endpointId, endpointName);
+          _log('PEER found host "$endpointName" (id=$endpointId)');
+          _emitDiscovered();
+        },
+        onEndpointLost: (endpointId) {
+          if (endpointId != null) _discovered.remove(endpointId);
+          _log('PEER lost host (id=$endpointId)');
+          _emitDiscovered();
+        },
+      );
+      _log(ok ? 'PEER discovery started ✓' : 'PEER discovery returned FALSE');
+      return ok;
+    } catch (e) {
+      _log('PEER discovery ERROR: $e');
+      return false;
+    }
   }
 
   @override
@@ -161,13 +185,23 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
   /// [onEndpointConnected] once both sides accept.
   Future<bool> connect(String endpointId) async {
     if (!_supported) return false;
-    return Nearby().requestConnection(
-      _myName,
-      endpointId,
-      onConnectionInitiated: _onConnectionInitiated,
-      onConnectionResult: _onConnectionResult,
-      onDisconnected: _onDisconnected,
-    );
+    _log('PEER requesting connection to id=$endpointId…');
+    try {
+      final ok = await Nearby().requestConnection(
+        _myName,
+        endpointId,
+        onConnectionInitiated: _onConnectionInitiated,
+        onConnectionResult: _onConnectionResult,
+        onDisconnected: _onDisconnected,
+      );
+      _log(ok
+          ? 'PEER connection requested ✓ (awaiting handshake)'
+          : 'PEER requestConnection returned FALSE');
+      return ok;
+    } catch (e) {
+      _log('PEER requestConnection ERROR: $e');
+      return false;
+    }
   }
 
   // ---- Sending -------------------------------------------------------------
@@ -219,13 +253,19 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
     // Auto-accept: this is a private family game with no untrusted peers, and
     // both sides must accept for the channel to open.
-    Nearby().acceptConnection(
-      endpointId,
-      onPayLoadRecieved: _onPayloadReceived,
-    );
+    _log('handshake initiated with "${info.endpointName}" (id=$endpointId) — accepting');
+    try {
+      Nearby().acceptConnection(
+        endpointId,
+        onPayLoadRecieved: _onPayloadReceived,
+      );
+    } catch (e) {
+      _log('acceptConnection ERROR (id=$endpointId): $e');
+    }
   }
 
   void _onConnectionResult(String endpointId, Status status) {
+    _log('connection result id=$endpointId → $status');
     if (status == Status.CONNECTED) {
       _connectedEndpoints.add(endpointId);
       onEndpointConnected?.call(endpointId);
@@ -236,6 +276,7 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
   }
 
   void _onDisconnected(String endpointId) {
+    _log('disconnected id=$endpointId');
     _connectedEndpoints.remove(endpointId);
     onEndpointDisconnected?.call(endpointId);
   }

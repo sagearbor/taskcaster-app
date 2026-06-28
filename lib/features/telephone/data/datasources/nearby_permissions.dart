@@ -66,4 +66,26 @@ class NearbyPermissions {
   /// Whether the platform can run Nearby at all (Android, non-web).
   static bool get isSupportedPlatform =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  /// A human-readable snapshot of every Nearby-relevant permission plus whether
+  /// the device's Location *service* (master toggle, separate from the app
+  /// permission) is on — for the on-screen debug panel. Nearby discovery
+  /// silently finds nothing when the Location service is off even if the
+  /// permission is granted.
+  static Future<Map<String, String>> snapshot() async {
+    if (!isSupportedPlatform) {
+      return {'platform': 'not Android — offline play unavailable'};
+    }
+    String s(PermissionStatus st) => st.toString().split('.').last;
+    final out = <String, String>{
+      'bluetoothAdvertise': s(await Permission.bluetoothAdvertise.status),
+      'bluetoothConnect': s(await Permission.bluetoothConnect.status),
+      'bluetoothScan': s(await Permission.bluetoothScan.status),
+      'location': s(await Permission.location.status),
+      'nearbyWifiDevices': s(await Permission.nearbyWifiDevices.status),
+    };
+    final svc = await Permission.location.serviceStatus;
+    out['LOCATION service (toggle)'] = svc.toString().split('.').last;
+    return out;
+  }
 }

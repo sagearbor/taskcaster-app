@@ -165,7 +165,10 @@ class ArMinigameController extends ChangeNotifier {
     final isBomb = config.bombChance > 0 &&
         config.bombModelRef != null &&
         _random.nextDouble() < config.bombChance;
-    final model = isBomb ? config.bombModelRef! : config.modelRef;
+    final targets = config.targetModels;
+    final model = isBomb
+        ? config.bombModelRef!
+        : targets[_random.nextInt(targets.length)];
     final value = isBomb ? 0 : _scoreForPosition(pos);
     try {
       final node = await engine.spawn(modelRef: model, position: pos);
@@ -287,15 +290,16 @@ class ArMinigameController extends ChangeNotifier {
   }
 
   ArVector3 _randomPosition() {
-    // Spread objects across a ~90° arc IN FRONT of the player. Distance varies
-    // widely (1.3–3.8 m) so far balloons genuinely look smaller (real AR
-    // perspective) and — when [config.scoreByDistance] — are worth more. Even
-    // the nearest is at arm's length so a balloon never engulfs the camera.
-    final angle = (_random.nextDouble() * 2 - 1) * 0.8; // ±~45°
-    final dist = 1.3 + _random.nextDouble() * 2.5; // 1.3–3.8 m
+    // Spread objects across a ~70° arc IN FRONT of the player. The nearest is
+    // 1.5 m (~5 ft) away so a balloon never appears right on top of you, out to
+    // 3.6 m so far ones genuinely look smaller (real AR perspective) and — when
+    // [config.scoreByDistance] — are worth more. The wider distance band also
+    // separates balloons in depth so they don't stack on the same spot.
+    final angle = (_random.nextDouble() * 2 - 1) * 0.62; // ±~35°
+    final dist = 1.5 + _random.nextDouble() * 2.1; // 1.5–3.6 m (≈5–12 ft)
     final x = sin(angle) * dist;
     final z = -cos(angle) * dist; // forward is -z
-    final y = -0.2 + _random.nextDouble() * 0.8; // ~knee to just above eye level
+    final y = -0.3 + _random.nextDouble() * 1.0; // ~knee to above eye level
     return ArVector3(x, y, z);
   }
 

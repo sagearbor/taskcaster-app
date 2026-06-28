@@ -58,6 +58,15 @@ class ArGameConfig {
   /// Model placed for a bomb. Required when [bombChance] > 0.
   final String? bombModelRef;
 
+  /// Optional set of model variants (e.g. differently-coloured balloons) chosen
+  /// at random per spawn so the scene isn't monochrome. Empty ⇒ always
+  /// [modelRef].
+  final List<String> palette;
+
+  /// The models a (non-bomb) target may use: the [palette] if set, else just
+  /// [modelRef].
+  List<String> get targetModels => palette.isEmpty ? [modelRef] : palette;
+
   const ArGameConfig({
     required this.id,
     required this.title,
@@ -72,6 +81,7 @@ class ArGameConfig {
     this.bombChance = 0.0,
     this.bombPenalty = 3,
     this.bombModelRef,
+    this.palette = const [],
   });
 
   /// The integer score that lands on the scoreboard. Pure: no engine state.
@@ -102,6 +112,15 @@ class ArGameConfig {
     bombChance: 0.22, // ~1 in 5 is a bomb — don't pop it!
     bombPenalty: 3,
     bombModelRef: 'assets/ar/bomb.glb',
+    // Distinct bright colours so each balloon (and a replacement) is obvious.
+    palette: [
+      'assets/ar/balloon_red.glb',
+      'assets/ar/balloon_orange.glb',
+      'assets/ar/balloon_yellow.glb',
+      'assets/ar/balloon_green.glb',
+      'assets/ar/balloon_blue.glb',
+      'assets/ar/balloon_pink.glb',
+    ],
   );
 
   static const ArGameConfig treasureHunt = ArGameConfig(
