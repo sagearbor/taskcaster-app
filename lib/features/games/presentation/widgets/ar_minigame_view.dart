@@ -102,6 +102,18 @@ class _ArMinigameViewState extends State<ArMinigameView> {
             );
           },
         ),
+
+        // Brief red "oops" flash when a bomb is tapped.
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _controller.bombFlash ? 1 : 0,
+              duration: const Duration(milliseconds: 120),
+              child: Container(color: Colors.red.withOpacity(0.35)),
+            ),
+          ),
+        ),
       ],
     );
   }

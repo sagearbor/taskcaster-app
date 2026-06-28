@@ -38,6 +38,26 @@ class ArGameConfig {
   /// found). Balloon Pop does not.
   final bool speedBonus;
 
+  /// How long (after it appears) an object drifts upward before it ESCAPES off
+  /// the top and is replaced. [Duration.zero] = it never rises or escapes (it
+  /// just sits, e.g. Treasure Hunt gems). Balloon Pop balloons rise and escape.
+  final Duration objectLifespan;
+
+  /// When true, each object is worth more the FARTHER away it spawns (real AR
+  /// perspective makes far ones look smaller and harder to tap). When false,
+  /// every hit is worth [pointsPerHit] (Treasure Hunt).
+  final bool scoreByDistance;
+
+  /// Probability (0..1) that a freshly-spawned object is a BOMB instead of a
+  /// normal target. Tapping a bomb costs [bombPenalty] points. 0 = no bombs.
+  final double bombChance;
+
+  /// Points lost for tapping a bomb (the live score never drops below 0).
+  final int bombPenalty;
+
+  /// Model placed for a bomb. Required when [bombChance] > 0.
+  final String? bombModelRef;
+
   const ArGameConfig({
     required this.id,
     required this.title,
@@ -47,6 +67,11 @@ class ArGameConfig {
     required this.respawnOnHit,
     required this.pointsPerHit,
     required this.speedBonus,
+    this.objectLifespan = Duration.zero,
+    this.scoreByDistance = false,
+    this.bombChance = 0.0,
+    this.bombPenalty = 3,
+    this.bombModelRef,
   });
 
   /// The integer score that lands on the scoreboard. Pure: no engine state.
@@ -67,11 +92,16 @@ class ArGameConfig {
     id: ArGameIds.balloonPop,
     title: 'Balloon Pop',
     modelRef: 'assets/ar/balloon.glb',
-    objectCount: 6,
+    objectCount: 5, // balloons floating at once
     duration: Duration(seconds: 45),
     respawnOnHit: true,
     pointsPerHit: 1,
     speedBonus: false,
+    objectLifespan: Duration(seconds: 6), // rise & escape if not popped
+    scoreByDistance: true, // far/small balloons are worth more
+    bombChance: 0.22, // ~1 in 5 is a bomb — don't pop it!
+    bombPenalty: 3,
+    bombModelRef: 'assets/ar/bomb.glb',
   );
 
   static const ArGameConfig treasureHunt = ArGameConfig(
@@ -104,8 +134,9 @@ class ArTaskSeeds {
   static Task balloonPop() => _fromConfig(
         ArGameConfig.balloonPop,
         description:
-            'Pop as many floating balloons as you can in 45 seconds. '
-            'Move your phone around to find them and tap to pop!',
+            'Pop as many floating balloons as you can in 45 seconds! '
+            'Far balloons are worth more. They float up and escape, so be quick '
+            '— and DON\'T tap the black bombs (they cost you points).',
       );
 
   static Task treasureHunt() => _fromConfig(
