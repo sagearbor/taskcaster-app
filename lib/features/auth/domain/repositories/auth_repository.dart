@@ -6,6 +6,13 @@ abstract class AuthRepository {
   Future<User> createUserWithEmailAndPassword(
       String email, String password, String displayName);
   Future<User> signInAnonymously();
+
+  /// Sign in with Google (native Android flow). Returns the signed-in [User].
+  Future<User> signInWithGoogle();
+
+  /// Sign in with Apple (web OAuth flow on Android). Returns the [User].
+  Future<User> signInWithApple();
+
   Future<void> signOut();
   String? getCurrentUserId();
   Future<User?> getCurrentUser();

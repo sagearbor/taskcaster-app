@@ -41,6 +41,12 @@ class SignOutRequested extends AuthEvent {}
 
 class AnonymousSignInRequested extends AuthEvent {}
 
+/// Sign in with Google (native Android account picker → Firebase credential).
+class GoogleSignInRequested extends AuthEvent {}
+
+/// Sign in with Apple (web OAuth flow on Android → Firebase credential).
+class AppleSignInRequested extends AuthEvent {}
+
 /// Update the signed-in user's display name and/or avatar emoji.
 class UpdateProfileRequested extends AuthEvent {
   final String? displayName;

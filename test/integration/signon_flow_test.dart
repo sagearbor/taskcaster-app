@@ -34,8 +34,11 @@ void main() {
     await tester.pumpWidget(_appUnderTest());
     await tester.pumpAndSettle();
 
-    // Login screen offers a guest path.
+    // Login screen offers a guest path. The screen scrolls (it now also shows
+    // Google/Apple sign-in options), so bring the guest button into view first.
     expect(find.text('Continue as Guest'), findsOneWidget);
+    await tester.ensureVisible(find.text('Continue as Guest'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Continue as Guest'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));

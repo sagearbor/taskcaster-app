@@ -93,6 +93,30 @@ class MockAuthDataSource implements AuthRemoteDataSource {
   }
 
   @override
+  Future<String> signInWithGoogle() async {
+    await Future.delayed(const Duration(milliseconds: 800));
+    _currentUserId = 'mock_google_${DateTime.now().millisecondsSinceEpoch}';
+    _email = 'google.user@example.com';
+    _displayName = 'Google User';
+    _avatarEmoji = null;
+    _isAnonymous = false;
+    _authStateController.add(_currentUserId);
+    return _currentUserId!;
+  }
+
+  @override
+  Future<String> signInWithApple() async {
+    await Future.delayed(const Duration(milliseconds: 800));
+    _currentUserId = 'mock_apple_${DateTime.now().millisecondsSinceEpoch}';
+    _email = 'apple.user@example.com';
+    _displayName = 'Apple User';
+    _avatarEmoji = null;
+    _isAnonymous = false;
+    _authStateController.add(_currentUserId);
+    return _currentUserId!;
+  }
+
+  @override
   Future<void> signOut() async {
     // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 300));

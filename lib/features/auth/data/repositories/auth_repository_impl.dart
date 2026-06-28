@@ -84,6 +84,28 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<User> signInWithGoogle() async {
+    await remoteDataSource.signInWithGoogle();
+    // Read back the full profile (displayName/email from the provider) so the
+    // returned User matches what the rest of the app expects.
+    final user = await getCurrentUser();
+    if (user == null) {
+      throw Exception('Google sign-in failed');
+    }
+    return user;
+  }
+
+  @override
+  Future<User> signInWithApple() async {
+    await remoteDataSource.signInWithApple();
+    final user = await getCurrentUser();
+    if (user == null) {
+      throw Exception('Apple sign-in failed');
+    }
+    return user;
+  }
+
+  @override
   bool isCurrentUserAnonymous() {
     final userData = remoteDataSource.getCurrentUserData();
     return userData?['isAnonymous'] == true;

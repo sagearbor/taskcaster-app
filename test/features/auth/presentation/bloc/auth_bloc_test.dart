@@ -112,6 +112,73 @@ void main() {
       );
     });
 
+    group('GoogleSignInRequested', () {
+      blocTest<AuthBloc, AuthState>(
+        'emits [AuthLoading, AuthAuthenticated] when Google sign in succeeds',
+        build: () {
+          when(() => mockAuthRepository.signInWithGoogle())
+              .thenAnswer((_) async => testUser);
+          return authBloc;
+        },
+        act: (bloc) => bloc.add(GoogleSignInRequested()),
+        expect: () => [
+          AuthLoading(),
+          AuthAuthenticated(user: testUser),
+        ],
+        verify: (_) {
+          verify(() => mockAuthRepository.signInWithGoogle()).called(1);
+        },
+      );
+
+      blocTest<AuthBloc, AuthState>(
+        'emits [AuthLoading, AuthError] when Google sign in is cancelled',
+        build: () {
+          when(() => mockAuthRepository.signInWithGoogle())
+              .thenThrow(Exception('Google sign-in was cancelled'));
+          return authBloc;
+        },
+        act: (bloc) => bloc.add(GoogleSignInRequested()),
+        expect: () => [
+          AuthLoading(),
+          const AuthError(
+              message: 'Exception: Google sign-in was cancelled'),
+        ],
+      );
+    });
+
+    group('AppleSignInRequested', () {
+      blocTest<AuthBloc, AuthState>(
+        'emits [AuthLoading, AuthAuthenticated] when Apple sign in succeeds',
+        build: () {
+          when(() => mockAuthRepository.signInWithApple())
+              .thenAnswer((_) async => testUser);
+          return authBloc;
+        },
+        act: (bloc) => bloc.add(AppleSignInRequested()),
+        expect: () => [
+          AuthLoading(),
+          AuthAuthenticated(user: testUser),
+        ],
+        verify: (_) {
+          verify(() => mockAuthRepository.signInWithApple()).called(1);
+        },
+      );
+
+      blocTest<AuthBloc, AuthState>(
+        'emits [AuthLoading, AuthError] when Apple sign in fails',
+        build: () {
+          when(() => mockAuthRepository.signInWithApple())
+              .thenThrow(Exception('Apple sign-in failed'));
+          return authBloc;
+        },
+        act: (bloc) => bloc.add(AppleSignInRequested()),
+        expect: () => [
+          AuthLoading(),
+          const AuthError(message: 'Exception: Apple sign-in failed'),
+        ],
+      );
+    });
+
     group('SignOutRequested', () {
       blocTest<AuthBloc, AuthState>(
         'emits [AuthLoading, AuthUnauthenticated] when sign out is successful',
