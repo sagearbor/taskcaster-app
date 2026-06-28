@@ -146,7 +146,13 @@ class ArFlutterEngine implements ArEngine {
     if (!await file.exists() || await file.length() != bytes.length) {
       await file.writeAsBytes(bytes, flush: true);
     }
-    return fileName;
+    // IMPORTANT: return the ABSOLUTE path, not the bare filename. The plugin's
+    // native `fileSystemAppFolderGLB` (type 2) branch does NO path resolution —
+    // it passes `uri` straight to `modelLoader.loadModelInstance(...)`. A bare
+    // filename can't be found there, so addNode returns false (the long-standing
+    // "Failed to add AR node node_N" bug). getApplicationDocumentsDirectory()
+    // on Android is `<dataDir>/app_flutter`, the exact dir the plugin reads.
+    return file.path;
   }
 
   /// Adds a node on the serialized queue, retrying a couple of times because the
@@ -181,11 +187,11 @@ class ArFlutterEngine implements ArEngine {
       throw StateError('AR view not created yet — cannot spawn.');
     }
 
-    final fileName = await _ensureLocalModel(modelRef);
+    final localPath = await _ensureLocalModel(modelRef);
     final name = 'node_${_spawnCounter++}';
     final node = ARNode(
       type: NodeType.fileSystemAppFolderGLB,
-      uri: fileName,
+      uri: localPath,
       name: name,
       position: vm.Vector3(position.x, position.y, position.z),
       scale: vm.Vector3(1.0, 1.0, 1.0),
