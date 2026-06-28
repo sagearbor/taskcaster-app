@@ -25,6 +25,7 @@ class TelephoneRepositoryImpl implements TelephoneRepository {
     required String creatorUid,
     required String creatorName,
     String? gameName,
+    TelephoneGameMode gameMode = TelephoneGameMode.classicTelephone,
   }) async {
     final id = _uuid.v4();
     final inviteCode = _generateInviteCode();
@@ -36,6 +37,7 @@ class TelephoneRepositoryImpl implements TelephoneRepository {
       inviteCode: inviteCode,
       creatorUid: creatorUid,
       creatorName: creatorName,
+      gameMode: gameMode,
     );
     await remoteDataSource.createSession(session.toMap());
     return (sessionId: id, inviteCode: inviteCode);
@@ -95,6 +97,30 @@ class TelephoneRepositoryImpl implements TelephoneRepository {
     await remoteDataSource.updateSession(sessionId, (current) {
       final session = TelephoneSession.fromMap(current);
       return session.withSubmission(uid, content).toMap();
+    });
+  }
+
+  @override
+  Future<void> submitRating({
+    required String sessionId,
+    required String raterUid,
+    required String targetUid,
+    required int value,
+  }) async {
+    await remoteDataSource.updateSession(sessionId, (current) {
+      final session = TelephoneSession.fromMap(current);
+      return session
+          .withRating(
+              raterUid: raterUid, targetUid: targetUid, value: value)
+          .toMap();
+    });
+  }
+
+  @override
+  Future<void> playAgain(String sessionId) async {
+    await remoteDataSource.updateSession(sessionId, (current) {
+      final session = TelephoneSession.fromMap(current);
+      return session.playAgain().toMap();
     });
   }
 

@@ -90,6 +90,12 @@ class _SessionView extends StatelessWidget {
             case TelephonePhase.reveal:
               body = _RevealView(session: session);
               break;
+            case TelephonePhase.rating:
+              body = _RatingView(session: session, playerId: playerId);
+              break;
+            case TelephonePhase.results:
+              body = _ResultsView(session: session, playerId: playerId);
+              break;
           }
         }
 
@@ -261,10 +267,24 @@ class _PlayView extends StatelessWidget {
         child: Text('You are not part of this game.'),
       );
     }
+
+    // Same-prompt modes: everyone draws the SAME shared prompt. In turn-taking
+    // only the active drawer gets the canvas; everyone else waits.
+    if (session.gameMode.isSamePrompt) {
+      if (session.isAwaitingSubmission(playerId)) {
+        return _SamePromptDrawInput(
+          key: ValueKey('draw-${session.step}-$playerId'),
+          session: session,
+          playerId: playerId,
+        );
+      }
+      return _SamePromptWaitingView(session: session, playerId: playerId);
+    }
+
+    // Classic chain.
     if (session.hasSubmittedCurrentStep(playerId)) {
       return _WaitingView(session: session);
     }
-
     final type = session.currentEntryType;
     final key = ValueKey('step-${session.step}-$playerId');
     switch (type) {
@@ -309,6 +329,28 @@ void _submit(BuildContext context, TelephoneSession session, String uid,
         uid: uid,
         content: content,
       ));
+}
+
+void _playAgain(BuildContext context, TelephoneSession session) {
+  context
+      .read<TelephoneBloc>()
+      .add(TelephonePlayAgainRequested(session.id));
+}
+
+/// The big one-tap "Play again" button used by both the classic reveal and the
+/// same-prompt results screen — repeat with the same crew and settings.
+class _PlayAgainButton extends StatelessWidget {
+  final TelephoneSession session;
+  const _PlayAgainButton({required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: () => _playAgain(context, session),
+      icon: const Icon(Icons.replay),
+      label: const Text('Play again — same crew'),
+    );
+  }
 }
 
 class _PromptInput extends StatefulWidget {
@@ -554,9 +596,16 @@ class _RevealView extends StatelessWidget {
     final theme = Theme.of(context);
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: session.chains.length,
-      itemBuilder: (context, chainIdx) {
-        final chain = session.chains[chainIdx];
+      // One card per chain, plus a trailing "Play again" footer.
+      itemCount: session.chains.length + 1,
+      itemBuilder: (context, index) {
+        if (index == session.chains.length) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 24),
+            child: _PlayAgainButton(session: session),
+          );
+        }
+        final chain = session.chains[index];
         if (chain.isEmpty) return const SizedBox.shrink();
         final starter = chain.first.authorName;
         return Card(
@@ -607,6 +656,402 @@ class _RevealEntry extends StatelessWidget {
             Text(entry.content, style: theme.textTheme.bodyLarge),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Same prompt — draw + wait
+// ---------------------------------------------------------------------------
+
+/// Draw the ONE shared prompt everyone is drawing (same-prompt modes). Reuses
+/// the exact [DrawingCanvas]; the difference from the classic draw step is the
+/// thing being drawn is `session.prompt`, not the previous link in a chain.
+class _SamePromptDrawInput extends StatefulWidget {
+  final TelephoneSession session;
+  final String playerId;
+  const _SamePromptDrawInput(
+      {super.key, required this.session, required this.playerId});
+
+  @override
+  State<_SamePromptDrawInput> createState() => _SamePromptDrawInputState();
+}
+
+class _SamePromptDrawInputState extends State<_SamePromptDrawInput> {
+  final _controller = DrawingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final session = widget.session;
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            session.gameMode.isTurnTaking
+                ? "Your turn! Everyone draws the same thing"
+                : 'Everyone draws the same thing!',
+            style: theme.textTheme.labelMedium
+                ?.copyWith(color: theme.colorScheme.primary),
+          ),
+          const SizedBox(height: 4),
+          Text('Draw the prompt',
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              session.prompt.isEmpty ? '(no prompt)' : session.prompt,
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 12),
+          DrawingCanvas(controller: _controller),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _send,
+            child: const Text('Submit drawing'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _send() {
+    if (_controller.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Draw something first!')),
+      );
+      return;
+    }
+    _submit(context, widget.session, widget.playerId, _controller.toJson());
+  }
+}
+
+/// Shown to a same-prompt player who can't draw right now: either they already
+/// submitted, or (turn-taking) it isn't their turn yet.
+class _SamePromptWaitingView extends StatelessWidget {
+  final TelephoneSession session;
+  final String playerId;
+  const _SamePromptWaitingView(
+      {required this.session, required this.playerId});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final done = session.chains.where((c) => c.isNotEmpty).length;
+    final total = session.playerCount;
+
+    final String headline;
+    if (session.hasSubmittedCurrentStep(playerId)) {
+      headline = 'Drawing submitted! 🎉';
+    } else if (session.gameMode.isTurnTaking) {
+      final drawer = session.activeDrawer;
+      headline = drawer == null
+          ? 'Waiting…'
+          : "It's ${drawer.displayName}'s turn to draw";
+    } else {
+      headline = 'Waiting…';
+    }
+
+    return _Centered(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.brush_outlined, size: 48),
+          const SizedBox(height: 16),
+          Text(headline,
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Text('$done/$total drawings done',
+              style: theme.textTheme.bodyLarge),
+          const SizedBox(height: 24),
+          const CircularProgressIndicator(),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rating
+// ---------------------------------------------------------------------------
+
+/// Rate every OTHER player's drawing 1–10. You can never rate your own. When
+/// everyone has rated everyone the session rolls into the results screen.
+class _RatingView extends StatefulWidget {
+  final TelephoneSession session;
+  final String playerId;
+  const _RatingView({required this.session, required this.playerId});
+
+  @override
+  State<_RatingView> createState() => _RatingViewState();
+}
+
+class _RatingViewState extends State<_RatingView> {
+  // targetUid -> chosen 1..10 score for this rater.
+  final Map<String, int> _scores = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final session = widget.session;
+    final me = widget.playerId;
+
+    // Once you've rated everyone, wait for the rest of the group.
+    if (!session.hasPlayer(me) || session.raterHasFinished(me)) {
+      final waiting = session.players
+          .where((p) => !session.raterHasFinished(p.uid))
+          .map((p) => p.displayName)
+          .toList();
+      return _Centered(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.how_to_vote_outlined, size: 48),
+            const SizedBox(height: 16),
+            Text('Ratings submitted! 🎉',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            if (waiting.isNotEmpty)
+              Text('Waiting on: ${waiting.join(', ')}',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 24),
+            const CircularProgressIndicator(),
+          ],
+        ),
+      );
+    }
+
+    final others = session.players.where((p) => p.uid != me).toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text('Rate the drawings!',
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Text('Prompt: ${session.prompt}',
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontStyle: FontStyle.italic)),
+        const SizedBox(height: 4),
+        Text('Give each drawing a score from 1 to 10. You can\'t rate your own.',
+            style: theme.textTheme.bodySmall),
+        const SizedBox(height: 16),
+        ...others.map((p) {
+          final drawing = session.drawingForUid(p.uid);
+          final score = _scores[p.uid] ?? 5;
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p.displayName,
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  DrawingView(json: drawing?.content ?? '', size: 200),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Slider(
+                          value: score.toDouble(),
+                          min: 1,
+                          max: 10,
+                          divisions: 9,
+                          label: '$score',
+                          onChanged: (v) =>
+                              setState(() => _scores[p.uid] = v.round()),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 40,
+                        child: Text('$score/10',
+                            textAlign: TextAlign.end,
+                            style: theme.textTheme.titleMedium),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed: () => _submitAll(others),
+          icon: const Icon(Icons.check),
+          label: const Text('Submit ratings'),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  void _submitAll(List<TelephonePlayer> others) {
+    final bloc = context.read<TelephoneBloc>();
+    // Default any sliders left untouched to 5, then fire one rating per target.
+    for (final p in others) {
+      bloc.add(TelephoneRatingSubmitted(
+        sessionId: widget.session.id,
+        raterUid: widget.playerId,
+        targetUid: p.uid,
+        value: _scores[p.uid] ?? 5,
+      ));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Results
+// ---------------------------------------------------------------------------
+
+/// Winner + this-round leaderboard + the running tally across "Play again"
+/// rounds, every drawing with its score, and the one-tap replay.
+class _ResultsView extends StatelessWidget {
+  final TelephoneSession session;
+  final String playerId;
+  const _ResultsView({required this.session, required this.playerId});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final roundScores = session.roundScores;
+    final winners = session.winnerUids;
+    final winnerNames = winners
+        .map((uid) => session.players
+            .firstWhere((p) => p.uid == uid,
+                orElse: () =>
+                    const TelephonePlayer(uid: '', displayName: 'Someone'))
+            .displayName)
+        .toList();
+
+    final String bannerText;
+    if (winnerNames.isEmpty) {
+      bannerText = 'No ratings — it\'s a draw!';
+    } else if (winnerNames.length == 1) {
+      bannerText = '🏆 ${winnerNames.first} wins this round!';
+    } else {
+      bannerText = '🏆 Tie: ${winnerNames.join(' & ')}!';
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              Text('Round ${session.roundNumber}',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer)),
+              const SizedBox(height: 6),
+              Text(bannerText,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  )),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text('This round', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        ...session.roundLeaderboard.asMap().entries.map((e) {
+          final rank = e.key + 1;
+          final p = e.value;
+          final isWinner = winners.contains(p.uid);
+          return ListTile(
+            dense: true,
+            leading: CircleAvatar(
+              backgroundColor: isWinner ? theme.colorScheme.primary : null,
+              child: Text('$rank'),
+            ),
+            title: Text(p.displayName +
+                (p.uid == playerId ? ' (you)' : '')),
+            trailing: Text('${roundScores[p.uid] ?? 0} pts',
+                style: theme.textTheme.titleMedium),
+          );
+        }),
+        const Divider(height: 32),
+        Text('Overall — running tally', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        ...session.overallLeaderboard.map((p) {
+          final wins = session.roundsWon[p.uid] ?? 0;
+          return ListTile(
+            dense: true,
+            leading: const Icon(Icons.emoji_events_outlined),
+            title: Text(p.displayName +
+                (p.uid == playerId ? ' (you)' : '')),
+            subtitle: wins > 0
+                ? Text('$wins ${wins == 1 ? 'round' : 'rounds'} won')
+                : null,
+            trailing: Text('${session.tallyPoints[p.uid] ?? 0} pts',
+                style: theme.textTheme.titleMedium),
+          );
+        }),
+        const Divider(height: 32),
+        Text('The drawings — "${session.prompt}"',
+            style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        ...session.players.map((p) {
+          final drawing = session.drawingForUid(p.uid);
+          if (drawing == null) return const SizedBox.shrink();
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(p.displayName,
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      Text('${roundScores[p.uid] ?? 0} pts',
+                          style: theme.textTheme.titleSmall),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  DrawingView(json: drawing.content, size: 200),
+                ],
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
+        _PlayAgainButton(session: session),
+        const SizedBox(height: 24),
+      ],
     );
   }
 }

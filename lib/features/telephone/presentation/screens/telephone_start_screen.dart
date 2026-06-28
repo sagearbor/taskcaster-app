@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/models/telephone_session.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../data/datasources/telephone_session_store.dart';
 import '../../data/practice/local_practice_telephone_repository.dart';
@@ -26,6 +27,9 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
   final _codeController = TextEditingController();
   final _uuid = const Uuid();
   bool _busy = false;
+
+  /// The selected game mode for "Create a new game" / "Practice".
+  TelephoneGameMode _mode = TelephoneGameMode.classicTelephone;
 
   /// A previously-saved active session, if any. Drives the "Rejoin your game"
   /// button so leaving the session screen is never fatal.
@@ -84,6 +88,7 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
       final result = await _repo.createSession(
         creatorUid: playerId,
         creatorName: _name,
+        gameMode: _mode,
       );
       // Remember this device as the host so re-entering is a resume, not a
       // duplicate join — the core fix for "host lost the Start button".
@@ -164,6 +169,7 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
       final sessionId = await repo.startPractice(
         humanUid: playerId,
         humanName: _name,
+        gameMode: _mode,
       );
       if (!mounted) return;
       // push (not pushReplacement) so "back" returns here; nothing is saved to
@@ -305,6 +311,13 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                 ),
               ),
               const SizedBox(height: 28),
+              _ModePicker(
+                mode: _mode,
+                onChanged: _busy
+                    ? null
+                    : (m) => setState(() => _mode = m),
+              ),
+              const SizedBox(height: 20),
               FilledButton.icon(
                 onPressed: _busy ? null : _create,
                 icon: const Icon(Icons.add),
@@ -391,6 +404,70 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Game-mode chooser for "Create a new game" / "Practice". Drives whether a new
+/// session plays the classic telephone chain or one of the "same prompt" modes
+/// (which add rating + a winner).
+class _ModePicker extends StatelessWidget {
+  final TelephoneGameMode mode;
+  final ValueChanged<TelephoneGameMode>? onChanged;
+  const _ModePicker({required this.mode, required this.onChanged});
+
+  static const _options = [
+    (
+      TelephoneGameMode.classicTelephone,
+      'Telephone',
+      Icons.repeat,
+      'Prompt → draw → guess. It mutates down the chain.',
+    ),
+    (
+      TelephoneGameMode.samePrompt,
+      'Same prompt',
+      Icons.groups,
+      'Everyone draws the SAME prompt at once, then rate for a winner.',
+    ),
+    (
+      TelephoneGameMode.samePromptTurns,
+      'Turn by turn',
+      Icons.swap_horiz,
+      'Same prompt, one artist at a time. Then rate for a winner.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selected =
+        _options.firstWhere((o) => o.$1 == mode, orElse: () => _options.first);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Game mode', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final o in _options)
+              ChoiceChip(
+                avatar: Icon(o.$3,
+                    size: 18,
+                    color: o.$1 == mode
+                        ? theme.colorScheme.onSecondaryContainer
+                        : null),
+                label: Text(o.$2),
+                selected: o.$1 == mode,
+                onSelected:
+                    onChanged == null ? null : (_) => onChanged!(o.$1),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(selected.$4, style: theme.textTheme.bodySmall),
+      ],
     );
   }
 }

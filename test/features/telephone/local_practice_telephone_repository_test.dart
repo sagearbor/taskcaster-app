@@ -110,4 +110,73 @@ void main() {
       );
     });
   });
+
+  group('same-prompt practice (drawings + bot ratings)', () {
+    Future<String> startSamePrompt() => repo.startPractice(
+          humanUid: 'me',
+          humanName: 'Sage',
+          gameMode: TelephoneGameMode.samePrompt,
+          random: Random(7),
+        );
+
+    test('one human drawing fills the bots and lands on the rating phase',
+        () async {
+      final id = await startSamePrompt();
+      var s = await read(id);
+      expect(s.gameMode, TelephoneGameMode.samePrompt);
+      expect(s.prompt, isNotEmpty, reason: 'a shared prompt is chosen');
+
+      await repo.submitEntry(sessionId: id, uid: 'me', content: 'my cat');
+      s = await read(id);
+
+      expect(s.isRating, isTrue, reason: 'bots drew the moment the human did');
+      expect(s.chains.every((c) => c.length == 1), isTrue,
+          reason: 'every player has exactly one drawing');
+    });
+
+    test('human ratings + bot ratings drive the game to a winner', () async {
+      final id = await startSamePrompt();
+      await repo.submitEntry(sessionId: id, uid: 'me', content: 'my cat');
+      var s = await read(id);
+
+      // The human rates each bot; the bots auto-rate once the human is done.
+      for (final p in s.players.where((p) => p.uid != 'me')) {
+        await repo.submitRating(
+            sessionId: id, raterUid: 'me', targetUid: p.uid, value: 7);
+        s = await read(id);
+      }
+
+      expect(s.isShowingResults, isTrue);
+      expect(s.winnerUids, isNotEmpty, reason: 'someone wins');
+      // Every player received a rating from each of the other two.
+      expect(s.ratings, hasLength(3 * 2));
+      expect(s.tallyPoints.values.fold<int>(0, (a, b) => a + b),
+          greaterThan(0));
+    });
+
+    test('play again restarts a fresh round, carrying the running tally',
+        () async {
+      final id = await startSamePrompt();
+      await repo.submitEntry(sessionId: id, uid: 'me', content: 'my cat');
+      var s = await read(id);
+      for (final p in s.players.where((p) => p.uid != 'me')) {
+        await repo.submitRating(
+            sessionId: id, raterUid: 'me', targetUid: p.uid, value: 7);
+      }
+      s = await read(id);
+      expect(s.isShowingResults, isTrue);
+      final tallyBefore = Map<String, int>.from(s.tallyPoints);
+
+      await repo.playAgain(id);
+      s = await read(id);
+
+      expect(s.isPlaying, isTrue);
+      expect(s.roundNumber, 2);
+      expect(s.chains.every((c) => c.isEmpty), isTrue);
+      expect(s.ratings, isEmpty);
+      expect(s.tallyPoints, equals(tallyBefore), reason: 'tally carries over');
+      expect(s.hasSubmittedCurrentStep('me'), isFalse,
+          reason: 'human draws first again');
+    });
+  });
 }

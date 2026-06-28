@@ -51,3 +51,30 @@ class TelephoneEntrySubmitted extends TelephoneEvent {
   @override
   List<Object?> get props => [sessionId, uid, content];
 }
+
+/// A player rates another player's drawing (same-prompt modes).
+class TelephoneRatingSubmitted extends TelephoneEvent {
+  final String sessionId;
+  final String raterUid;
+  final String targetUid;
+  final int value;
+
+  const TelephoneRatingSubmitted({
+    required this.sessionId,
+    required this.raterUid,
+    required this.targetUid,
+    required this.value,
+  });
+
+  @override
+  List<Object?> get props => [sessionId, raterUid, targetUid, value];
+}
+
+/// One-tap "Play again": repeat with the same players and settings.
+class TelephonePlayAgainRequested extends TelephoneEvent {
+  final String sessionId;
+  const TelephonePlayAgainRequested(this.sessionId);
+
+  @override
+  List<Object?> get props => [sessionId];
+}

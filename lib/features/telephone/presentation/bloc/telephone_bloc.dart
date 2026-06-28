@@ -20,6 +20,8 @@ class TelephoneBloc extends Bloc<TelephoneEvent, TelephoneState> {
     on<TelephoneStarted>(_onStarted);
     on<TelephonePlayerRemoved>(_onPlayerRemoved);
     on<TelephoneEntrySubmitted>(_onSubmitted);
+    on<TelephoneRatingSubmitted>(_onRated);
+    on<TelephonePlayAgainRequested>(_onPlayAgain);
   }
 
   Future<void> _onSubscribed(
@@ -79,6 +81,33 @@ class TelephoneBloc extends Bloc<TelephoneEvent, TelephoneState> {
         uid: event.uid,
         content: event.content,
       );
+    } catch (e) {
+      emit(state.copyWith(error: _friendly(e)));
+    }
+  }
+
+  Future<void> _onRated(
+    TelephoneRatingSubmitted event,
+    Emitter<TelephoneState> emit,
+  ) async {
+    try {
+      await repository.submitRating(
+        sessionId: event.sessionId,
+        raterUid: event.raterUid,
+        targetUid: event.targetUid,
+        value: event.value,
+      );
+    } catch (e) {
+      emit(state.copyWith(error: _friendly(e)));
+    }
+  }
+
+  Future<void> _onPlayAgain(
+    TelephonePlayAgainRequested event,
+    Emitter<TelephoneState> emit,
+  ) async {
+    try {
+      await repository.playAgain(event.sessionId);
     } catch (e) {
       emit(state.copyWith(error: _friendly(e)));
     }

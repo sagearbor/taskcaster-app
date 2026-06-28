@@ -37,6 +37,7 @@ class LocalPracticeTelephoneRepository implements TelephoneRepository {
   Future<String> startPractice({
     required String humanUid,
     required String humanName,
+    TelephoneGameMode gameMode = TelephoneGameMode.classicTelephone,
     Random? random,
   }) async {
     _driver = PracticeDriver<TelephoneSession>(
@@ -54,6 +55,7 @@ class LocalPracticeTelephoneRepository implements TelephoneRepository {
       inviteCode: 'SOLO',
       creatorUid: humanUid,
       creatorName: humanName,
+      gameMode: gameMode,
     )
         .withPlayerJoined(_botOneUid, _botOneName)
         .withPlayerJoined(_botTwoUid, _botTwoName)
@@ -90,6 +92,36 @@ class LocalPracticeTelephoneRepository implements TelephoneRepository {
     _emit();
   }
 
+  @override
+  Future<void> submitRating({
+    required String sessionId,
+    required String raterUid,
+    required String targetUid,
+    required int value,
+  }) async {
+    final current = _session;
+    if (current == null || !current.isRating) return;
+    // Apply the human's rating, then let the bots catch up on their own ratings
+    // (and roll into the results screen once everyone has rated everyone).
+    final rated = current.withRating(
+      raterUid: raterUid,
+      targetUid: targetUid,
+      value: value,
+    );
+    _session = _driver.advanceBots(rated);
+    _emit();
+  }
+
+  @override
+  Future<void> playAgain(String sessionId) async {
+    final current = _session;
+    if (current == null) return;
+    // Reset to a fresh round (same crew, running tally carried), then prime any
+    // bot turns that precede the human's next move.
+    _session = _driver.primed(current.playAgain());
+    _emit();
+  }
+
   // ---- Lobby/networking actions are unused in offline practice -------------
 
   @override
@@ -110,6 +142,7 @@ class LocalPracticeTelephoneRepository implements TelephoneRepository {
     required String creatorUid,
     required String creatorName,
     String? gameName,
+    TelephoneGameMode gameMode = TelephoneGameMode.classicTelephone,
   }) {
     throw UnsupportedError(
         'Practice mode is local-only; use startPractice() instead.');
