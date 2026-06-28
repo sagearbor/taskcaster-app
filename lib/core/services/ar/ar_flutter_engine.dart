@@ -41,11 +41,22 @@ class ArFlutterEngine implements ArEngine {
   /// concrete [ARNode] behind an [ArNode] handle.
   final Map<String, ARNode> _nodes = {};
 
-  /// Asset path -> filename copied into the app documents folder. The plugin's
-  /// `localGLTF2` loader fails to add bundled models on-device (addNode returns
-  /// false); writing a `.glb` to the app's own documents dir and loading it via
-  /// `fileSystemAppFolderGLB` is the robust, fully-offline path.
-  final Map<String, String> _localModels = {};
+  /// Asset path -> an in-flight/completed copy of the model into the app
+  /// documents folder. The plugin's `localGLTF2` loader fails to add bundled
+  /// models on-device (addNode returns false); writing a `.glb` to the app's
+  /// own documents dir and loading it via `fileSystemAppFolderGLB` is the
+  /// robust, fully-offline path.
+  ///
+  /// We cache the *Future*, not the result, so that N concurrent spawns share a
+  /// SINGLE file write. Caching the result let every spawn race to write the
+  /// same path at once, producing a torn/truncated `.glb` that `addNode` then
+  /// rejected intermittently ("Failed to add AR node node_N").
+  final Map<String, Future<String>> _modelCopies = {};
+
+  /// Serializes `addNode` calls. The native (Filament/SceneView) object manager
+  /// is not safe to hammer with concurrent adds; chaining them one-at-a-time
+  /// makes placement deterministic.
+  Future<void> _addQueue = Future<void>.value();
 
   int _spawnCounter = 0;
 
@@ -114,21 +125,49 @@ class ArFlutterEngine implements ArEngine {
   Stream<ArTap> get taps => _tapController.stream;
 
   /// Copies a bundled `.glb` asset into the app documents folder once and
-  /// returns its bare filename for [NodeType.fileSystemAppFolderGLB].
-  Future<String> _ensureLocalModel(String assetPath) async {
-    final cached = _localModels[assetPath];
-    if (cached != null) return cached;
+  /// returns its bare filename for [NodeType.fileSystemAppFolderGLB]. Concurrent
+  /// callers share one copy via the [_modelCopies] future-cache.
+  Future<String> _ensureLocalModel(String assetPath) {
+    return _modelCopies.putIfAbsent(assetPath, () => _copyModel(assetPath));
+  }
+
+  Future<String> _copyModel(String assetPath) async {
     final fileName = assetPath.split('/').last;
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$fileName');
-    if (!await file.exists()) {
-      final data = await rootBundle.load(assetPath);
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-      );
+    final data = await rootBundle.load(assetPath);
+    final bytes =
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    // Rewrite if the file is missing OR its length doesn't match the bundled
+    // asset. The length check heals a torn `.glb` left behind by the old
+    // concurrent-write bug (a truncated file otherwise persists forever and
+    // keeps failing addNode). `flush: true` guarantees the bytes are on disk
+    // before the native loader reads them.
+    if (!await file.exists() || await file.length() != bytes.length) {
+      await file.writeAsBytes(bytes, flush: true);
     }
-    _localModels[assetPath] = fileName;
     return fileName;
+  }
+
+  /// Adds a node on the serialized queue, retrying a couple of times because the
+  /// native object manager occasionally returns false on the first attempt for a
+  /// freshly-written model.
+  Future<bool> _addNodeSerialized(ARNode node) {
+    final next = _addQueue.then((_) => _addNodeWithRetry(node));
+    // Keep the chain alive even if this add fails, so later spawns still run.
+    _addQueue = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  Future<bool> _addNodeWithRetry(ARNode node) async {
+    final manager = _objectManager;
+    if (manager == null) return false;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final added = await manager.addNode(node);
+      if (added == true) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+    return false;
   }
 
   @override
@@ -152,7 +191,7 @@ class ArFlutterEngine implements ArEngine {
       scale: vm.Vector3(1.0, 1.0, 1.0),
     );
 
-    final added = await objectManager.addNode(node);
+    final added = await _addNodeSerialized(node);
     if (added != true) {
       throw StateError('Failed to add AR node "$name" ($modelRef).');
     }

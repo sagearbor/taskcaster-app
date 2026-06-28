@@ -95,14 +95,22 @@ class ArMinigameController extends ChangeNotifier {
     _planeSub?.cancel();
     _fallbackTimer?.cancel();
 
-    for (var i = 0; i < config.objectCount; i++) {
-      _spawnOne();
-    }
+    // Spawn the initial objects one at a time (sequential awaits) rather than
+    // firing all placements concurrently — concurrent spawns raced on both the
+    // model-file write and the native addNode, intermittently failing nodes.
+    _spawnInitial();
     _countdown = Timer.periodic(const Duration(seconds: 1), _onTick);
     if (config.respawnOnHit) {
       _bobTimer = Timer.periodic(const Duration(milliseconds: 120), _onBob);
     }
     _safeNotify();
+  }
+
+  Future<void> _spawnInitial() async {
+    for (var i = 0; i < config.objectCount; i++) {
+      if (_disposed || finished) return;
+      await _spawnOne();
+    }
   }
 
   Future<void> _spawnOne() async {
