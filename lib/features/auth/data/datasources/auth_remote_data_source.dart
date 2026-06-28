@@ -3,6 +3,16 @@ abstract class AuthRemoteDataSource {
   Future<String> signInWithEmailAndPassword(String email, String password);
   Future<String> createUserWithEmailAndPassword(String email, String password);
   Future<String> signInAnonymously();
+
+  /// Sign in with Google. Returns the Firebase uid of the signed-in user.
+  /// Throws if the user cancels the picker or the credential exchange fails.
+  Future<String> signInWithGoogle();
+
+  /// Sign in with Apple. Returns the Firebase uid of the signed-in user.
+  /// On Android this drives Apple's web OAuth flow (Services ID + redirect).
+  /// Throws if the user cancels or the credential exchange fails.
+  Future<String> signInWithApple();
+
   Future<void> signOut();
   String? getCurrentUserId();
 

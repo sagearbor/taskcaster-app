@@ -16,6 +16,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<SignUpRequested>(_onSignUpRequested);
     on<SignOutRequested>(_onSignOutRequested);
     on<AnonymousSignInRequested>(_onAnonymousSignInRequested);
+    on<GoogleSignInRequested>(_onGoogleSignInRequested);
+    on<AppleSignInRequested>(_onAppleSignInRequested);
     on<UpdateProfileRequested>(_onUpdateProfileRequested);
     on<UpgradeGuestRequested>(_onUpgradeGuestRequested);
     on<PasswordResetRequested>(_onPasswordResetRequested);
@@ -77,6 +79,28 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(AuthLoading());
     try {
       final user = await authRepository.signInAnonymously();
+      emit(AuthAuthenticated(user: user));
+    } catch (e) {
+      emit(AuthError(message: e.toString()));
+    }
+  }
+
+  Future<void> _onGoogleSignInRequested(
+      GoogleSignInRequested event, Emitter<AuthState> emit) async {
+    emit(AuthLoading());
+    try {
+      final user = await authRepository.signInWithGoogle();
+      emit(AuthAuthenticated(user: user));
+    } catch (e) {
+      emit(AuthError(message: e.toString()));
+    }
+  }
+
+  Future<void> _onAppleSignInRequested(
+      AppleSignInRequested event, Emitter<AuthState> emit) async {
+    emit(AuthLoading());
+    try {
+      final user = await authRepository.signInWithApple();
       emit(AuthAuthenticated(user: user));
     } catch (e) {
       emit(AuthError(message: e.toString()));

@@ -48,6 +48,26 @@ void main() {
       expect(repository.isCurrentUserAnonymous(), isFalse);
     });
 
+    test('signInWithGoogle returns a non-anonymous user with email', () async {
+      final user = await repository.signInWithGoogle();
+
+      expect(user.id, isNotEmpty);
+      expect(user.email, isNotNull);
+      expect(repository.isCurrentUserAnonymous(), isFalse);
+
+      // A fresh read resolves the same signed-in user.
+      final current = await repository.getCurrentUser();
+      expect(current?.id, user.id);
+    });
+
+    test('signInWithApple returns a non-anonymous user', () async {
+      final user = await repository.signInWithApple();
+
+      expect(user.id, isNotEmpty);
+      expect(repository.isCurrentUserAnonymous(), isFalse);
+      expect(repository.getCurrentUserId(), user.id);
+    });
+
     test('sendPasswordReset rejects an invalid email', () async {
       await repository.signInWithEmailAndPassword('a@b.com', 'password123');
       expect(
