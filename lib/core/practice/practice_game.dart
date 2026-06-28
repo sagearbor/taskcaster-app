@@ -37,4 +37,23 @@ abstract class PracticeGame<TState> {
   /// Produce the contribution [botUid] would make for the current turn (a guess,
   /// an answer, an encoded scribble, …). May use randomness; never mutates.
   String botContent(TState state, String botUid);
+
+  // ---- Generalised actions (optional) --------------------------------------
+  // Most games only have one kind of move (a "submission"), so the two hooks
+  // below default to [needsSubmission] / [applySubmission] and such games never
+  // touch them. Games with MORE THAN ONE action type per round — e.g. Drawing
+  // Telephone's same-prompt modes, which collect drawings AND then 1–10 ratings
+  // — override these so the shared [PracticeDriver] can keep the bots moving
+  // through every phase, not just the submission phase.
+
+  /// True if [uid] still owes ANY action this turn (a submission, a rating, …).
+  /// The driver treats "the human still owes an action" as "it's the human's
+  /// turn" and hands control back to the UI.
+  bool needsAction(TState state, String uid) => needsSubmission(state, uid);
+
+  /// Perform the next pending action for [botUid] and return the new state.
+  /// Defaults to a plain submission via [botContent]; override to also produce
+  /// ratings or other non-submission moves. Must be PURE.
+  TState applyBotAction(TState state, String botUid) =>
+      applySubmission(state, botUid, botContent(state, botUid));
 }

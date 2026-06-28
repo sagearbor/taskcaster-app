@@ -21,6 +21,12 @@ class PracticeDriver<TState> {
   /// keeps the harness correct for games that don't.
   TState primed(TState state) => _fillBots(state);
 
+  /// Auto-fill every bot that still owes an action so play lands back on the
+  /// human (or finishes). Call this after applying ANY human action the driver
+  /// did not perform itself — e.g. a rating — to let the bots catch up. (For
+  /// plain submissions, prefer [submitHuman].)
+  TState advanceBots(TState state) => _fillBots(state);
+
   /// Apply the human's [content], then auto-fill every bot that still owes the
   /// current turn so play always lands back on the human (or finishes). Returns
   /// the resulting state for the UI to render.
@@ -29,25 +35,24 @@ class PracticeDriver<TState> {
     return _fillBots(next);
   }
 
-  /// Keep submitting for pending bots while it is NOT the human's turn and the
-  /// game is not done. Stops the instant the human owes a submission (their
-  /// turn) or no bot is pending — guaranteeing termination.
+  /// Keep performing actions for pending bots while it is NOT the human's turn
+  /// and the game is not done. Stops the instant the human owes an action
+  /// (their turn) or no bot is pending — guaranteeing termination.
   TState _fillBots(TState state) {
     var current = state;
     while (!game.isDone(current) &&
-        !game.needsSubmission(current, game.humanUid)) {
+        !game.needsAction(current, game.humanUid)) {
       final bot = _pendingBot(current);
       if (bot == null) break;
-      current =
-          game.applySubmission(current, bot, game.botContent(current, bot));
+      current = game.applyBotAction(current, bot);
     }
     return current;
   }
 
-  /// The first bot still owing a submission for the current turn, or null.
+  /// The first bot still owing an action for the current turn, or null.
   String? _pendingBot(TState state) {
     for (final uid in game.botUids) {
-      if (game.needsSubmission(state, uid)) return uid;
+      if (game.needsAction(state, uid)) return uid;
     }
     return null;
   }

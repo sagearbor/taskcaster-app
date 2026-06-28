@@ -24,19 +24,50 @@ class TelephonePracticeGame extends PracticeGame<TelephoneSession> {
     Random? random,
   }) : _rng = random ?? Random();
 
+  // The game is finished at the reveal (classic chain) or the results screen
+  // (same-prompt modes), so practice covers drawings AND ratings end-to-end.
   @override
-  bool isDone(TelephoneSession state) => state.isRevealing;
+  bool isDone(TelephoneSession state) => state.isFinished;
 
   @override
   bool needsSubmission(TelephoneSession state, String uid) =>
-      state.isPlaying &&
-      state.hasPlayer(uid) &&
-      !state.hasSubmittedCurrentStep(uid);
+      state.isAwaitingSubmission(uid);
 
   @override
   TelephoneSession applySubmission(
           TelephoneSession state, String uid, String content) =>
       state.withSubmission(uid, content);
+
+  /// A player still owes an action while they owe a drawing (playing) OR while
+  /// they still have someone left to rate (rating). This is what lets the
+  /// driver carry the bots through the rating phase, and stops on the human's
+  /// turn whether they are drawing or rating.
+  @override
+  bool needsAction(TelephoneSession state, String uid) {
+    if (state.isPlaying) return state.isAwaitingSubmission(uid);
+    if (state.isRating) {
+      return state.hasPlayer(uid) && !state.raterHasFinished(uid);
+    }
+    return false;
+  }
+
+  /// Bots draw during play and rate (plausibly, 5–9) during the rating phase.
+  @override
+  TelephoneSession applyBotAction(TelephoneSession state, String botUid) {
+    if (state.isPlaying) {
+      return state.withSubmission(botUid, botContent(state, botUid));
+    }
+    if (state.isRating) {
+      final target = state.nextUnratedTarget(botUid);
+      if (target == null) return state;
+      return state.withRating(
+        raterUid: botUid,
+        targetUid: target,
+        value: 5 + _rng.nextInt(5), // 5..9 — bots are generous but believable
+      );
+    }
+    return state;
+  }
 
   @override
   String botContent(TelephoneSession state, String botUid) {

@@ -154,9 +154,43 @@ class NearbyTelephoneRepository implements TelephoneRepository {
     required String creatorUid,
     required String creatorName,
     String? gameName,
+    TelephoneGameMode gameMode = TelephoneGameMode.classicTelephone,
   }) {
     throw UnsupportedError(
         'Offline games are created via NearbyTelephoneRepository.host');
+  }
+
+  @override
+  Future<void> submitRating({
+    required String sessionId,
+    required String raterUid,
+    required String targetUid,
+    required int value,
+  }) async {
+    if (isHost) {
+      final s = _current;
+      if (s == null) return;
+      _apply(s.withRating(
+          raterUid: raterUid, targetUid: targetUid, value: value));
+    } else {
+      await transport.sendToEndpoint(_hostEndpoint(), {
+        'k': 'rate',
+        'raterUid': raterUid,
+        'targetUid': targetUid,
+        'value': value,
+      });
+    }
+  }
+
+  @override
+  Future<void> playAgain(String sessionId) async {
+    if (isHost) {
+      final s = _current;
+      if (s == null) return;
+      _apply(s.playAgain());
+    } else {
+      await transport.sendToEndpoint(_hostEndpoint(), {'k': 'again'});
+    }
   }
 
   @override
@@ -230,6 +264,18 @@ class NearbyTelephoneRepository implements TelephoneRepository {
           final uid = message['uid'] as String?;
           final content = message['content'] as String? ?? '';
           if (uid != null) _apply(s.withSubmission(uid, content));
+          break;
+        case 'rate':
+          final raterUid = message['raterUid'] as String?;
+          final targetUid = message['targetUid'] as String?;
+          final value = (message['value'] as num?)?.toInt();
+          if (raterUid != null && targetUid != null && value != null) {
+            _apply(s.withRating(
+                raterUid: raterUid, targetUid: targetUid, value: value));
+          }
+          break;
+        case 'again':
+          _apply(s.playAgain());
           break;
       }
     } else {
