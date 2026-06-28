@@ -43,6 +43,26 @@ class NearbyPermissions {
     return bluetoothOk && ok(Permission.location);
   }
 
+  /// Non-prompting check: are the permissions Nearby needs *already* granted?
+  ///
+  /// Unlike [request], this never shows a system dialog. It exists for **passive
+  /// auto-cast** discovery, which must start quietly on the home screen — popping
+  /// a permission dialog there would be a nag. So auto-cast only runs once the
+  /// user has granted these (e.g. after hosting/joining a game once), and stays
+  /// silently dormant otherwise.
+  static Future<bool> isGranted() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return false;
+    }
+    bool ok(PermissionStatus s) =>
+        s.isGranted || s.isLimited || s.isRestricted;
+    // Discovery (scanning) needs BLUETOOTH_SCAN on API 31+ and/or location on
+    // older versions; permission_handler reports inapplicable ones as granted.
+    final scan = await Permission.bluetoothScan.status;
+    final location = await Permission.location.status;
+    return ok(scan) && ok(location);
+  }
+
   /// Whether the platform can run Nearby at all (Android, non-web).
   static bool get isSupportedPlatform =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;

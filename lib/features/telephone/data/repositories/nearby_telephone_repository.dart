@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../../core/models/telephone_session.dart';
+import '../../domain/nearby_cast_label.dart';
 import '../../domain/repositories/telephone_repository.dart';
 import '../datasources/nearby_telephone_transport.dart';
 
@@ -98,11 +99,20 @@ class NearbyTelephoneRepository implements TelephoneRepository {
   /// asynchronously via [watchSession].
   Future<bool> connect(String endpointId) => transport.connect(endpointId);
 
+  /// The Nearby advertising endpoint name. We "cast" structured game info here
+  /// (host name + game type + session fingerprint) so a passive discoverer can
+  /// show a meaningful one-tap-join banner before any connection is opened.
+  /// [NearbyCastLabel.encode] keeps it under Nearby's short length budget.
   String _advertisedName() {
-    final name = _current?.players.isNotEmpty == true
-        ? _current!.players.first.displayName
+    final session = _current;
+    final hostName = session != null && session.players.isNotEmpty
+        ? session.players.first.displayName
         : selfName;
-    return "$name's game";
+    return NearbyCastLabel.encode(
+      hostName: hostName,
+      gameType: NearbyGameType.telephone,
+      sessionId: session?.id,
+    );
   }
 
   // ---- TelephoneRepository -------------------------------------------------

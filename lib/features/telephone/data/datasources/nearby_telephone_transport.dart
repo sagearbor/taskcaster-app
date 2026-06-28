@@ -17,6 +17,25 @@ class NearbyDevice {
   const NearbyDevice(this.endpointId, this.name);
 }
 
+/// The discovery-only slice of [NearbyTelephoneTransport]. Passive auto-cast
+/// (the home-screen "a nearby game is available" banner) only ever needs to
+/// *listen* — it never advertises, connects or sends — so it depends on this
+/// narrow interface, which is trivially faked in tests without the Nearby
+/// plugin (and therefore without a real radio).
+abstract class NearbyDiscovery {
+  /// Live list of advertisers currently visible.
+  Stream<List<NearbyDevice>> get discoveredDevices;
+
+  /// Begin scanning for hosts. Returns false on unsupported platforms / failure.
+  Future<bool> startDiscovery(String selfName);
+
+  /// Stop scanning (keeps the instance reusable).
+  Future<void> stopDiscovery();
+
+  /// Release the instance entirely (closes the [discoveredDevices] stream).
+  Future<void> dispose();
+}
+
 /// Thin wrapper around the `nearby_connections` plugin (Google Nearby
 /// Connections — Bluetooth + Wi-Fi Direct, fully offline) that turns the raw
 /// byte-payload API into a JSON-message bus with reliable framing.
@@ -36,7 +55,7 @@ class NearbyDevice {
 ///
 /// All transport is Android-only; on web/iOS the methods short-circuit so the
 /// app still compiles and runs (offline play is simply unavailable there).
-class NearbyTelephoneTransport {
+class NearbyTelephoneTransport implements NearbyDiscovery {
   NearbyTelephoneTransport({required this.serviceId});
 
   /// Unique per-app id so we only ever discover *our* games. Must match on both
@@ -67,6 +86,7 @@ class NearbyTelephoneTransport {
       StreamController<List<NearbyDevice>>.broadcast();
 
   /// Live list of advertisers found during discovery (peer side).
+  @override
   Stream<List<NearbyDevice>> get discoveredDevices =>
       _discoveredController.stream;
 
@@ -110,6 +130,7 @@ class NearbyTelephoneTransport {
   // ---- Peer ----------------------------------------------------------------
 
   /// Begin scanning for hosts. [selfName] identifies us to the host.
+  @override
   Future<bool> startDiscovery(String selfName) async {
     if (!_supported) return false;
     _myName = selfName;
@@ -130,6 +151,7 @@ class NearbyTelephoneTransport {
     );
   }
 
+  @override
   Future<void> stopDiscovery() async {
     if (!_supported) return;
     await Nearby().stopDiscovery();
@@ -178,6 +200,7 @@ class NearbyTelephoneTransport {
 
   // ---- Teardown ------------------------------------------------------------
 
+  @override
   Future<void> dispose() async {
     if (_supported) {
       try {

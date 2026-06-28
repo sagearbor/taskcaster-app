@@ -15,6 +15,7 @@ import '../../../games/presentation/screens/game_detail_screen.dart';
 import '../../../games/presentation/screens/discover_games_screen.dart';
 import '../../../balloon_blitz/presentation/screens/balloon_blitz_start_screen.dart';
 import '../../../telephone/presentation/screens/telephone_start_screen.dart';
+import '../../../telephone/presentation/widgets/nearby_auto_cast_banner.dart';
 import '../../../trivia/presentation/screens/trivia_start_screen.dart';
 import '../widgets/game_card.dart';
 import '../widgets/home_app_bar.dart';
@@ -60,6 +61,9 @@ class HomeView extends StatelessWidget {
         appBar: const HomeAppBar(),
         body: Column(
           children: [
+            // Auto-cast: passively surfaces a one-tap "Join" when a nearby
+            // phone starts an offline game (Android only; silent otherwise).
+            const NearbyAutoCastBanner(),
             // Quick Play Hero Banner
             _buildQuickPlayBanner(context),
             // Party game: Drawing Telephone (real-time, cross-device)
