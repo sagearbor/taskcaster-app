@@ -7,6 +7,7 @@ import '../../../../core/models/telephone_session.dart';
 import '../../data/datasources/nearby_permissions.dart';
 import '../../data/datasources/nearby_telephone_transport.dart';
 import '../../data/repositories/nearby_telephone_repository.dart';
+import '../../domain/nearby_cast_label.dart';
 import 'telephone_session_screen.dart';
 
 /// Shared bits for the two offline entry screens.
@@ -185,9 +186,19 @@ class _OfflineHostScreenState extends State<OfflineHostScreen> {
 /// Finds nearby hosts and joins one — no invite code, discovery handles
 /// addressing. Once connected and the first session arrives, swaps in the
 /// standard [TelephoneSessionScreen].
+///
+/// When [autoJoinEndpointName] is set (the one-tap path from the home-screen
+/// auto-cast banner), it re-discovers and connects to *that* host automatically
+/// the moment it reappears — no second tap. Endpoint ids aren't portable across
+/// transport instances, so we match on the stable advertised endpoint name.
 class OfflineJoinScreen extends StatefulWidget {
   final String displayName;
-  const OfflineJoinScreen({super.key, required this.displayName});
+  final String? autoJoinEndpointName;
+  const OfflineJoinScreen({
+    super.key,
+    required this.displayName,
+    this.autoJoinEndpointName,
+  });
 
   @override
   State<OfflineJoinScreen> createState() => _OfflineJoinScreenState();
@@ -198,10 +209,12 @@ enum _JoinPhase { starting, discovering, connecting, playing, failed }
 class _OfflineJoinScreenState extends State<OfflineJoinScreen> {
   NearbyTelephoneRepository? _repo;
   StreamSubscription<TelephoneSession?>? _sessionSub;
+  StreamSubscription<List<NearbyDevice>>? _devicesSub;
   TelephoneSession? _session;
   final String _playerId = _uuid.v4();
   _JoinPhase _phase = _JoinPhase.starting;
   String? _error;
+  bool _autoConnectTried = false;
 
   @override
   void initState() {
@@ -235,6 +248,20 @@ class _OfflineJoinScreenState extends State<OfflineJoinScreen> {
         _phase = _JoinPhase.playing;
       });
     });
+    // One-tap path: auto-connect to the host the banner pointed us at, as soon
+    // as discovery re-finds it (matched by its stable advertised name).
+    if (widget.autoJoinEndpointName != null) {
+      _devicesSub = repo.discoveredDevices.listen((devices) {
+        if (!mounted || _autoConnectTried) return;
+        final target = devices.where(
+          (d) => d.name == widget.autoJoinEndpointName,
+        );
+        if (target.isNotEmpty) {
+          _autoConnectTried = true;
+          _connect(target.first);
+        }
+      });
+    }
     final ok = await repo.startDiscovery();
     if (!mounted) return;
     if (!ok) {
@@ -273,6 +300,7 @@ class _OfflineJoinScreenState extends State<OfflineJoinScreen> {
   @override
   void dispose() {
     _sessionSub?.cancel();
+    _devicesSub?.cancel();
     _repo?.dispose();
     super.dispose();
   }
@@ -354,14 +382,18 @@ class _DeviceList extends StatelessWidget {
               child: Text('Tap a game to join',
                   style: Theme.of(context).textTheme.titleMedium),
             ),
-            ...devices.map((d) => Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.sports_esports),
-                    title: Text(d.name),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => onTap(d),
-                  ),
-                )),
+            ...devices.map((d) {
+              final label = NearbyCastLabel.decode(d.name);
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.sports_esports),
+                  title: Text("${label.hostName}'s game"),
+                  subtitle: Text(label.gameType.label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => onTap(d),
+                ),
+              );
+            }),
           ],
         );
       },
