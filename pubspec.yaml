@@ -3,7 +3,7 @@ description: A cross-platform party game app for TaskCaster-style challenges
 
 publish_to: 'none'
 
-version: 1.2.18+23
+version: 1.2.19+24
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -75,6 +75,15 @@ dependencies:
   qr_flutter: ^4.1.0
   firebase_messaging: ^15.2.10
   package_info_plus: ^4.2.0
+
+# Use a locally-vendored, patched copy of ar_flutter_plugin_2. The upstream
+# 0.0.3 native tap handler only resolves taps on PLANE-ANCHORED nodes, so taps
+# on our free-floating balloons reported a null name and nothing could be
+# popped. third_party/ar_flutter_plugin_2 patches onSingleTapConfirmed to also
+# resolve regular (nodesMap) nodes. Keep in sync if the upstream version bumps.
+dependency_overrides:
+  ar_flutter_plugin_2:
+    path: third_party/ar_flutter_plugin_2
 
 dev_dependencies:
   flutter_test:
