@@ -146,13 +146,18 @@ class ArFlutterEngine implements ArEngine {
     if (!await file.exists() || await file.length() != bytes.length) {
       await file.writeAsBytes(bytes, flush: true);
     }
-    // IMPORTANT: return the ABSOLUTE path, not the bare filename. The plugin's
-    // native `fileSystemAppFolderGLB` (type 2) branch does NO path resolution —
-    // it passes `uri` straight to `modelLoader.loadModelInstance(...)`. A bare
-    // filename can't be found there, so addNode returns false (the long-standing
-    // "Failed to add AR node node_N" bug). getApplicationDocumentsDirectory()
-    // on Android is `<dataDir>/app_flutter`, the exact dir the plugin reads.
-    return file.path;
+    // Return a `file://` URI, not a bare path or bare filename. The plugin's
+    // native `fileSystemAppFolderGLB` (type 2) does NO path resolution — it
+    // passes `uri` straight to SceneView's `modelLoader.loadModelInstance()`,
+    // which feeds `FileLoader.loadFileBuffer()`. That function parses the string
+    // as a `Uri` and switches on its scheme: `file` / `android.resource` /
+    // `content` / else→Android-asset. A bare filename OR a bare absolute path
+    // has NO scheme, so it's looked up as an *asset* (which doesn't exist there)
+    // and returns null → addNode returns false (the long-standing "Failed to add
+    // AR node node_N" bug, confirmed by decompiling sceneview 2.2.1). The
+    // `file://` scheme routes it to a real FileInputStream on the on-disk model.
+    // (getApplicationDocumentsDirectory() on Android is `<dataDir>/app_flutter`.)
+    return Uri.file(file.path).toString();
   }
 
   /// Adds a node on the serialized queue, retrying a couple of times because the
@@ -199,7 +204,7 @@ class ArFlutterEngine implements ArEngine {
 
     final added = await _addNodeSerialized(node);
     if (added != true) {
-      throw StateError('Failed to add AR node "$name" ($modelRef).');
+      throw StateError('Failed to add AR node "$name" (uri: $localPath).');
     }
     _nodes[name] = node;
     return ArNode(name);
