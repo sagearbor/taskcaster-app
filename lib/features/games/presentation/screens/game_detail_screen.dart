@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/game.dart';
+import '../../../../core/services/invite/invite_link_parser.dart';
 import '../../../../core/utils/link_utils.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/models/player_task_status.dart';
@@ -348,7 +349,9 @@ class GameDetailView extends StatelessWidget {
                 padding: const EdgeInsets.all(8),
                 color: Colors.white,
                 child: QrImageView(
-                  data: game.inviteCode,
+                  // The join URL (not the bare code) so scanning routes the
+                  // friend into the app or the Play Store install flow.
+                  data: InviteLinks.joinUrl(game.inviteCode),
                   version: QrVersions.auto,
                   size: 160,
                 ),
@@ -412,8 +415,11 @@ class GameDetailView extends StatelessWidget {
   }
 
   void _shareInvite(Game game) {
-    final text = 'Join my TaskCaster game "${game.gameName}"!\n\n'
-        'Open the app and enter invite code: ${game.inviteCode}';
+    final link = InviteLinks.joinUrl(game.inviteCode);
+    final text = '🎈 Join my TaskCaster game "${game.gameName}"!\n\n'
+        'Tap to join: $link\n\n'
+        'No app yet? Same link installs it and brings you straight into my game.\n'
+        '(Or enter code ${game.inviteCode} in the app.)';
     Share.share(text, subject: 'TaskCaster game invite');
   }
 }

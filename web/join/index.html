@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join a TaskCaster game</title>
+  <meta name="description" content="You've been invited to a TaskCaster party game!">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(160deg, #1a1033 0%, #2d1b4e 45%, #4a2a7a 100%);
+      color: #f3edff;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .card {
+      max-width: 420px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      padding: 40px 28px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .balloon {
+      font-size: 72px;
+      line-height: 1;
+      display: inline-block;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    h1 {
+      font-size: 26px;
+      margin: 18px 0 8px;
+      letter-spacing: 0.3px;
+    }
+
+    .sub {
+      color: #c9bbe8;
+      font-size: 15px;
+      margin-bottom: 26px;
+    }
+
+    .code-box {
+      display: inline-block;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: 8px;
+      padding: 14px 22px 14px 30px; /* extra left pad balances letter-spacing */
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px dashed rgba(255, 255, 255, 0.35);
+      margin-bottom: 28px;
+      user-select: all;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      border-radius: 14px;
+      font-size: 17px;
+      font-weight: 700;
+      text-decoration: none;
+      margin-bottom: 12px;
+      transition: transform 0.1s ease, filter 0.15s ease;
+    }
+
+    .btn:active { transform: scale(0.98); }
+    .btn:hover { filter: brightness(1.1); }
+
+    .btn-primary {
+      background: linear-gradient(90deg, #fb5779, #f59e0b);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #f3edff;
+    }
+
+    .hint {
+      color: #a893d1;
+      font-size: 13px;
+      margin-top: 14px;
+      line-height: 1.5;
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <span class="balloon" aria-hidden="true">🎈</span>
+
+    <!-- Invite present -->
+    <div id="invite" class="hidden">
+      <h1>You're invited!</h1>
+      <p class="sub">Your friend wants you in their TaskCaster game.</p>
+      <div class="code-box" id="code-display"></div>
+      <a id="open-app" class="btn btn-primary hidden" href="#">Open in app</a>
+      <a id="get-play" class="btn btn-secondary" href="#">Get it on Google Play</a>
+      <p class="hint" id="invite-hint"></p>
+    </div>
+
+    <!-- No / bad code -->
+    <div id="no-code" class="hidden">
+      <h1>TaskCaster</h1>
+      <p class="sub">This invite link is missing its game code — ask your friend to share it again.</p>
+      <a class="btn btn-secondary" href="https://play.google.com/store/apps/details?id=com.sagearbor.taskcaster.app">Get TaskCaster on Google Play</a>
+      <p class="hint">Already have the app? Open it and use "Join Game" with your friend's 6-character code.</p>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var PACKAGE = 'com.sagearbor.taskcaster.app';
+      var code = (new URLSearchParams(location.search).get('code') || '')
+        .trim().toUpperCase();
+      // Same alphabet the app uses (no I/L/O/0/1).
+      var valid = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(code);
+
+      if (!valid) {
+        document.getElementById('no-code').classList.remove('hidden');
+        return;
+      }
+
+      document.getElementById('invite').classList.remove('hidden');
+      document.getElementById('code-display').textContent = code;
+
+      // Play Store link carrying the code through install via the referrer,
+      // so the app can pop the join dialog on first launch.
+      var playUrl = 'https://play.google.com/store/apps/details?id=' + PACKAGE +
+        '&referrer=' + encodeURIComponent('invite_code=' + code);
+      document.getElementById('get-play').href = playUrl;
+
+      var ua = navigator.userAgent || '';
+      var isAndroid = /android/i.test(ua);
+
+      if (isAndroid) {
+        // Android intent URL: opens the app if installed, otherwise falls
+        // back to the Play Store (still carrying the referrer).
+        var intentUrl = 'intent://join?code=' + encodeURIComponent(code) +
+          '#Intent;scheme=taskcaster;package=' + PACKAGE +
+          ';S.browser_fallback_url=' + encodeURIComponent(playUrl) + ';end';
+        var openBtn = document.getElementById('open-app');
+        openBtn.href = intentUrl;
+        openBtn.classList.remove('hidden');
+        document.getElementById('invite-hint').textContent =
+          'No app yet? "Open in app" sends you to Google Play and brings ' +
+          'you straight into the game after install.';
+        // Best-effort auto-open. Browsers usually require a tap for intent://
+        // navigation, so this may be silently ignored — the buttons are the
+        // reliable path.
+        setTimeout(function () {
+          try { window.location.href = intentUrl; } catch (e) { /* noop */ }
+        }, 600);
+      } else {
+        document.getElementById('invite-hint').textContent =
+          'On iPhone or desktop? Grab the app on your Android phone, or ' +
+          'open TaskCaster and enter code ' + code + ' under "Join Game".';
+      }
+    })();
+  </script>
+</body>
+</html>

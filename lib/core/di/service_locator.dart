@@ -30,6 +30,7 @@ import '../../features/trivia/domain/repositories/trivia_repository.dart';
 import '../../features/trivia/data/datasources/trivia_remote_data_source.dart';
 import '../../features/trivia/data/datasources/mock_trivia_data_source.dart';
 
+import '../services/invite/pending_invite_service.dart';
 import '../services/ad_service_simple.dart';
 import '../services/purchase_service_simple.dart';
 import '../services/ai_task_service.dart';
@@ -116,6 +117,14 @@ class ServiceLocator {
     // Only constructed on AR-capable mobile devices (the capability check gates
     // every caller), so the plugin is never instantiated on web/desktop.
     sl.registerFactory<ArEngine>(() => ArFlutterEngine());
+
+    // Friend-invite loop: captures invite codes arriving via deep link or
+    // Play Install Referrer. Same implementation for mock and real services —
+    // it is a platform concern, not a data-source one. init() is fired from
+    // main() so cold-start links are caught before the home screen mounts.
+    sl.registerLazySingleton<PendingInviteService>(
+      () => PendingInviteService(),
+    );
 
 
     // Additional Services
