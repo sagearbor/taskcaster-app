@@ -129,7 +129,7 @@ class DrawingCanvas extends StatelessWidget {
                   child: AnimatedBuilder(
                     animation: controller,
                     builder: (context, _) => CustomPaint(
-                      painter: _StrokePainter(controller.strokes),
+                      painter: StrokePlaybackPainter(controller.strokes),
                       size: Size(side, side),
                     ),
                   ),
@@ -214,7 +214,7 @@ class DrawingView extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: CustomPaint(
-          painter: _StrokePainter(strokes),
+          painter: StrokePlaybackPainter(strokes),
           child: const SizedBox.expand(),
         ),
       ),
@@ -226,14 +226,139 @@ class DrawingView extends StatelessWidget {
   }
 }
 
-class _StrokePainter extends CustomPainter {
+/// Total number of recorded points across [strokes]. The unit the playback
+/// animation works in.
+int totalStrokePoints(List<DrawingStroke> strokes) =>
+    strokes.fold(0, (n, s) => n + s.points.length);
+
+/// Replays a stored drawing stroke-by-stroke, exactly as it was drawn: one
+/// animation drives a cumulative point budget and the painter renders complete
+/// strokes up to the cutoff plus a partial polyline for the stroke in flight.
+///
+/// Used in the reveal (each drawing "draws itself" as it appears) and on the
+/// guess step. Thumbnails / static recaps keep using [DrawingView].
+class AnimatedDrawingView extends StatefulWidget {
+  final String json;
+  final double? size;
+
+  /// Optional fixed duration (mainly for tests). When null the duration is
+  /// scaled by the drawing's total point count within ~1.6–2.2s.
+  final Duration? duration;
+
+  const AnimatedDrawingView({
+    super.key,
+    required this.json,
+    this.size,
+    this.duration,
+  });
+
+  @override
+  State<AnimatedDrawingView> createState() => _AnimatedDrawingViewState();
+}
+
+class _AnimatedDrawingViewState extends State<AnimatedDrawingView>
+    with SingleTickerProviderStateMixin {
+  late List<DrawingStroke> _strokes;
+  late int _totalPoints;
+  late final AnimationController _controller;
+  late final Animation<double> _progress;
+
+  static Duration _durationFor(int points) {
+    // Small doodles get the floor; dense drawings stretch toward the cap so
+    // playback never drags.
+    final ms = (1600 + points * 2).clamp(1600, 2200);
+    return Duration(milliseconds: ms);
+  }
+
+  void _load() {
+    _strokes = parseStrokes(widget.json);
+    _totalPoints = totalStrokePoints(_strokes);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration ?? _durationFor(_totalPoints),
+    );
+    _progress = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOutCubic,
+    );
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(AnimatedDrawingView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.json != widget.json) {
+      _load();
+      _controller.duration = widget.duration ?? _durationFor(_totalPoints);
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canvas = AspectRatio(
+      aspectRatio: 1,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.black12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: AnimatedBuilder(
+          animation: _progress,
+          builder: (context, _) => CustomPaint(
+            painter: StrokePlaybackPainter(
+              _strokes,
+              pointBudget: (_progress.value * _totalPoints).ceil(),
+            ),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ),
+    );
+    if (widget.size != null) {
+      return SizedBox(width: widget.size, height: widget.size, child: canvas);
+    }
+    return canvas;
+  }
+}
+
+/// Paints stored strokes. When [pointBudget] is non-null only the first
+/// [pointBudget] points — cumulative across strokes, in draw order — are
+/// rendered: complete strokes up to the cutoff, then a partial polyline for
+/// the one in flight. A null budget draws everything (static rendering).
+class StrokePlaybackPainter extends CustomPainter {
   final List<DrawingStroke> strokes;
-  _StrokePainter(this.strokes);
+  final int? pointBudget;
+
+  StrokePlaybackPainter(this.strokes, {this.pointBudget});
 
   @override
   void paint(Canvas canvas, Size size) {
+    var remaining = pointBudget;
     for (final stroke in strokes) {
       if (stroke.points.isEmpty) continue;
+
+      var points = stroke.points;
+      if (remaining != null) {
+        if (remaining <= 0) break;
+        if (points.length > remaining) points = points.sublist(0, remaining);
+        remaining -= points.length;
+      }
+
       final paint = Paint()
         ..color = Color(stroke.color)
         ..strokeWidth = 3.5
@@ -243,19 +368,19 @@ class _StrokePainter extends CustomPainter {
 
       Offset denorm(Offset p) => Offset(p.dx * size.width, p.dy * size.height);
 
-      if (stroke.points.length == 1) {
+      if (points.length == 1) {
         // A single tap → a dot.
         canvas.drawPoints(
           PointMode.points,
-          [denorm(stroke.points.first)],
+          [denorm(points.first)],
           paint..strokeCap = StrokeCap.round,
         );
         continue;
       }
-      final path = Path()..moveTo(
-          denorm(stroke.points.first).dx, denorm(stroke.points.first).dy);
-      for (var i = 1; i < stroke.points.length; i++) {
-        final p = denorm(stroke.points[i]);
+      final path = Path()
+        ..moveTo(denorm(points.first).dx, denorm(points.first).dy);
+      for (var i = 1; i < points.length; i++) {
+        final p = denorm(points[i]);
         path.lineTo(p.dx, p.dy);
       }
       canvas.drawPath(path, paint);
@@ -263,6 +388,6 @@ class _StrokePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_StrokePainter oldDelegate) =>
-      oldDelegate.strokes != strokes;
+  bool shouldRepaint(StrokePlaybackPainter oldDelegate) =>
+      oldDelegate.strokes != strokes || oldDelegate.pointBudget != pointBudget;
 }

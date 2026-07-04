@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/telephone_session.dart';
+import '../../../../core/widgets/user_avatar.dart';
 import '../../data/datasources/telephone_session_store.dart';
 import '../../domain/repositories/telephone_repository.dart';
 import '../bloc/telephone_bloc.dart';
@@ -469,7 +472,9 @@ class _GuessInputState extends State<_GuessInput> {
           session: widget.session,
           instruction: 'What is this a drawing of?',
         ),
-        DrawingView(json: drawing?.content ?? ''),
+        // The drawing replays itself stroke-by-stroke — watching it appear is
+        // half the fun (and often half the clue).
+        AnimatedDrawingView(json: drawing?.content ?? ''),
         const SizedBox(height: 16),
         TextField(
           controller: _controller,
@@ -507,19 +512,32 @@ class _WaitingView extends StatelessWidget {
   final TelephoneSession session;
   const _WaitingView({required this.session});
 
+  /// Playful waiting copy. `{name}` is replaced with the first player we're
+  /// still waiting on. Picked deterministically per step, so the quip is
+  /// stable across rebuilds within a phase.
+  static const List<String> _quips = [
+    'Waiting for {name} to finish their masterpiece…',
+    '{name} is still picking the perfect colour…',
+    'Shh — {name} is deep in creative thought…',
+    '{name} promises it looks better in person…',
+    'Hang tight — {name} is really committing to the bit…',
+  ];
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final waitingOn = session.players
         .where((p) => !session.hasSubmittedCurrentStep(p.uid))
-        .map((p) => p.displayName)
         .toList();
+    final quip = waitingOn.isEmpty
+        ? 'Everyone is done — moving on!'
+        : _quips[session.step % _quips.length]
+            .replaceAll('{name}', waitingOn.first.displayName);
+
     return _Centered(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.hourglass_top, size: 48),
-          const SizedBox(height: 16),
           Text('Submitted! 🎉',
               style: theme.textTheme.titleLarge
                   ?.copyWith(fontWeight: FontWeight.bold)),
@@ -528,13 +546,79 @@ class _WaitingView extends StatelessWidget {
             '${session.submittedUids.length}/${session.playerCount} done',
             style: theme.textTheme.bodyLarge,
           ),
-          const SizedBox(height: 16),
-          if (waitingOn.isNotEmpty)
-            Text('Waiting on: ${waitingOn.join(', ')}',
-                style: theme.textTheme.bodyMedium,
-                textAlign: TextAlign.center),
-          const SizedBox(height: 24),
-          const CircularProgressIndicator(),
+          const SizedBox(height: 28),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              for (final p in session.players)
+                _PlayerProgressChip(
+                  name: p.displayName,
+                  submitted: session.hasSubmittedCurrentStep(p.uid),
+                ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Text(quip,
+              style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+}
+
+/// One player's avatar in the waiting view: greyed while they're still
+/// working, popping to full colour with a check badge once they submit.
+class _PlayerProgressChip extends StatelessWidget {
+  final String name;
+  final bool submitted;
+  const _PlayerProgressChip({required this.name, required this.submitted});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 72,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedScale(
+            scale: submitted ? 1.0 : 0.88,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutBack,
+            child: AnimatedOpacity(
+              opacity: submitted ? 1.0 : 0.4,
+              duration: const Duration(milliseconds: 300),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  UserAvatar(displayName: name, radius: 24),
+                  if (submitted)
+                    Positioned(
+                      right: -3,
+                      bottom: -3,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.check_circle,
+                            size: 20, color: Color(0xFF43A047)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            name,
+            style: theme.textTheme.labelSmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
@@ -545,44 +629,360 @@ class _WaitingView extends StatelessWidget {
 // Reveal
 // ---------------------------------------------------------------------------
 
-class _RevealView extends StatelessWidget {
+/// The reveal — the game's payoff. Chains are presented one at a time,
+/// entry by entry (tap anywhere / "Next" to advance), so the whole room
+/// watches each corruption step land. After the last chain it settles on the
+/// full recap list.
+///
+/// The reveal cursor is pure local widget state: every device advances at its
+/// own pace and the session model / transport are untouched.
+class _RevealView extends StatefulWidget {
   final TelephoneSession session;
   const _RevealView({required this.session});
 
   @override
+  State<_RevealView> createState() => _RevealViewState();
+}
+
+class _RevealViewState extends State<_RevealView> {
+  int _chainIndex = 0;
+  int _entryIndex = 0;
+  bool _finished = false;
+  final _scrollController = ScrollController();
+
+  List<List<TelephoneEntry>> get _chains =>
+      widget.session.chains.where((c) => c.isNotEmpty).toList();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _advance() {
+    if (_finished) return;
+    final chains = _chains;
+    if (chains.isEmpty) return;
+    setState(() {
+      if (_entryIndex < chains[_chainIndex].length - 1) {
+        _entryIndex++;
+      } else if (_chainIndex < chains.length - 1) {
+        _chainIndex++;
+        _entryIndex = 0;
+      } else {
+        _finished = true;
+      }
+    });
+    // Keep the newest entry in view as the chain grows.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_finished || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: session.chains.length,
-      itemBuilder: (context, chainIdx) {
-        final chain = session.chains[chainIdx];
-        if (chain.isEmpty) return const SizedBox.shrink();
-        final starter = chain.first.authorName;
-        return Card(
-          margin: const EdgeInsets.only(bottom: 20),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final chains = _chains;
+    if (chains.isEmpty || _finished) {
+      // Final state: the full recap (with a little ceremony on top).
+      return _RevealRecap(chains: chains, celebrate: chains.isNotEmpty);
+    }
+
+    // Clamp defensively in case the session updates under us.
+    final chainIdx = _chainIndex.clamp(0, chains.length - 1);
+    final chain = chains[chainIdx];
+    final entryIdx = _entryIndex.clamp(0, chain.length - 1);
+    final starter = chain.first.authorName;
+    final isLastEntry = entryIdx == chain.length - 1;
+    final isLastChain = chainIdx == chains.length - 1;
+    final nextLabel = !isLastEntry
+        ? 'Next'
+        : (isLastChain ? 'See full recap' : 'Next chain');
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _advance,
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(16),
               children: [
-                Text("$starter's chain",
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-                const Divider(),
-                ...chain.map((entry) => _RevealEntry(entry: entry)),
+                Text(
+                  'Chain ${chainIdx + 1} of ${chains.length} '
+                  '· step ${entryIdx + 1}/${chain.length}',
+                  style: theme.textTheme.labelMedium
+                      ?.copyWith(color: theme.colorScheme.primary),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("$starter's chain",
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold)),
+                        const Divider(),
+                        for (var i = 0; i <= entryIdx; i++)
+                          _SlideFadeIn(
+                            key: ValueKey('reveal-$chainIdx-$i'),
+                            child: _RevealEntry(
+                              entry: chain[i],
+                              // Drawings replay themselves as they're revealed.
+                              animateDrawing: true,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-        );
-      },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('Tap anywhere to continue',
+                      style: theme.textTheme.bodySmall),
+                ),
+                FilledButton.icon(
+                  onPressed: _advance,
+                  icon: const Icon(Icons.navigate_next),
+                  label: Text(nextLabel),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
+/// One-shot slide-up + fade-in for a newly revealed entry.
+class _SlideFadeIn extends StatelessWidget {
+  final Widget child;
+  const _SlideFadeIn({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, 24 * (1 - t)),
+          child: child,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// The full recap list (every chain, every entry) shown once the staged
+/// reveal has finished — with a celebratory beat on top.
+class _RevealRecap extends StatelessWidget {
+  final List<List<TelephoneEntry>> chains;
+  final bool celebrate;
+  const _RevealRecap({required this.chains, required this.celebrate});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (celebrate) const _RevealCeremony(),
+        for (final chain in chains)
+          Card(
+            margin: const EdgeInsets.only(bottom: 20),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("${chain.first.authorName}'s chain",
+                      style: theme.textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const Divider(),
+                  ...chain.map((entry) => _RevealEntry(entry: entry)),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A short (~1.5s, plays once) celebration: trophy pops in with an elastic
+/// scale while a hand-rolled confetti burst falls in staggered rows behind it.
+class _RevealCeremony extends StatefulWidget {
+  const _RevealCeremony();
+
+  @override
+  State<_RevealCeremony> createState() => _RevealCeremonyState();
+}
+
+class _RevealCeremonyState extends State<_RevealCeremony>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..forward();
+
+  late final Animation<double> _trophyScale = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.0, 0.55, curve: Curves.elasticOut),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 170,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) => CustomPaint(
+                painter: _ConfettiPainter(_controller.value),
+              ),
+            ),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ScaleTransition(
+                scale: _trophyScale,
+                child: const Icon(Icons.emoji_events,
+                    size: 56, color: Color(0xFFF4B400)),
+              ),
+              const SizedBox(height: 8),
+              Text("That's a wrap!",
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 2),
+              Text('Every chain, fully derailed. Enjoy the recap.',
+                  style: theme.textTheme.bodySmall),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfettiPiece {
+  final double x; // 0..1 horizontal start position
+  final double delay; // 0..1 fraction of the animation before this piece drops
+  final double drift; // horizontal drift over the fall
+  final double spin; // radians of rotation over the fall
+  final double size;
+  final Color color;
+
+  const _ConfettiPiece({
+    required this.x,
+    required this.delay,
+    required this.drift,
+    required this.spin,
+    required this.size,
+    required this.color,
+  });
+}
+
+/// Lightweight confetti: a fixed, seeded particle set (deterministic — no
+/// per-frame allocation) dropped in three staggered rows. Fades out at the
+/// end and never loops.
+class _ConfettiPainter extends CustomPainter {
+  final double progress;
+  _ConfettiPainter(this.progress);
+
+  static final List<_ConfettiPiece> _pieces = _buildPieces();
+
+  static List<_ConfettiPiece> _buildPieces() {
+    final rng = math.Random(7);
+    const colors = [
+      Color(0xFFE53935),
+      Color(0xFF1E88E5),
+      Color(0xFF43A047),
+      Color(0xFFFB8C00),
+      Color(0xFF8E24AA),
+      Color(0xFFF4B400),
+    ];
+    return List.generate(36, (i) {
+      final row = i % 3; // staggered rows
+      return _ConfettiPiece(
+        x: rng.nextDouble(),
+        delay: row * 0.14 + rng.nextDouble() * 0.08,
+        drift: (rng.nextDouble() - 0.5) * 0.35,
+        spin: (rng.nextDouble() - 0.5) * 10,
+        size: 4 + rng.nextDouble() * 4,
+        color: colors[i % colors.length],
+      );
+    });
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final paint = Paint();
+    for (final piece in _pieces) {
+      final t = ((progress - piece.delay) / (1 - piece.delay)).clamp(0.0, 1.0);
+      if (t <= 0) continue;
+      final opacity = t < 0.75 ? 1.0 : 1.0 - (t - 0.75) / 0.25;
+      final x = (piece.x + piece.drift * t) * size.width;
+      final y = t * t * (size.height + 24) - 12; // accelerating fall
+      paint.color = piece.color.withOpacity(opacity.clamp(0.0, 1.0));
+      canvas.save();
+      canvas.translate(x, y);
+      canvas.rotate(piece.spin * t);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+              center: Offset.zero, width: piece.size, height: piece.size * 0.6),
+          const Radius.circular(1),
+        ),
+        paint,
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ConfettiPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
 class _RevealEntry extends StatelessWidget {
   final TelephoneEntry entry;
-  const _RevealEntry({required this.entry});
+
+  /// When true, drawings use [AnimatedDrawingView] so they replay stroke by
+  /// stroke as they're revealed. The recap keeps the static [DrawingView].
+  final bool animateDrawing;
+
+  const _RevealEntry({required this.entry, this.animateDrawing = false});
 
   @override
   Widget build(BuildContext context) {
@@ -602,7 +1002,9 @@ class _RevealEntry extends StatelessWidget {
                   ?.copyWith(color: theme.colorScheme.primary)),
           const SizedBox(height: 6),
           if (entry.type == TelephoneEntryType.drawing)
-            DrawingView(json: entry.content, size: 220)
+            animateDrawing
+                ? AnimatedDrawingView(json: entry.content, size: 220)
+                : DrawingView(json: entry.content, size: 220)
           else
             Text(entry.content, style: theme.textTheme.bodyLarge),
         ],
