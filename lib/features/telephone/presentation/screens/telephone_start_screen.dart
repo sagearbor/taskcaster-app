@@ -341,7 +341,7 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                 const Expanded(child: Divider()),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('or join one',
+                  child: Text('Or join a game',
                       style: theme.textTheme.bodySmall),
                 ),
                 const Expanded(child: Divider()),
@@ -371,7 +371,7 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                   const Expanded(child: Divider()),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('no wifi? play offline',
+                    child: Text('No Wi-Fi? Play offline',
                         style: theme.textTheme.bodySmall),
                   ),
                   const Expanded(child: Divider()),

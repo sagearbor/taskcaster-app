@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/game.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/utils/friendly_errors.dart';
 import '../../../../core/utils/link_utils.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -29,7 +30,6 @@ class GameLobbyView extends StatelessWidget {
 
         final currentUser = authState.user;
         final isCreator = game.isUserCreator(currentUser.id);
-        final isJudge = game.isUserJudge(currentUser.id);
 
         return Padding(
           padding: const EdgeInsets.all(16),
@@ -424,6 +424,9 @@ class GameLobbyView extends StatelessWidget {
     final titleController = TextEditingController();
     final descController = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
+    // Captured before the async gap so the catch below doesn't use a
+    // possibly-stale context.
+    final errorColor = Theme.of(context).colorScheme.error;
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -483,10 +486,14 @@ class GameLobbyView extends StatelessWidget {
                     SnackBar(content: Text('Added "$title" to your game')),
                   );
                 } catch (e) {
+                  debugPrint('Add custom task failed: $e');
                   messenger.showSnackBar(
                     SnackBar(
-                      content: Text('Could not add task: $e'),
-                      backgroundColor: Theme.of(context).colorScheme.error,
+                      content: Text(FriendlyErrors.action(
+                        e,
+                        fallback: 'Could not add the task. Please try again.',
+                      )),
+                      backgroundColor: errorColor,
                     ),
                   );
                 }
@@ -535,6 +542,9 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
   Future<void> _addInvite() async {
     final email = _controller.text.trim().toLowerCase();
     final messenger = ScaffoldMessenger.of(context);
+    // Captured before the async gap so the catch below doesn't use a
+    // possibly-stale context.
+    final errorColor = Theme.of(context).colorScheme.error;
     if (email.isEmpty) return;
     if (!_looksLikeEmail(email)) {
       messenger.showSnackBar(
@@ -565,10 +575,14 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
         );
       }
     } catch (e) {
+      debugPrint('Invite by email failed: $e');
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Could not send invite: $e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
+          content: Text(FriendlyErrors.action(
+            e,
+            fallback: 'Could not send the invite. Please try again.',
+          )),
+          backgroundColor: errorColor,
         ),
       );
     } finally {

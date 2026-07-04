@@ -1,7 +1,9 @@
 import 'package:bloc_test/bloc_test.dart';
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:taskcaster_app/core/models/user.dart';
+import 'package:taskcaster_app/core/utils/friendly_errors.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
 
@@ -51,7 +53,25 @@ void main() {
       );
 
       blocTest<AuthBloc, AuthState>(
-        'emits [AuthLoading, AuthError] when sign in fails',
+        'maps wrong-password to human copy (never the raw exception)',
+        build: () {
+          when(() => mockAuthRepository.signInWithEmailAndPassword(any(), any()))
+              .thenThrow(FirebaseAuthException(code: 'wrong-password'));
+          return authBloc;
+        },
+        act: (bloc) => bloc.add(const SignInRequested(
+          email: 'test@example.com',
+          password: 'wrongpassword',
+        )),
+        expect: () => [
+          AuthLoading(),
+          const AuthError(
+              message: 'Email or password doesn\'t match. Please try again.'),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthState>(
+        'falls back to friendly generic copy for unknown errors',
         build: () {
           when(() => mockAuthRepository.signInWithEmailAndPassword(any(), any()))
               .thenThrow(Exception('Invalid credentials'));
@@ -63,7 +83,7 @@ void main() {
         )),
         expect: () => [
           AuthLoading(),
-          const AuthError(message: 'Exception: Invalid credentials'),
+          const AuthError(message: FriendlyErrors.generic),
         ],
       );
     });
@@ -91,13 +111,13 @@ void main() {
       );
 
       blocTest<AuthBloc, AuthState>(
-        'emits [AuthLoading, AuthError] when sign up fails',
+        'maps email-already-in-use to human copy',
         build: () {
           when(() => mockAuthRepository.createUserWithEmailAndPassword(
                 any(),
                 any(),
                 any(),
-              )).thenThrow(Exception('Email already in use'));
+              )).thenThrow(FirebaseAuthException(code: 'email-already-in-use'));
           return authBloc;
         },
         act: (bloc) => bloc.add(const SignUpRequested(
@@ -107,7 +127,9 @@ void main() {
         )),
         expect: () => [
           AuthLoading(),
-          const AuthError(message: 'Exception: Email already in use'),
+          const AuthError(
+              message:
+                  'That email already has an account — try signing in instead.'),
         ],
       );
     });
@@ -140,8 +162,7 @@ void main() {
         act: (bloc) => bloc.add(GoogleSignInRequested()),
         expect: () => [
           AuthLoading(),
-          const AuthError(
-              message: 'Exception: Google sign-in was cancelled'),
+          const AuthError(message: 'Sign-in was cancelled.'),
         ],
       );
     });
@@ -174,7 +195,7 @@ void main() {
         act: (bloc) => bloc.add(AppleSignInRequested()),
         expect: () => [
           AuthLoading(),
-          const AuthError(message: 'Exception: Apple sign-in failed'),
+          const AuthError(message: FriendlyErrors.generic),
         ],
       );
     });
@@ -203,7 +224,7 @@ void main() {
         act: (bloc) => bloc.add(SignOutRequested()),
         expect: () => [
           AuthLoading(),
-          const AuthError(message: 'Exception: Sign out failed'),
+          const AuthError(message: FriendlyErrors.generic),
         ],
       );
     });

@@ -6,7 +6,6 @@ import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
-import '../../../auth/presentation/screens/register_screen.dart';
 import '../../../games/domain/repositories/game_repository.dart';
 import '../../../games/presentation/bloc/games_bloc.dart';
 import '../../../games/presentation/screens/create_game_screen.dart';
@@ -127,7 +126,7 @@ class HomeView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        '⚡ Quick Play',
+                        'Quick Play',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -198,7 +197,7 @@ class HomeView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '🎨 Drawing Telephone',
+                        'Drawing Telephone',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -263,7 +262,7 @@ class HomeView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '🧠 Trivia Buzzer',
+                        'Trivia Buzzer',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -329,7 +328,7 @@ class HomeView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '🎈 Balloon Blitz (vs family, offline)',
+                        'Balloon Blitz',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -338,8 +337,7 @@ class HomeView extends StatelessWidget {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Race to pop the most balloons in AR. Scores sync live — '
-                        'no internet.',
+                        'AR balloon race — works offline',
                         style: TextStyle(fontSize: 13, color: Colors.white),
                       ),
                     ],
@@ -470,57 +468,21 @@ class HomeView extends StatelessWidget {
     );
   }
 
+  // Guests are real Firebase anonymous users — a genuine uid that satisfies
+  // the Firestore rules (`creatorId == request.auth.uid`) — so they get the
+  // full hero CTAs, no sign-up wall. They can upgrade to a named account
+  // later (Settings) without losing their games.
   void _handleQuickPlay(BuildContext context) {
-    final authRepository = sl<AuthRepository>();
-
-    if (authRepository.isCurrentUserAnonymous()) {
-      _showSignUpDialog(context, 'Quick Play');
-    } else {
-      context.read<GamesBloc>().add(const QuickPlayGame());
-    }
+    context.read<GamesBloc>().add(const QuickPlayGame());
   }
 
   void _handleCreateGame(BuildContext context) {
-    final authRepository = sl<AuthRepository>();
-
-    if (authRepository.isCurrentUserAnonymous()) {
-      _showSignUpDialog(context, 'Create Game');
-    } else {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => BlocProvider.value(
-            value: context.read<AuthBloc>(),
-            child: const CreateGameScreen(),
-          ),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: context.read<AuthBloc>(),
+          child: const CreateGameScreen(),
         ),
-      );
-    }
-  }
-
-  void _showSignUpDialog(BuildContext context, String feature) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sign Up Required'),
-        content: Text(
-          'You need to create an account to use $feature. '
-          'Guests can join games using invite codes, but cannot create games.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const RegisterScreen()),
-              );
-            },
-            child: const Text('Sign Up'),
-          ),
-        ],
       ),
     );
   }

@@ -194,7 +194,7 @@ class _TriviaStartScreenState extends State<TriviaStartScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child:
-                      Text('or join one', style: theme.textTheme.bodySmall),
+                      Text('Or join a game', style: theme.textTheme.bodySmall),
                 ),
                 const Expanded(child: Divider()),
               ]),

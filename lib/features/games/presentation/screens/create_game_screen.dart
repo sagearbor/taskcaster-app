@@ -3,10 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/utils/friendly_errors.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../tasks/presentation/screens/task_browser_screen.dart';
 import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
 import '../../domain/repositories/game_repository.dart';
+import 'game_detail_screen.dart';
 
 class CreateGameScreen extends StatefulWidget {
   const CreateGameScreen({super.key});
@@ -18,7 +20,6 @@ class CreateGameScreen extends StatefulWidget {
 class _CreateGameScreenState extends State<CreateGameScreen> {
   final _formKey = GlobalKey<FormState>();
   final _gameNameController = TextEditingController();
-  String _selectedJudge = 'creator';
   bool _isLoading = false;
   List<Task> _selectedTasks = [];
 
@@ -82,24 +83,12 @@ class _CreateGameScreenState extends State<CreateGameScreen> {
     }
   }
 
-  Future<void> _selectRandomTasks(int count) async {
-    // Import tasks data temporarily to get random tasks
-    final allTasks = await Navigator.of(context).push<List<Task>>(
-      MaterialPageRoute(
-        builder: (context) {
-          // Return immediately with random tasks
-          final tasks = PrebuiltTasksData.getAllTasks()..shuffle();
-          Navigator.of(context).pop(tasks.take(count).toList());
-          return const Scaffold(); // Placeholder
-        },
-      ),
-    );
-
-    if (allTasks != null) {
-      setState(() {
-        _selectedTasks = allTasks;
-      });
-    }
+  void _selectRandomTasks(int count) {
+    // Pick straight from the prebuilt catalog — no navigation involved.
+    final tasks = List<Task>.from(PrebuiltTasksData.getAllTasks())..shuffle();
+    setState(() {
+      _selectedTasks = tasks.take(count).toList();
+    });
   }
 
   Future<void> _createGame() async {
@@ -136,33 +125,37 @@ class _CreateGameScreenState extends State<CreateGameScreen> {
 
       final gameRepository = sl<GameRepository>();
 
-      final judgeId = _selectedJudge == 'creator'
-          ? authState.user.id
-          : authState.user.id; // For now, creator is always judge
-
       final gameId = await gameRepository.createGame(
         _gameNameController.text.trim(),
         authState.user.id,
-        judgeId,
+        authState.user.id, // Creator is always the judge.
       );
 
       // Add tasks to game
       await gameRepository.addTasksToGame(gameId, _selectedTasks);
 
       if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Game created with ${_selectedTasks.length} tasks!'),
-            backgroundColor: Colors.green,
+        // Land the creator straight in their new game's lobby (replacing this
+        // screen so "back" returns home) and immediately offer the invite
+        // dialog — the moment of peak invite intent.
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => GameDetailScreen(
+              gameId: gameId,
+              promptShareOnLoad: true,
+            ),
           ),
         );
       }
     } catch (e) {
+      debugPrint('Create game failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to create game: $e'),
+            content: Text(FriendlyErrors.action(
+              e,
+              fallback: 'Could not create the game. Please try again.',
+            )),
             backgroundColor: Colors.red,
           ),
         );
@@ -222,25 +215,6 @@ class _CreateGameScreenState extends State<CreateGameScreen> {
                 textInputAction: TextInputAction.next,
                 maxLength: 50,
                 onChanged: (value) => setState(() {}), // Rebuild to show check icon
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Who will be the judge?',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              RadioListTile<String>(
-                title: const Text('I will be the judge'),
-                subtitle: const Text('You will review and score all submissions'),
-                value: 'creator',
-                groupValue: _selectedJudge,
-                onChanged: _isLoading ? null : (value) {
-                  setState(() {
-                    _selectedJudge = value!;
-                  });
-                },
               ),
               const SizedBox(height: 24),
 

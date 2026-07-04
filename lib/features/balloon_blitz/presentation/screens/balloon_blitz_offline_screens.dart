@@ -118,7 +118,7 @@ class _OfflineBlitzHostScreenState extends State<OfflineBlitzHostScreen> {
         await repo.dispose();
         _fail(
             'Could not start advertising. Make sure Bluetooth and Wi-Fi are on, '
-            'then try again. (See the connection debug panel below.)');
+            'then try again. (Tap "Connection help" below for details.)');
         return;
       }
       setState(() {
@@ -128,7 +128,8 @@ class _OfflineBlitzHostScreenState extends State<OfflineBlitzHostScreen> {
       });
     } catch (e) {
       NearbyDiagnostics.instance.log('host start ERROR: $e');
-      _fail('Unexpected error starting the host: $e');
+      _fail('Something went wrong starting the race. '
+          'Tap "Connection help" below for details, then try again.');
     }
   }
 
@@ -238,7 +239,7 @@ class _OfflineBlitzJoinScreenState extends State<OfflineBlitzJoinScreen> {
       if (!ok) {
         await repo.dispose();
         _fail('Could not start scanning. Make sure Bluetooth and Wi-Fi are on. '
-            '(See the connection debug panel below.)');
+            '(Tap "Connection help" below for details.)');
         return;
       }
       setState(() {
@@ -247,7 +248,8 @@ class _OfflineBlitzJoinScreenState extends State<OfflineBlitzJoinScreen> {
       });
     } catch (e) {
       NearbyDiagnostics.instance.log('join start ERROR: $e');
-      _fail('Unexpected error: $e');
+      _fail('Something went wrong while searching. '
+          'Tap "Connection help" below for details, then try again.');
     }
   }
 
