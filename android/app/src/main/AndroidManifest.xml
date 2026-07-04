@@ -58,6 +58,16 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Friend-invite deep link: taskcaster://join?code=XXXXXX. The
+                 app_links plugin picks the intent up and hands the URI to
+                 PendingInviteService. (No https App Links filter yet — that
+                 needs assetlinks.json on the hosting domain first.) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="taskcaster" android:host="join"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

@@ -1,6 +1,8 @@
 /// Main entry point for TaskCaster
 /// Run with: flutter run -d chrome
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9,10 +11,12 @@ import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'core/di/service_locator.dart';
+import 'core/services/invite/pending_invite_service.dart';
 import 'core/services/notification_service.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
+import 'features/games/presentation/widgets/pending_invite_gate.dart';
 import 'features/home/presentation/screens/home_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 
@@ -34,6 +38,11 @@ void main() async {
   }
 
   await ServiceLocator.init(useMockServices: useMock);
+
+  // Start capturing friend-invite deep links / install referrer immediately
+  // (fire-and-forget: never blocks or crashes startup — the service swallows
+  // platform errors internally).
+  unawaited(sl<PendingInviteService>().init());
 
   // Load the persisted theme preference before first frame.
   await ThemeController.instance.load();
@@ -91,7 +100,10 @@ class AuthScreen extends StatelessWidget {
         }
 
         if (state is AuthAuthenticated) {
-          return const HomeScreen();
+          // PendingInviteGate pops the "join your friend's game?" dialog when
+          // an invite code arrived via deep link or install referrer. Mounted
+          // only when authenticated so joinGame always has a real user.
+          return const PendingInviteGate(child: HomeScreen());
         }
 
         // Default to login screen

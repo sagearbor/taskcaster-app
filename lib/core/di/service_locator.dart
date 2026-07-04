@@ -30,6 +30,7 @@ import '../../features/trivia/domain/repositories/trivia_repository.dart';
 import '../../features/trivia/data/datasources/trivia_remote_data_source.dart';
 import '../../features/trivia/data/datasources/mock_trivia_data_source.dart';
 
+import '../services/invite/pending_invite_service.dart';
 import '../services/ad_service_simple.dart';
 import '../services/purchase_service_simple.dart';
 import '../services/ai_task_service.dart';
@@ -125,6 +126,14 @@ class ServiceLocator {
     } else {
       sl.registerLazySingleton<GameSfx>(() => AudioGameSfx());
     }
+
+    // Friend-invite loop: captures invite codes arriving via deep link or
+    // Play Install Referrer. Same implementation for mock and real services —
+    // it is a platform concern, not a data-source one. init() is fired from
+    // main() so cold-start links are caught before the home screen mounts.
+    sl.registerLazySingleton<PendingInviteService>(
+      () => PendingInviteService(),
+    );
 
     // Additional Services
     if (useMockServices) {
