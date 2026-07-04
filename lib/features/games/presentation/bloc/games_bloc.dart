@@ -1,8 +1,10 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import '../../../../core/models/game.dart';
+import '../../../../core/utils/friendly_errors.dart';
 import '../../../../core/models/player.dart';
 import '../../../../core/models/game_settings.dart';
 import '../../../../core/models/task.dart';
@@ -39,7 +41,17 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     await emit.forEach<List<Game>>(
       gameRepository.getGamesStream(),
       onData: (games) => GamesLoaded(games: games),
-      onError: (error, _) => GamesError(message: error.toString()),
+      onError: (error, _) =>
+          _gamesError('load games', error, 'Could not load your games.'),
+    );
+  }
+
+  /// Log the raw error for diagnostics, then emit copy a player can act on —
+  /// never the exception string itself.
+  GamesError _gamesError(String operation, Object e, String fallback) {
+    debugPrint('GamesBloc $operation failed: $e');
+    return GamesError(
+      message: FriendlyErrors.action(e, fallback: '$fallback Please try again.'),
     );
   }
 
@@ -53,7 +65,7 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       );
       add(LoadGames());
     } catch (e) {
-      emit(GamesError(message: e.toString()));
+      emit(_gamesError('create game', e, 'Could not create the game.'));
     }
   }
 
@@ -66,7 +78,8 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       );
       add(LoadGames());
     } catch (e) {
-      emit(GamesError(message: e.toString()));
+      emit(_gamesError(
+          'join game', e, 'Could not join the game. Double-check the code.'));
     }
   }
 
@@ -75,7 +88,7 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       await gameRepository.deleteGame(event.gameId);
       add(LoadGames());
     } catch (e) {
-      emit(GamesError(message: e.toString()));
+      emit(_gamesError('delete game', e, 'Could not delete the game.'));
     }
   }
 
@@ -154,7 +167,7 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
 
       emit(QuickPlaySuccess(gameId: gameId));
     } catch (e) {
-      emit(GamesError(message: e.toString()));
+      emit(_gamesError('quick play', e, 'Could not start a quick game.'));
     }
   }
 

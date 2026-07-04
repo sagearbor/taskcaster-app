@@ -98,7 +98,8 @@ void main() {
         act: (bloc) => bloc.add(LoadGames()),
         expect: () => [
           GamesLoading(),
-          const GamesError(message: 'Exception: Failed to load games'),
+          const GamesError(
+              message: 'Could not load your games. Please try again.'),
         ],
       );
 
@@ -152,7 +153,8 @@ void main() {
         )),
         expect: () => [
           GamesLoading(),
-          const GamesError(message: 'Exception: Failed to create game'),
+          const GamesError(
+              message: 'Could not create the game. Please try again.'),
         ],
       );
     });
@@ -191,7 +193,9 @@ void main() {
           displayName: 'Charlie',
         )),
         expect: () => [
-          const GamesError(message: 'Exception: Game not found'),
+          const GamesError(
+              message:
+                  'Could not join the game. Double-check the code. Please try again.'),
         ],
       );
     });
@@ -222,7 +226,8 @@ void main() {
         },
         act: (bloc) => bloc.add(const DeleteGame(gameId: 'game1')),
         expect: () => [
-          const GamesError(message: 'Exception: Failed to delete game'),
+          const GamesError(
+              message: 'Could not delete the game. Please try again.'),
         ],
       );
     });
@@ -318,7 +323,8 @@ void main() {
         act: (bloc) => bloc.add(const QuickPlayGame()),
         expect: () => [
           GamesLoading(),
-          const GamesError(message: 'Exception: Not authenticated'),
+          const GamesError(
+              message: 'Could not start a quick game. Please try again.'),
         ],
       );
 
@@ -334,7 +340,8 @@ void main() {
         act: (bloc) => bloc.add(const QuickPlayGame()),
         expect: () => [
           GamesLoading(),
-          const GamesError(message: 'Exception: Firebase error'),
+          const GamesError(
+              message: 'Could not start a quick game. Please try again.'),
         ],
       );
 
@@ -352,7 +359,8 @@ void main() {
         act: (bloc) => bloc.add(const QuickPlayGame()),
         expect: () => [
           GamesLoading(),
-          const GamesError(message: 'Exception: Update failed'),
+          const GamesError(
+              message: 'Could not start a quick game. Please try again.'),
         ],
       );
     });

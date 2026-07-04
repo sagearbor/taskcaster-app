@@ -89,8 +89,10 @@ class DiscoverGamesScreen extends StatelessWidget {
         authState.user.displayName,
       );
     } catch (e) {
+      debugPrint('Seed starter games failed: $e');
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not add starter games: $e')),
+        const SnackBar(
+            content: Text('Could not add the starter games. Please try again.')),
       );
     }
   }
@@ -123,8 +125,10 @@ class _PublicGameCard extends StatelessWidget {
         MaterialPageRoute(builder: (_) => GameDetailScreen(gameId: newId)),
       );
     } catch (e) {
+      debugPrint('Clone public game failed: $e');
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not clone game: $e')),
+        const SnackBar(
+            content: Text('Could not set up the game. Please try again.')),
       );
     }
   }

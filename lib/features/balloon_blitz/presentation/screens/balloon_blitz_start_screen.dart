@@ -127,7 +127,7 @@ class _BalloonBlitzStartScreenState extends State<BalloonBlitzStartScreen> {
                 const Expanded(child: Divider()),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('or', style: theme.textTheme.bodySmall),
+                  child: Text('Or', style: theme.textTheme.bodySmall),
                 ),
                 const Expanded(child: Divider()),
               ]),

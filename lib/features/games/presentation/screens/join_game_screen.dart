@@ -133,9 +133,10 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
     }
   }
 
-  /// Compact "invited" recency label from the game's creation time. We don't
-  /// store a per-invite timestamp, so createdAt is our best proxy.
-  String _invitedAgo(DateTime when) {
+  /// Compact recency label from the game's creation time. We don't store a
+  /// per-invite timestamp, so the honest thing to show is when the game was
+  /// created — never claim it's when the invite was sent.
+  String _createdAgo(DateTime when) {
     final diff = DateTime.now().difference(when);
     if (diff.inMinutes < 1) return 'just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
@@ -196,10 +197,9 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Text(
-                      'OR ENTER A CODE',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      'Or enter a code',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: AppTheme.inkSoft,
-                            letterSpacing: 1,
                           ),
                     ),
                   ),
@@ -375,7 +375,7 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${creator != null ? 'From $creator · ' : ''}invited ${_invitedAgo(game.createdAt)}',
+                    '${creator != null ? 'From $creator · ' : ''}created ${_createdAgo(game.createdAt)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),

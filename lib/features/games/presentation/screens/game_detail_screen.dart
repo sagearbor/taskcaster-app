@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/game.dart';
 import '../../../../core/services/invite/invite_link_parser.dart';
+import '../../../../core/utils/friendly_errors.dart';
 import '../../../../core/utils/link_utils.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/models/player_task_status.dart';
@@ -25,9 +26,15 @@ import 'judging_screen.dart';
 class GameDetailScreen extends StatelessWidget {
   final String gameId;
 
+  /// When true, the invite/share dialog opens automatically the first time the
+  /// game loads — used right after creating a game, when inviting friends is
+  /// the very next thing the creator wants to do.
+  final bool promptShareOnLoad;
+
   const GameDetailScreen({
     super.key,
     required this.gameId,
+    this.promptShareOnLoad = false,
   });
 
   @override
@@ -36,13 +43,23 @@ class GameDetailScreen extends StatelessWidget {
       create: (context) => GameDetailBloc(
         gameRepository: sl<GameRepository>(),
       )..add(LoadGameDetail(gameId: gameId)),
-      child: const GameDetailView(),
+      child: GameDetailView(promptShareOnLoad: promptShareOnLoad),
     );
   }
 }
 
-class GameDetailView extends StatelessWidget {
-  const GameDetailView({super.key});
+class GameDetailView extends StatefulWidget {
+  final bool promptShareOnLoad;
+
+  const GameDetailView({super.key, this.promptShareOnLoad = false});
+
+  @override
+  State<GameDetailView> createState() => _GameDetailViewState();
+}
+
+class _GameDetailViewState extends State<GameDetailView> {
+  /// Ensures the auto-opened share dialog appears only once per visit.
+  bool _sharePrompted = false;
 
   @override
   Widget build(BuildContext context) {
@@ -138,6 +155,15 @@ class GameDetailView extends StatelessWidget {
                 backgroundColor: Colors.red,
               ),
             );
+          }
+          if (state is GameDetailLoaded &&
+              widget.promptShareOnLoad &&
+              !_sharePrompted) {
+            _sharePrompted = true;
+            // Open after this frame so the lobby is visible behind the dialog.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _showShareDialog(context, state.game);
+            });
           }
         },
         builder: (context, state) {
@@ -288,8 +314,14 @@ class GameDetailView extends StatelessWidget {
       );
       navigator.pop(); // back to home
     } catch (e) {
+      debugPrint('Leave game failed: $e');
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not leave game: $e')),
+        SnackBar(
+          content: Text(FriendlyErrors.action(
+            e,
+            fallback: 'Could not leave the game. Please try again.',
+          )),
+        ),
       );
     }
   }
@@ -327,8 +359,14 @@ class GameDetailView extends StatelessWidget {
       );
       navigator.pop(); // back to home
     } catch (e) {
+      debugPrint('Delete game failed: $e');
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not delete game: $e')),
+        SnackBar(
+          content: Text(FriendlyErrors.action(
+            e,
+            fallback: 'Could not delete the game. Please try again.',
+          )),
+        ),
       );
     }
   }

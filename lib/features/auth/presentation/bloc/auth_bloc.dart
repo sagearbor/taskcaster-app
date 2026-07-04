@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import '../../../../core/models/user.dart';
+import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/repositories/auth_repository.dart';
 
 part 'auth_event.dart';
@@ -47,8 +49,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       emit(AuthAuthenticated(user: user));
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('sign-in', e));
     }
+  }
+
+  /// Log the raw error for diagnostics, then emit copy a player can act on —
+  /// never the exception string itself.
+  AuthError _authError(String operation, Object e) {
+    debugPrint('AuthBloc $operation failed: $e');
+    return AuthError(message: FriendlyErrors.auth(e));
   }
 
   Future<void> _onSignUpRequested(SignUpRequested event, Emitter<AuthState> emit) async {
@@ -61,7 +70,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       emit(AuthAuthenticated(user: user));
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('sign-up', e));
     }
   }
 
@@ -71,7 +80,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       await authRepository.signOut();
       emit(AuthUnauthenticated());
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('sign-out', e));
     }
   }
 
@@ -81,7 +90,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final user = await authRepository.signInAnonymously();
       emit(AuthAuthenticated(user: user));
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('guest sign-in', e));
     }
   }
 
@@ -92,7 +101,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final user = await authRepository.signInWithGoogle();
       emit(AuthAuthenticated(user: user));
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('Google sign-in', e));
     }
   }
 
@@ -103,7 +112,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final user = await authRepository.signInWithApple();
       emit(AuthAuthenticated(user: user));
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('Apple sign-in', e));
     }
   }
 
@@ -119,9 +128,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthProfileUpdated(user: user));
     } catch (e) {
       // Stay authenticated; surface the failure without flipping to login.
+      debugPrint('AuthBloc profile update failed: $e');
       emit(AuthProfileUpdateFailure(
         user: current.user,
-        message: e.toString(),
+        message: FriendlyErrors.action(
+          e,
+          fallback: 'Could not update your profile. Please try again.',
+        ),
       ));
     }
   }
@@ -137,7 +150,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       emit(AuthAuthenticated(user: user));
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('guest upgrade', e));
     }
   }
 
@@ -148,7 +161,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       await authRepository.sendPasswordReset(event.email);
       emit(AuthPasswordResetSent(email: event.email));
     } catch (e) {
-      emit(AuthError(message: e.toString()));
+      emit(_authError('password reset', e));
     } finally {
       // Restore the prior screen state (authenticated or unauthenticated)
       // after the one-shot notification so navigation is unaffected.
