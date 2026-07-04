@@ -6,6 +6,7 @@ Pure-stdlib synthesis so the assets are reproducible without extra deps.
 - pop.wav    — balloon pop: noise crack + fast downward thump (~150ms)
 - boom.wav   — bomb explosion: crack + sub-sine + rumbling brown noise (~850ms)
 - tick.wav   — countdown tick (last 3 seconds)
+- go.wav     — round-start "GO!" (two quick rising notes)
 - fanfare.wav— round-over jingle (rising major arpeggio + sparkle)
 - whoosh.wav — balloon escaping upward (soft rising airy sweep)
 
@@ -94,6 +95,22 @@ def tick():
     write_wav("tick.wav", out, peak=0.6)
 
 
+def go():
+    # A5 then E6 — short, bright, energetic
+    notes = [(880.0, 0.0, 0.10), (1318.5, 0.10, 0.22)]
+    dur = 0.35
+    n = int(SR * dur)
+    out = [0.0] * n
+    for freq, start, length in notes:
+        s0 = int(start * SR)
+        for i in range(s0, min(n, s0 + int(length * SR) + int(0.1 * SR))):
+            t = (i - s0) / SR
+            v = (math.sin(2 * math.pi * freq * t)
+                 + 0.3 * math.sin(2 * math.pi * freq * 2 * t))
+            out[i] += v * env_exp(t, length) * 0.5
+    write_wav("go.wav", out, peak=0.75)
+
+
 def fanfare():
     # C major up: C5 E5 G5 C6, overlapping soft square-ish tones + sparkle
     notes = [(523.25, 0.00), (659.25, 0.11), (783.99, 0.22), (1046.5, 0.33)]
@@ -134,5 +151,6 @@ def whoosh():
 pop()
 boom()
 tick()
+go()
 fanfare()
 whoosh()

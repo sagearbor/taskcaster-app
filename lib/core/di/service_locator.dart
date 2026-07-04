@@ -37,6 +37,7 @@ import '../services/notification_service.dart';
 import '../services/ar/ar_capability_service.dart';
 import '../services/ar/ar_engine.dart';
 import '../services/ar/ar_flutter_engine.dart';
+import '../services/sfx/game_sfx.dart';
 
 final GetIt sl = GetIt.instance;
 
@@ -117,6 +118,13 @@ class ServiceLocator {
     // every caller), so the plugin is never instantiated on web/desktop.
     sl.registerFactory<ArEngine>(() => ArFlutterEngine());
 
+    // One-shot game sound effects. Mock builds (widget tests, web previews)
+    // stay silent; real builds play the bundled WAVs with low-latency players.
+    if (useMockServices) {
+      sl.registerLazySingleton<GameSfx>(() => const SilentGameSfx());
+    } else {
+      sl.registerLazySingleton<GameSfx>(() => AudioGameSfx());
+    }
 
     // Additional Services
     if (useMockServices) {

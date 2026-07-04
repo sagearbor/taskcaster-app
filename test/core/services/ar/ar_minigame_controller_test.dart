@@ -96,6 +96,7 @@ void main() {
     async.flushMicrotasks(); // initSession
     async.elapse(const Duration(seconds: 2)); // fallback → spawn
     async.flushMicrotasks(); // sequential spawn loop
+    async.elapse(const Duration(milliseconds: 2800)); // 3-2-1-GO pre-roll
     return ctrl;
   }
 
@@ -208,6 +209,117 @@ void main() {
       async.elapse(const Duration(seconds: 6)); // exceed the 5s round
       expect(c.finished, isTrue);
       expect(c.finalScore, scoreAtPop);
+      c.dispose();
+    });
+  });
+
+  test('taps before GO are ignored — the round starts fair', () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = ArMinigameController(engine: eng, config: _cfg(bombChance: 0));
+      c.start();
+      async.flushMicrotasks();
+      async.elapse(const Duration(seconds: 2)); // fallback → spawn
+      async.flushMicrotasks();
+
+      expect(c.inPreRoll, isTrue, reason: '3-2-1 is showing');
+      eng.emitTap(eng.liveIds.first);
+      async.flushMicrotasks();
+      expect(c.hits, 0, reason: 'pre-GO tap must not score');
+
+      async.elapse(const Duration(milliseconds: 2800)); // pre-roll ends
+      expect(c.inPreRoll, isFalse);
+      eng.emitTap(eng.liveIds.first);
+      async.flushMicrotasks();
+      expect(c.hits, 1);
+      c.dispose();
+    });
+  });
+
+  test('emits surfaceFound/go/pop/bomb/timeUp events for the feel layer', () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = ArMinigameController(
+        engine: eng,
+        config: _cfg(count: 2, durationS: 5, bombChance: 0),
+      );
+      final events = <ArGameEvent>[];
+      c.events.listen(events.add);
+      c.start();
+      async.flushMicrotasks();
+      async.elapse(const Duration(seconds: 2));
+      async.flushMicrotasks();
+      async.elapse(const Duration(milliseconds: 2800));
+
+      eng.emitTap(eng.liveIds.first);
+      async.flushMicrotasks();
+      async.elapse(const Duration(seconds: 6)); // run out the clock
+      async.flushMicrotasks();
+
+      final types = events.map((e) => e.type).toList();
+      expect(types, contains(ArGameEventType.surfaceFound));
+      expect(types, contains(ArGameEventType.go));
+      expect(types, contains(ArGameEventType.pop));
+      expect(types, contains(ArGameEventType.timeUp));
+      final popEvent =
+          events.firstWhere((e) => e.type == ArGameEventType.pop);
+      expect(popEvent.value, greaterThanOrEqualTo(1));
+      expect(popEvent.modelRef, 'balloon.glb');
+      c.dispose();
+    });
+  });
+
+  test('bomb tap emits a bomb event carrying the penalty', () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = ArMinigameController(
+        engine: eng,
+        config: _cfg(count: 1, bombChance: 1.0),
+      );
+      final events = <ArGameEvent>[];
+      c.events.listen(events.add);
+      c.start();
+      async.flushMicrotasks();
+      async.elapse(const Duration(seconds: 2));
+      async.flushMicrotasks();
+      async.elapse(const Duration(milliseconds: 2800));
+
+      eng.emitTap(eng.liveIds.first);
+      async.flushMicrotasks();
+
+      final bombEvent =
+          events.firstWhere((e) => e.type == ArGameEventType.bomb);
+      expect(bombEvent.value, 3);
+      expect(bombEvent.modelRef, 'bomb.glb');
+      c.dispose();
+    });
+  });
+
+  test('pause freezes the clock and taps; resume re-runs 3-2-1 then unfreezes',
+      () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = boot(async, eng, _cfg(count: 1, durationS: 30, bombChance: 0));
+      async.elapse(const Duration(seconds: 5));
+      final frozenAt = c.secondsRemaining;
+
+      c.pause();
+      async.elapse(const Duration(seconds: 10));
+      expect(c.secondsRemaining, frozenAt, reason: 'clock frozen while paused');
+      eng.emitTap(eng.liveIds.first);
+      async.flushMicrotasks();
+      expect(c.hits, 0, reason: 'taps ignored while paused');
+
+      c.resume();
+      expect(c.inPreRoll, isTrue, reason: 'resume replays the 3-2-1');
+      async.elapse(const Duration(milliseconds: 2800));
+      expect(c.inPreRoll, isFalse);
+      async.elapse(const Duration(seconds: 2));
+      expect(c.secondsRemaining, lessThan(frozenAt),
+          reason: 'clock ticking again after resume');
+      eng.emitTap(eng.liveIds.first);
+      async.flushMicrotasks();
+      expect(c.hits, 1);
       c.dispose();
     });
   });

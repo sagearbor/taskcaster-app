@@ -13,6 +13,7 @@ class _LiveObject {
   final ArVector3 base; // spawn position; rise/wiggle are offsets from this
   final bool isBomb;
   final int value; // points awarded when popped (0 for bombs)
+  final String modelRef; // which model was placed (lets the UI color the FX)
   final double phase; // per-object wiggle phase so they don't move in lockstep
   double age = 0; // seconds since it appeared (drives rise + escape)
 
@@ -21,8 +22,43 @@ class _LiveObject {
     required this.base,
     required this.isBomb,
     required this.value,
+    required this.modelRef,
     required this.phase,
   });
+}
+
+/// Discrete game moments the view layer reacts to with sound/haptics/FX.
+/// The controller stays pure (no Flutter services); the view decides how each
+/// event looks, sounds and feels.
+enum ArGameEventType {
+  /// First object is actually on screen — tracking locked, pre-roll begins.
+  surfaceFound,
+
+  /// The 3-2-1 pre-roll finished; the round clock just started.
+  go,
+
+  /// A target was popped ([ArGameEvent.value] = points awarded).
+  pop,
+
+  /// A bomb was tapped ([ArGameEvent.value] = penalty subtracted).
+  bomb,
+
+  /// A target aged out and floated away unpopped.
+  escape,
+
+  /// The round just ended.
+  timeUp,
+}
+
+class ArGameEvent {
+  final ArGameEventType type;
+  final int value;
+
+  /// The model of the object involved (pop/bomb/escape), e.g.
+  /// 'assets/ar/balloon_red.glb' — lets the view match FX color to the balloon.
+  final String? modelRef;
+
+  const ArGameEvent(this.type, {this.value = 0, this.modelRef});
 }
 
 /// The ONE shared tap-game framework that drives Balloon Pop and Treasure Hunt.
@@ -57,6 +93,17 @@ class ArMinigameController extends ChangeNotifier {
   bool started = false;
   bool finished = false;
   bool objectsSpawned = false;
+
+  /// 3-2-1 pre-roll digit currently showing (0 = pre-roll over / not started).
+  /// The round clock — and tap handling — only go live once this reaches 0
+  /// AFTER a pre-roll ran, so every player gets a clean "GO!" moment instead of
+  /// the clock silently starting mid-scan.
+  int goCountdown = 0;
+  bool get inPreRoll => goCountdown > 0;
+
+  /// True while the app is backgrounded (view calls [pause]/[resume]); the
+  /// clock and animation freeze so a notification pull doesn't burn the round.
+  bool paused = false;
   int hits = 0; // targets popped (NOT bombs) — drives the "X popped" readout
   int bombsHit = 0;
   int secondsRemaining;
@@ -83,6 +130,11 @@ class ArMinigameController extends ChangeNotifier {
   /// model-load failure instead of silently running a timer over an empty scene.
   bool get hasLiveObjects => _objects.isNotEmpty;
 
+  /// Discrete moments (pop/bomb/go/escape/…) for the view's sound + FX layer.
+  Stream<ArGameEvent> get events => _events.stream;
+  final StreamController<ArGameEvent> _events =
+      StreamController<ArGameEvent>.broadcast();
+
   // ---- Internals ----------------------------------------------------------
   final List<_LiveObject> _objects = [];
   StreamSubscription<ArTap>? _tapSub;
@@ -91,8 +143,14 @@ class ArMinigameController extends ChangeNotifier {
   Timer? _animTimer;
   Timer? _fallbackTimer;
   Timer? _flashTimer;
+  Timer? _preRollTimer;
+  bool _preRollStarted = false;
+  bool _roundLive = false; // clocks have started (pre-roll finished)
   double _animClock = 0;
   bool _disposed = false;
+
+  /// Cadence of the 3-2-1 pre-roll digits.
+  static const Duration _preRollTick = Duration(milliseconds: 900);
 
   static const double _riseSpeed = 0.16; // metres/second a balloon floats up
   static const double _animDt = 0.06; // animation tick (~16 fps)
@@ -139,7 +197,35 @@ class ArMinigameController extends ChangeNotifier {
     _safeNotify();
   }
 
+  /// Run the 3-2-1-GO pre-roll, then start the clocks. Called once, when the
+  /// first object is actually on screen. Also reused by [resume] so coming
+  /// back from a pause gives the player a beat to re-orient.
+  void _beginPreRoll() {
+    if (_preRollStarted) return;
+    _preRollStarted = true;
+    _emit(const ArGameEvent(ArGameEventType.surfaceFound));
+    _runPreRoll();
+  }
+
+  void _runPreRoll() {
+    goCountdown = 3;
+    _safeNotify();
+    _preRollTimer?.cancel();
+    _preRollTimer = Timer.periodic(_preRollTick, (t) {
+      if (paused) return; // frozen — digits hold until resume re-runs us
+      goCountdown--;
+      if (goCountdown <= 0) {
+        goCountdown = 0;
+        t.cancel();
+        _startClocks();
+        _emit(const ArGameEvent(ArGameEventType.go));
+      }
+      _safeNotify();
+    });
+  }
+
   void _startClocks() {
+    _roundLive = true;
     if (_countdown != null) return; // already running
     _countdown = Timer.periodic(const Duration(seconds: 1), _onTick);
     if (_animated) {
@@ -151,12 +237,37 @@ class ArMinigameController extends ChangeNotifier {
     _safeNotify();
   }
 
+  /// Freeze the round (app backgrounded / pause sheet open). Idempotent.
+  void pause() {
+    if (paused || finished || _disposed) return;
+    paused = true;
+    _countdown?.cancel();
+    _countdown = null;
+    _animTimer?.cancel();
+    _animTimer = null;
+    _preRollTimer?.cancel();
+    _safeNotify();
+  }
+
+  /// Unfreeze after [pause]. If the round was already live, re-runs the 3-2-1
+  /// pre-roll so play never resumes mid-blink.
+  void resume() {
+    if (!paused || _disposed) return;
+    paused = false;
+    if (finished) return;
+    if (_roundLive || _preRollStarted) {
+      _runPreRoll();
+    }
+    _safeNotify();
+  }
+
   Future<void> _spawnInitial() async {
     for (var i = 0; i < config.objectCount; i++) {
       if (_disposed || finished) return;
       await _spawnOne();
-      // Start the clock as soon as the first object is actually on screen.
-      if (hasLiveObjects) _startClocks();
+      // Kick off the pre-roll as soon as the first object is on screen; the
+      // remaining objects keep placing behind the 3-2-1.
+      if (hasLiveObjects) _beginPreRoll();
     }
   }
 
@@ -181,6 +292,7 @@ class ArMinigameController extends ChangeNotifier {
         base: pos,
         isBomb: isBomb,
         value: value,
+        modelRef: model,
         phase: _random.nextDouble() * 2 * pi,
       ));
       _safeNotify();
@@ -192,6 +304,8 @@ class ArMinigameController extends ChangeNotifier {
 
   void _onTap(ArTap tap) {
     if (finished || _disposed) return;
+    // No scoring before "GO!" or while frozen — a race must start fair.
+    if (!_roundLive || paused) return;
     final idx = _objects.indexWhere((o) => o.node.id == tap.nodeId);
     if (idx == -1) return; // a plane tap or a stale node — ignore.
 
@@ -202,9 +316,19 @@ class ArMinigameController extends ChangeNotifier {
       bombsHit++;
       _points = max(0, _points - config.bombPenalty);
       _flashBomb();
+      _emit(ArGameEvent(
+        ArGameEventType.bomb,
+        value: config.bombPenalty,
+        modelRef: obj.modelRef,
+      ));
     } else {
       hits++;
       if (config.scoreByDistance) _points += obj.value;
+      _emit(ArGameEvent(
+        ArGameEventType.pop,
+        value: config.scoreByDistance ? obj.value : config.pointsPerHit,
+        modelRef: obj.modelRef,
+      ));
     }
     _safeNotify();
 
@@ -268,6 +392,9 @@ class ArMinigameController extends ChangeNotifier {
   void _escape(_LiveObject obj) {
     if (!_objects.remove(obj)) return;
     engine.remove(obj.node);
+    if (!obj.isBomb) {
+      _emit(ArGameEvent(ArGameEventType.escape, modelRef: obj.modelRef));
+    }
     _safeNotify();
     if (config.respawnOnHit && !finished && !_disposed) {
       _spawnOne();
@@ -282,10 +409,12 @@ class ArMinigameController extends ChangeNotifier {
     _animTimer?.cancel();
     _fallbackTimer?.cancel();
     _flashTimer?.cancel();
+    _preRollTimer?.cancel();
     _planeSub?.cancel();
     finalScore = config.scoreByDistance
         ? _points
         : config.computeScore(hits: hits, secondsRemaining: _clampedSeconds);
+    _emit(const ArGameEvent(ArGameEventType.timeUp));
     _safeNotify();
   }
 
@@ -314,6 +443,10 @@ class ArMinigameController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  void _emit(ArGameEvent event) {
+    if (!_disposed && !_events.isClosed) _events.add(event);
+  }
+
   @override
   void dispose() {
     _disposed = true;
@@ -321,8 +454,10 @@ class ArMinigameController extends ChangeNotifier {
     _animTimer?.cancel();
     _fallbackTimer?.cancel();
     _flashTimer?.cancel();
+    _preRollTimer?.cancel();
     _tapSub?.cancel();
     _planeSub?.cancel();
+    _events.close();
     engine.dispose();
     super.dispose();
   }
