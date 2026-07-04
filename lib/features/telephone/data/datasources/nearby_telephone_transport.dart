@@ -207,9 +207,24 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
   // ---- Sending -------------------------------------------------------------
 
   /// Send a JSON [message] to a single endpoint, chunked + framed.
+  ///
+  /// Hardened after a real 2-phone failure: sending to an empty/stale endpoint
+  /// used to hang the caller's Future forever with zero feedback ("the Submit
+  /// button did nothing"). Now: an empty id throws immediately, every chunk
+  /// send is time-boxed, and failures are logged before rethrowing so the UI
+  /// layer can show a real error instead of freezing.
   Future<void> sendToEndpoint(
       String endpointId, Map<String, dynamic> message) async {
     if (!_supported) return;
+    if (endpointId.isEmpty) {
+      _log('send REFUSED: no connected endpoint (kind=${message['k']})');
+      throw StateError('Not connected — no endpoint to send to.');
+    }
+    if (!_connectedEndpoints.contains(endpointId)) {
+      // Still attempt (bookkeeping can lag the plugin), but leave a trace.
+      _log('send WARNING: endpoint $endpointId not in connected set '
+          '(kind=${message['k']}) — attempting anyway');
+    }
     final body = Uint8List.fromList(utf8.encode(jsonEncode(message)));
     final msgId = (_msgCounter++ & 0xFFFFFFFF);
     final total =
@@ -221,14 +236,30 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
           : start + _chunkSize;
       final chunk = Uint8List.sublistView(body, start, end);
       final framed = _frame(msgId, i, total, chunk);
-      await Nearby().sendBytesPayload(endpointId, framed);
+      try {
+        await Nearby()
+            .sendBytesPayload(endpointId, framed)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        _log('send FAILED to $endpointId (kind=${message['k']}, '
+            'chunk ${i + 1}/$total): $e');
+        rethrow;
+      }
     }
   }
 
+  /// Whether at least one endpoint is currently connected.
+  bool get hasConnection => _connectedEndpoints.isNotEmpty;
+
   /// Send a JSON [message] to every connected endpoint (host → all peers).
+  /// One dead peer must never block the rest of the room.
   Future<void> broadcast(Map<String, dynamic> message) async {
     for (final id in _connectedEndpoints.toList()) {
-      await sendToEndpoint(id, message);
+      try {
+        await sendToEndpoint(id, message);
+      } catch (e) {
+        _log('broadcast: skipping $id after send failure: $e');
+      }
     }
   }
 
@@ -254,14 +285,17 @@ class NearbyTelephoneTransport implements NearbyDiscovery {
     // Auto-accept: this is a private family game with no untrusted peers, and
     // both sides must accept for the channel to open.
     _log('handshake initiated with "${info.endpointName}" (id=$endpointId) — accepting');
-    try {
-      Nearby().acceptConnection(
-        endpointId,
-        onPayLoadRecieved: _onPayloadReceived,
-      );
-    } catch (e) {
+    // Await so the payload callback is registered before chunks can arrive,
+    // and so failures surface in the log instead of vanishing.
+    Nearby()
+        .acceptConnection(
+          endpointId,
+          onPayLoadRecieved: _onPayloadReceived,
+        )
+        .then((ok) => _log('acceptConnection id=$endpointId → $ok'))
+        .catchError((Object e) {
       _log('acceptConnection ERROR (id=$endpointId): $e');
-    }
+    });
   }
 
   void _onConnectionResult(String endpointId, Status status) {
