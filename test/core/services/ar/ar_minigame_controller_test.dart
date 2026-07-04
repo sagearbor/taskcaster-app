@@ -295,6 +295,22 @@ void main() {
     });
   });
 
+  test('a bomb is guaranteed by the 4th spawn even when the dice never roll one',
+      () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      // Bomb chance is effectively zero, so only the guarantee can fire.
+      final c = boot(async, eng, _cfg(count: 5, bombChance: 1e-9));
+      expect(eng.spawnedModels.take(3).every((m) => m == 'balloon.glb'), isTrue,
+          reason: 'dice this cold never roll a natural bomb');
+      expect(eng.spawnedModels[3], 'bomb.glb',
+          reason: '4th spawn is the guaranteed bomb');
+      expect(eng.spawnedModels.where((m) => m == 'bomb.glb').length, 1,
+          reason: 'guarantee fires exactly once');
+      c.dispose();
+    });
+  });
+
   test('pause freezes the clock and taps; resume re-runs 3-2-1 then unfreezes',
       () {
     fakeAsync((async) {

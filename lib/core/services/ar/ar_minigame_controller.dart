@@ -145,6 +145,8 @@ class ArMinigameController extends ChangeNotifier {
   Timer? _flashTimer;
   Timer? _preRollTimer;
   bool _preRollStarted = false;
+  int _spawnSerial = 0; // how many spawns have been attempted this round
+  bool _bombSpawnedYet = false;
   bool _roundLive = false; // clocks have started (pre-roll finished)
   double _animClock = 0;
   bool _disposed = false;
@@ -273,9 +275,14 @@ class ArMinigameController extends ChangeNotifier {
 
   Future<void> _spawnOne() async {
     final pos = _randomPosition();
-    final isBomb = config.bombChance > 0 &&
-        config.bombModelRef != null &&
-        _random.nextDouble() < config.bombChance;
+    final bombsPossible = config.bombChance > 0 && config.bombModelRef != null;
+    _spawnSerial++;
+    // Random chance, but with a guarantee: if the dice haven't produced a bomb
+    // by the 4th spawn, force one — every round must teach "don't tap those".
+    final isBomb = bombsPossible &&
+        (_random.nextDouble() < config.bombChance ||
+            (!_bombSpawnedYet && _spawnSerial >= 4));
+    if (isBomb) _bombSpawnedYet = true;
     final targets = config.targetModels;
     final model = isBomb
         ? config.bombModelRef!
