@@ -15,6 +15,15 @@ class FriendlyErrors {
   static const String noConnection =
       'No connection — check your internet and try again.';
 
+  /// Offline (Nearby) play: the link to the host is gone entirely.
+  static const String nearbyHostLost =
+      'Lost the connection to the host — move the phones closer, '
+      'then tap Submit again.';
+
+  /// Offline (Nearby) play: we had a link but the message didn't get through.
+  static const String nearbyHostUnreachable =
+      "Couldn't reach the host — moved closer? Tap Submit to retry.";
+
   /// Human copy for a failed sign-in / sign-up / other auth operation.
   static String auth(Object error) {
     if (error is FirebaseAuthException) {

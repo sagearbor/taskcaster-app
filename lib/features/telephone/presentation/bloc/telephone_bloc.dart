@@ -75,14 +75,20 @@ class TelephoneBloc extends Bloc<TelephoneEvent, TelephoneState> {
     TelephoneEntrySubmitted event,
     Emitter<TelephoneState> emit,
   ) async {
+    // Clearing the error up front means the SAME failure twice in a row still
+    // re-triggers the screen's error listener (it fires on error *changes*).
+    emit(state.copyWith(submitting: true, clearError: true));
     try {
       await repository.submitEntry(
         sessionId: event.sessionId,
         uid: event.uid,
         content: event.content,
       );
+      emit(state.copyWith(submitting: false));
     } catch (e) {
-      emit(state.copyWith(error: _friendly(e)));
+      // Surface the failure AND re-enable the submit button, so an offline
+      // player whose send to the host failed can just move closer and retry.
+      emit(state.copyWith(submitting: false, error: _friendly(e)));
     }
   }
 
@@ -113,6 +119,11 @@ class TelephoneBloc extends Bloc<TelephoneEvent, TelephoneState> {
     }
   }
 
-  String _friendly(Object error) =>
-      error.toString().replaceFirst('Exception: ', '');
+  /// Repositories throw [StateError]s whose message is already player-ready
+  /// copy (e.g. the offline Nearby repo when the host link drops) — surface
+  /// those verbatim. Everything else keeps the legacy prefix-stripping.
+  String _friendly(Object error) {
+    if (error is StateError) return error.message;
+    return error.toString().replaceFirst('Exception: ', '');
+  }
 }

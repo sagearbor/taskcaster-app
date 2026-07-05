@@ -22,14 +22,21 @@ class TelephoneStartScreen extends StatefulWidget {
   State<TelephoneStartScreen> createState() => _TelephoneStartScreenState();
 }
 
+/// Which primary card is expanded. Only one opens at a time so the screen
+/// never regresses into the old nine-button decision wall.
+enum _Section { none, start, join }
+
 class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
   final _nameController = TextEditingController();
   final _codeController = TextEditingController();
   final _uuid = const Uuid();
   bool _busy = false;
 
-  /// The selected game mode for "Create a new game" / "Practice".
+  /// The selected game mode for "Start a game" (online or offline) and
+  /// "Practice".
   TelephoneGameMode _mode = TelephoneGameMode.classicTelephone;
+
+  _Section _openSection = _Section.none;
 
   /// A previously-saved active session, if any. Drives the "Rejoin your game"
   /// button so leaving the session screen is never fatal.
@@ -201,7 +208,7 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
       return;
     }
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => OfflineHostScreen(displayName: _name),
+      builder: (_) => OfflineHostScreen(displayName: _name, gameMode: _mode),
     ));
   }
 
@@ -248,9 +255,15 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  void _toggle(_Section section) {
+    setState(() =>
+        _openSection = _openSection == section ? _Section.none : section);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final nearbySupported = NearbyPermissions.isSupportedPlatform;
     return Scaffold(
       appBar: AppBar(title: const Text('Drawing Telephone')),
       body: AbsorbPointer(
@@ -271,37 +284,8 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                 style: theme.textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 28),
-              if (_saved != null) ...[
-                Card(
-                  color: theme.colorScheme.primaryContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          _saved!.isHost
-                              ? "You're hosting game ${_saved!.sessionCode}"
-                              : "You're in game ${_saved!.sessionCode}",
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: theme.colorScheme.onPrimaryContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: _busy ? null : _rejoin,
-                          icon: const Icon(Icons.login),
-                          label: const Text('Rejoin your game'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 28),
-              ],
+              const SizedBox(height: 20),
+              // Everyone needs a name whichever door they pick — keep it first.
               TextField(
                 controller: _nameController,
                 textCapitalization: TextCapitalization.words,
@@ -310,92 +294,121 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                   prefixIcon: Icon(Icons.person_outline),
                 ),
               ),
-              const SizedBox(height: 28),
-              _ModePicker(
-                mode: _mode,
-                onChanged: _busy
-                    ? null
-                    : (m) => setState(() => _mode = m),
-              ),
               const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: _busy ? null : _create,
-                icon: const Icon(Icons.add),
-                label: const Text('Create a new game'),
+
+              // ---- Primary door #1: start a game ---------------------------
+              _SectionCard(
+                icon: Icons.add_circle_outline,
+                title: 'Start a game',
+                subtitle: 'You host — friends join from their phones',
+                expanded: _openSection == _Section.start,
+                onTap: _busy ? null : () => _toggle(_Section.start),
+                children: [
+                  _ModePicker(
+                    mode: _mode,
+                    onChanged:
+                        _busy ? null : (m) => setState(() => _mode = m),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _create,
+                    icon: const Icon(Icons.wifi),
+                    label: const Text('Online game'),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('Share a 6-letter code — anyone on the internet joins.',
+                      style: theme.textTheme.bodySmall),
+                  if (nearbySupported) ...[
+                    const SizedBox(height: 12),
+                    FilledButton.tonalIcon(
+                      onPressed: _busy ? null : _hostOffline,
+                      icon: const Icon(Icons.wifi_tethering),
+                      label: const Text('Offline nearby'),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'No internet needed — Android phones connect directly '
+                      'over Bluetooth & Wi-Fi Direct.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _practice,
-                icon: const Icon(Icons.smart_toy_outlined),
-                label: const Text('Practice (solo) — play vs bots'),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Try the whole game alone, offline. No friends or invite code '
-                'needed — two bots play along to the reveal.',
-                style: theme.textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              Row(children: [
-                const Expanded(child: Divider()),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('Or join a game',
-                      style: theme.textTheme.bodySmall),
-                ),
-                const Expanded(child: Divider()),
-              ]),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _codeController,
-                maxLength: 6,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Invite code',
-                  hintText: '6-character code',
-                  prefixIcon: Icon(Icons.tag),
-                ),
-                style: const TextStyle(
-                    letterSpacing: 3, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _join,
-                icon: const Icon(Icons.group_add),
-                label: const Text('Join game'),
-              ),
-              if (NearbyPermissions.isSupportedPlatform) ...[
-                const SizedBox(height: 28),
-                Row(children: [
-                  const Expanded(child: Divider()),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('No Wi-Fi? Play offline',
-                        style: theme.textTheme.bodySmall),
+
+              // ---- Primary door #2: join a game -----------------------------
+              _SectionCard(
+                icon: Icons.group_add,
+                title: 'Join a game',
+                subtitle: 'Got an invite code, or a host nearby?',
+                expanded: _openSection == _Section.join,
+                onTap: _busy ? null : () => _toggle(_Section.join),
+                children: [
+                  TextField(
+                    controller: _codeController,
+                    maxLength: 6,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Invite code',
+                      hintText: '6-character code',
+                      prefixIcon: Icon(Icons.tag),
+                    ),
+                    style: const TextStyle(
+                        letterSpacing: 3, fontWeight: FontWeight.bold),
                   ),
-                  const Expanded(child: Divider()),
-                ]),
-                const SizedBox(height: 8),
-                Text(
-                  'On a plane or off the grid — connect Android phones directly '
-                  'over Bluetooth & Wi-Fi Direct. No internet needed.',
-                  style: theme.textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _join,
+                    icon: const Icon(Icons.login),
+                    label: const Text('Join with code'),
+                  ),
+                  if (nearbySupported) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _joinOffline,
+                      icon: const Icon(Icons.travel_explore),
+                      label: const Text('Find nearby game'),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'No code needed — finds an offline host in the same '
+                      'room.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+
+              // ---- Secondary rows ------------------------------------------
+              if (_saved != null) ...[
                 const SizedBox(height: 16),
-                FilledButton.tonalIcon(
-                  onPressed: _busy ? null : _hostOffline,
-                  icon: const Icon(Icons.wifi_tethering),
-                  label: const Text('Play offline (nearby)'),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _joinOffline,
-                  icon: const Icon(Icons.travel_explore),
-                  label: const Text('Find nearby game'),
+                Card(
+                  color: theme.colorScheme.primaryContainer,
+                  child: ListTile(
+                    leading: Icon(Icons.history,
+                        color: theme.colorScheme.onPrimaryContainer),
+                    title: Text(
+                      _saved!.isHost
+                          ? "You're hosting game ${_saved!.sessionCode}"
+                          : "You're in game ${_saved!.sessionCode}",
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    trailing: FilledButton(
+                      onPressed: _busy ? null : _rejoin,
+                      child: const Text('Rejoin'),
+                    ),
+                  ),
                 ),
               ],
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: _busy ? null : _practice,
+                icon: const Icon(Icons.smart_toy_outlined),
+                label: const Text('Practice solo — play vs bots, no internet'),
+              ),
               if (_busy) ...[
                 const SizedBox(height: 24),
                 const Center(child: CircularProgressIndicator()),
@@ -403,6 +416,63 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One of the two primary "doors" (Start / Join): a card with an always-visible
+/// header row that expands its details on tap — progressive disclosure instead
+/// of the old wall of nine simultaneous actions.
+class _SectionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool expanded;
+  final VoidCallback? onTap;
+  final List<Widget> children;
+
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.expanded,
+    required this.onTap,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            onTap: onTap,
+            leading: Icon(icon, color: theme.colorScheme.primary),
+            title: Text(title,
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
+            trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 200),
+            crossFadeState: expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -421,13 +491,14 @@ class _ModePicker extends StatelessWidget {
       TelephoneGameMode.classicTelephone,
       'Telephone',
       Icons.repeat,
-      'Prompt → draw → guess. It mutates down the chain.',
+      'Write → draw → guess → draw again — telephone! Best with 3+ '
+          '(with 2 players it ends after one drawing).',
     ),
     (
       TelephoneGameMode.samePrompt,
       'Same prompt',
       Icons.groups,
-      'Everyone draws the SAME prompt at once, then rate for a winner.',
+      'Everyone draws the same prompt, then rate for a winner.',
     ),
     (
       TelephoneGameMode.samePromptTurns,
