@@ -58,6 +58,19 @@ class _BalloonBlitzStartScreenState extends State<BalloonBlitzStartScreen> {
     ));
   }
 
+  /// Solo debug mode: race a simulated opponent on this one phone. Needs no
+  /// second device and no radio, so it skips the platform check — but it still
+  /// wants a name for the leaderboard.
+  void _soloBot() {
+    if (_nameController.text.trim().isEmpty) {
+      _toast('Enter your name first');
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => OfflineBlitzSoloScreen(displayName: _name),
+    ));
+  }
+
   /// Shared name + platform check for both entry points.
   bool _guard() {
     if (_nameController.text.trim().isEmpty) {
@@ -149,6 +162,28 @@ class _BalloonBlitzStartScreenState extends State<BalloonBlitzStartScreen> {
                   ),
                 ),
               ),
+            const SizedBox(height: 24),
+            Row(children: [
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child:
+                    Text('Debugging?', style: theme.textTheme.bodySmall),
+              ),
+              const Expanded(child: Divider()),
+            ]),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _soloBot,
+              icon: const Icon(Icons.smart_toy_outlined),
+              label: const Text('🤖 Solo test: race a bot'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Debug the race on one phone — everything real except Bluetooth.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
+            ),
           ],
         ),
       ),
