@@ -145,6 +145,16 @@ class ArMinigameController extends ChangeNotifier {
   /// True briefly after a bomb is tapped, so the view can flash a red "oops".
   bool bombFlash = false;
 
+  /// Current pop streak (SOLO distance-scored games only): consecutive pops
+  /// each within [comboWindow] of the last. At [comboThreshold]+ the payout
+  /// doubles. Bombs and escapes break it. Disabled in shared races — the
+  /// authority pays raw values so every phone's ledger stays trivially
+  /// consistent.
+  int combo = 0;
+  static const Duration comboWindow = Duration(milliseconds: 1500);
+  static const int comboThreshold = 3;
+  bool get comboActive => combo >= comboThreshold;
+
   /// Running points for distance-scored games (Balloon Pop). Bomb penalties are
   /// already subtracted; never below 0.
   int _points = 0;
@@ -177,6 +187,7 @@ class ArMinigameController extends ChangeNotifier {
   Timer? _flashTimer;
   Timer? _preRollTimer;
   Timer? _snapshotTimer;
+  Timer? _comboTimer;
   StreamSubscription<ArRaceEvent>? _raceSub;
   bool _preRollStarted = false;
   int _spawnSerial = 0; // how many spawns have been attempted this round
@@ -424,6 +435,7 @@ class ArMinigameController extends ChangeNotifier {
     if (obj.isBomb) {
       bombsHit++;
       _points = max(0, _points - config.bombPenalty);
+      _breakCombo();
       _flashBomb();
       _emit(ArGameEvent(
         ArGameEventType.bomb,
@@ -432,10 +444,11 @@ class ArMinigameController extends ChangeNotifier {
       ));
     } else {
       hits++;
-      if (config.scoreByDistance) _points += obj.value;
+      final paid = _comboPaid(obj.value);
+      if (config.scoreByDistance) _points += paid;
       _emit(ArGameEvent(
         ArGameEventType.pop,
-        value: config.scoreByDistance ? obj.value : config.pointsPerHit,
+        value: config.scoreByDistance ? paid : config.pointsPerHit,
         modelRef: obj.modelRef,
       ));
     }
@@ -564,6 +577,26 @@ class ArMinigameController extends ChangeNotifier {
     }
   }
 
+  /// SOLO combo bookkeeping: returns what this pop pays (doubled while the
+  /// streak is hot) and advances/refreshes the streak window.
+  int _comboPaid(int baseValue) {
+    if (race != null || !config.scoreByDistance) return baseValue;
+    combo++;
+    final paid = comboActive ? baseValue * 2 : baseValue;
+    _comboTimer?.cancel();
+    _comboTimer = Timer(comboWindow, () {
+      combo = 0;
+      _safeNotify();
+    });
+    return paid;
+  }
+
+  void _breakCombo() {
+    if (combo == 0) return;
+    combo = 0;
+    _comboTimer?.cancel();
+  }
+
   void _flashBomb() {
     bombFlash = true;
     _flashTimer?.cancel();
@@ -620,6 +653,7 @@ class ArMinigameController extends ChangeNotifier {
     if (!_objects.remove(obj)) return;
     engine.remove(obj.node);
     if (_isRaceAuthority) race!.publishEscape(obj.raceId);
+    if (race == null) _breakCombo(); // letting one get away ends the streak
     if (!obj.isBomb) {
       _emit(ArGameEvent(ArGameEventType.escape, modelRef: obj.modelRef));
     }
@@ -638,6 +672,7 @@ class ArMinigameController extends ChangeNotifier {
     _fallbackTimer?.cancel();
     _flashTimer?.cancel();
     _preRollTimer?.cancel();
+    _comboTimer?.cancel();
     _planeSub?.cancel();
     finalScore = config.scoreByDistance
         ? _points
@@ -684,6 +719,7 @@ class ArMinigameController extends ChangeNotifier {
     _flashTimer?.cancel();
     _preRollTimer?.cancel();
     _snapshotTimer?.cancel();
+    _comboTimer?.cancel();
     _tapSub?.cancel();
     _planeSub?.cancel();
     _raceSub?.cancel();

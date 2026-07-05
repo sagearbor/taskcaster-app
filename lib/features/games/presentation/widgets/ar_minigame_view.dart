@@ -167,9 +167,12 @@ class _ArMinigameViewState extends State<ArMinigameView>
         event.value >= 4
             ? HapticFeedback.mediumImpact()
             : HapticFeedback.lightImpact();
+        final hot = _controller.comboActive;
         _addBurst(
           color: arFxColorFor(event.modelRef),
-          label: event.value >= 4 ? '+${event.value} ✨' : '+${event.value}',
+          label: hot
+              ? '+${event.value} 🔥'
+              : (event.value >= 4 ? '+${event.value} ✨' : '+${event.value}'),
         );
         break;
       case ArGameEventType.bomb:
@@ -421,6 +424,14 @@ class _Hud extends StatelessWidget {
                       ),
                       Row(
                         children: [
+                          if (controller.comboActive) ...[
+                            const ArHudPill(
+                              icon: Icons.local_fire_department,
+                              label: '×2',
+                              color: Colors.deepOrange,
+                            ),
+                            const SizedBox(width: 8),
+                          ],
                           ArHudPill(
                             icon: config.speedBonus
                                 ? Icons.diamond

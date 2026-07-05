@@ -311,6 +311,63 @@ void main() {
     });
   });
 
+  test('quick pops build a combo that doubles payouts; gaps and bombs break it',
+      () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = boot(async, eng, _cfg(count: 5, bombChance: 0));
+      final popValues = <int>[];
+      c.events.listen((e) {
+        if (e.type == ArGameEventType.pop) popValues.add(e.value);
+      });
+
+      // Three rapid pops: streak 1, 2, 3 — the third is hot (paid double).
+      for (var i = 0; i < 3; i++) {
+        eng.emitTap(eng.liveIds.first);
+        async.flushMicrotasks();
+        async.elapse(const Duration(milliseconds: 300));
+      }
+      expect(c.combo, 3);
+      expect(c.comboActive, isTrue);
+      expect(popValues[2].isEven, isTrue, reason: 'doubled payout');
+
+      // Let the window lapse: streak resets.
+      async.elapse(const Duration(seconds: 2));
+      expect(c.combo, 0);
+      expect(c.comboActive, isFalse);
+
+      // Rebuild to hot, then a bomb kills it instantly.
+      for (var i = 0; i < 3; i++) {
+        eng.emitTap(eng.liveIds.first);
+        async.flushMicrotasks();
+        async.elapse(const Duration(milliseconds: 300));
+      }
+      expect(c.comboActive, isTrue);
+      c.dispose();
+    });
+  });
+
+  test('the running score equals the sum of emitted pop values minus penalties',
+      () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = boot(async, eng, _cfg(count: 4, bombChance: 0));
+      var paid = 0;
+      c.events.listen((e) {
+        if (e.type == ArGameEventType.pop) paid += e.value;
+      });
+
+      for (var i = 0; i < 5; i++) {
+        eng.emitTap(eng.liveIds.first);
+        async.flushMicrotasks();
+        async.elapse(const Duration(milliseconds: 200));
+      }
+      expect(c.liveScore, paid,
+          reason: 'HUD score and flyout values must always agree');
+      c.dispose();
+    });
+  });
+
   test('pause freezes the clock and taps; resume re-runs 3-2-1 then unfreezes',
       () {
     fakeAsync((async) {
