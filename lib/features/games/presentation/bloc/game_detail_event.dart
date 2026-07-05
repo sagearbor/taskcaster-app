@@ -57,6 +57,17 @@ class JudgeSubmission extends GameDetailEvent {
   List<Object> get props => [gameId, taskIndex, playerId, score];
 }
 
+/// Start a rematch: create a fresh lobby game with the same crew and judge
+/// (see [GameRepository.rematchGame]) so the group can play again in one tap.
+class RematchGame extends GameDetailEvent {
+  final Game game;
+
+  const RematchGame({required this.game});
+
+  @override
+  List<Object> get props => [game];
+}
+
 class ViewTaskResultsEvent extends GameDetailEvent {
   final String gameId;
   final int taskIndex;

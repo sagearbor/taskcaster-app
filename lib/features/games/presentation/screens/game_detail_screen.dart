@@ -156,6 +156,17 @@ class _GameDetailViewState extends State<GameDetailView> {
               ),
             );
           }
+          if (state is GameDetailRematchReady) {
+            // The rematch lobby exists — drop the creator straight into it,
+            // replacing this (completed) game's screen.
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                // The whole crew is already on the new roster, so no share
+                // prompt is needed — straight into the fresh lobby.
+                builder: (_) => GameDetailScreen(gameId: state.gameId),
+              ),
+            );
+          }
           if (state is GameDetailLoaded &&
               widget.promptShareOnLoad &&
               !_sharePrompted) {
@@ -167,7 +178,11 @@ class _GameDetailViewState extends State<GameDetailView> {
           }
         },
         builder: (context, state) {
-          if (state is GameDetailLoading) {
+          if (state is GameDetailLoading ||
+              state is GameDetailRematchInProgress ||
+              state is GameDetailRematchReady) {
+            // Rematch states show the same skeleton while the fresh lobby is
+            // created and navigated into.
             return SkeletonLoaders.gameDetailSkeleton(context);
           }
 
@@ -205,7 +220,13 @@ class _GameDetailViewState extends State<GameDetailView> {
                   child: switch (state.game.status) {
                     GameStatus.lobby => GameLobbyView(game: state.game),
                     GameStatus.inProgress => GameInProgressView(game: state.game),
-                    GameStatus.completed => GameCompletedView(game: state.game),
+                    GameStatus.completed => GameCompletedView(
+                        game: state.game,
+                        currentUserId: currentUserId,
+                        onRematch: () => context
+                            .read<GameDetailBloc>()
+                            .add(RematchGame(game: state.game)),
+                      ),
                   },
                 ),
               ],

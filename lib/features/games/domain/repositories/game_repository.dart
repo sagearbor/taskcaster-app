@@ -20,6 +20,13 @@ abstract class GameRepository {
   /// tasks (as fresh, unsubmitted tasks). Returns the new game id.
   Future<String> cloneGame(Game template, String creatorId, String displayName);
 
+  /// Rematch: spin up a brand-new lobby game from a finished [source] game —
+  /// same crew (every player carried over with scores reset to 0), same judge,
+  /// same creator and the same NUMBER of tasks, but the tasks themselves are
+  /// drawn freshly-shuffled from the prebuilt catalog so the rematch isn't a
+  /// re-run of challenges everyone has already seen. Returns the new game id.
+  Future<String> rematchGame(Game source);
+
   Future<String> createGame(String gameName, String creatorId, String judgeId);
   Future<void> updateGame(String gameId, Game game);
   Future<void> deleteGame(String gameId);
