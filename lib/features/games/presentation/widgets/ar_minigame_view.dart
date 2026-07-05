@@ -189,6 +189,9 @@ class _ArMinigameViewState extends State<ArMinigameView>
           _toastSeq++;
         });
         break;
+      case ArGameEventType.rivalPop:
+        // Solo games have no rivals — only the shared Blitz race emits this.
+        break;
       case ArGameEventType.timeUp:
         _sfx.fanfare();
         HapticFeedback.mediumImpact();
