@@ -19,6 +19,7 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     on<StartGame>(_onStartGame);
     on<SubmitTaskAnswer>(_onSubmitTaskAnswer);
     on<JudgeSubmission>(_onJudgeSubmission);
+    on<RematchGame>(_onRematchGame);
     on<ViewTaskResultsEvent>(_onViewTaskResults);
     on<CompleteGameEvent>(_onCompleteGame);
     on<AdvanceToNextTaskEvent>(_onAdvanceToNextTask);
@@ -36,7 +37,7 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
       gameRepository.getGameStream(event.gameId),
       onData: (game) => game != null
           ? GameDetailLoaded(game: game)
-          : GameDetailError(message: 'Game not found'),
+          : const GameDetailError(message: 'Game not found'),
       onError: (error, _) => GameDetailError(message: error.toString()),
     );
   }
@@ -69,6 +70,19 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
         event.playerId,
         event.score,
       );
+    } catch (e) {
+      emit(GameDetailError(message: e.toString()));
+    }
+  }
+
+  Future<void> _onRematchGame(
+      RematchGame event, Emitter<GameDetailState> emit) async {
+    // Ignore double-taps while a rematch is already being created.
+    if (state is GameDetailRematchInProgress) return;
+    emit(GameDetailRematchInProgress());
+    try {
+      final newGameId = await gameRepository.rematchGame(event.game);
+      emit(GameDetailRematchReady(gameId: newGameId));
     } catch (e) {
       emit(GameDetailError(message: e.toString()));
     }

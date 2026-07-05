@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/game.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/six_char_code_field.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
 import 'game_detail_screen.dart';
@@ -16,7 +17,6 @@ class JoinGameScreen extends StatefulWidget {
 }
 
 class _JoinGameScreenState extends State<JoinGameScreen> {
-  final _formKey = GlobalKey<FormState>();
   final _inviteCodeController = TextEditingController();
   bool _isLoading = false;
   // Id of the invited game currently being joined (drives a per-row spinner so
@@ -29,18 +29,15 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
     super.dispose();
   }
 
-  String? _validateInviteCode(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Invite code is required';
-    }
-    if (value.length != 6) {
-      return 'Invite code must be 6 characters';
-    }
-    return null;
-  }
-
   Future<void> _joinGame() async {
-    if (!_formKey.currentState!.validate()) return;
+    // The six-cell field enforces shape (uppercase letters+digits); only the
+    // length can still be short here.
+    if (_inviteCodeController.text.length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the 6-character invite code')),
+      );
+      return;
+    }
 
     final authState = context.read<AuthBloc>().state;
     if (authState is! AuthAuthenticated) {
@@ -165,9 +162,7 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
       appBar: AppBar(
         title: const Text('Join Game'),
       ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
+      body: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -207,23 +202,12 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
                 ],
               ),
               const SizedBox(height: 24),
-              TextFormField(
+              // Six boxed cells: auto-uppercase, paste-aware (codes AND full
+              // invite links), auto-submits when the 6th character lands.
+              SixCharCodeField(
                 controller: _inviteCodeController,
-                decoration: const InputDecoration(
-                  labelText: 'Invite Code',
-                  hintText: 'Enter 6-character code',
-                  prefixIcon: Icon(Icons.code),
-                ),
-                validator: _validateInviteCode,
                 enabled: !_isLoading,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _joinGame(),
-                textCapitalization: TextCapitalization.characters,
-                maxLength: 6,
-                style: const TextStyle(
-                  letterSpacing: 2,
-                  fontWeight: FontWeight.bold,
-                ),
+                onCompleted: (_) => _joinGame(),
               ),
               const SizedBox(height: 24),
               Container(
@@ -274,7 +258,6 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
               ),
             ],
           ),
-        ),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/ar_fx.dart';
 import '../../data/repositories/balloon_blitz_repository.dart';
 import '../../domain/entities/blitz_session.dart';
 import '../bloc/balloon_blitz_bloc.dart';
@@ -209,15 +210,53 @@ class _PlayingScaffold extends StatelessWidget {
 
 // ---- Results --------------------------------------------------------------
 
-class _ResultsScaffold extends StatelessWidget {
+class _ResultsScaffold extends StatefulWidget {
   final bool isHost;
   final String selfId;
 
   const _ResultsScaffold({required this.isHost, required this.selfId});
 
   @override
+  State<_ResultsScaffold> createState() => _ResultsScaffoldState();
+}
+
+class _ResultsScaffoldState extends State<_ResultsScaffold>
+    with SingleTickerProviderStateMixin {
+  /// One-shot ceremony: trophy punches in, winner line reveals, standings
+  /// slide up — all while the shared [ConfettiBurst] rains overhead.
+  late final AnimationController _ceremony;
+
+  @override
+  void initState() {
+    super.initState();
+    _ceremony = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _ceremony.dispose();
+    super.dispose();
+  }
+
+  Animation<double> _slice(double start, double end,
+      {Curve curve = Curves.easeOutCubic}) {
+    return CurvedAnimation(
+      parent: _ceremony,
+      curve: Interval(start, end, curve: curve),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isHost = widget.isHost;
+    final selfId = widget.selfId;
+    final trophyIn = _slice(0.0, 0.55, curve: Curves.elasticOut);
+    final winnerIn = _slice(0.2, 0.6);
+    final standingsIn = _slice(0.45, 1.0);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Balloon Blitz — Results'),
@@ -228,26 +267,52 @@ class _ResultsScaffold extends StatelessWidget {
           final session = state.session!;
           final winner =
               session.leaderboard.isNotEmpty ? session.leaderboard.first : null;
-          return Padding(
+          return Stack(
+            children: [
+              Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 8),
-                const Center(child: Text('🏆', style: TextStyle(fontSize: 48))),
+                Center(
+                  child: ScaleTransition(
+                    scale: trophyIn,
+                    child: const Text('🏆', style: TextStyle(fontSize: 48)),
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(
-                  winner == null
-                      ? 'Time!'
-                      : '${winner.name} wins with ${winner.liveScore}!',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                FadeTransition(
+                  opacity: winnerIn,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.4),
+                      end: Offset.zero,
+                    ).animate(winnerIn),
+                    child: Text(
+                      winner == null
+                          ? 'Time!'
+                          : '${winner.name} wins with ${winner.liveScore}!',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
-                  child: SingleChildScrollView(
-                    child: BlitzLeaderboard(session: session, selfId: selfId),
+                  child: FadeTransition(
+                    opacity: standingsIn,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.15),
+                        end: Offset.zero,
+                      ).animate(standingsIn),
+                      child: SingleChildScrollView(
+                        child:
+                            BlitzLeaderboard(session: session, selfId: selfId),
+                      ),
+                    ),
                   ),
                 ),
                 if (isHost)
@@ -271,6 +336,11 @@ class _ResultsScaffold extends StatelessWidget {
                 ),
               ],
             ),
+              ),
+
+              // Celebration rain over the results (one-shot, self-completing).
+              const Positioned.fill(child: ConfettiBurst()),
+            ],
           );
         },
       ),

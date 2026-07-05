@@ -7,6 +7,7 @@ import '../../../../core/models/player.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
+import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../datasources/game_remote_data_source.dart';
 
@@ -90,6 +91,89 @@ class GameRepositoryImpl implements GameRepository {
     } catch (_) {}
 
     return gameId;
+  }
+
+  @override
+  Future<String> rematchGame(Game source) async {
+    // New game doc: same creator, same judge. createGame() starts it in the
+    // lobby with a fresh invite code and the creator as the only player.
+    final gameId = await createGame(
+      _rematchName(source.gameName),
+      source.creatorId,
+      source.judgeId,
+    );
+
+    final data = await remoteDataSource.getGameStream(gameId).first;
+    if (data == null) {
+      throw Exception('Rematch game not found after creation');
+    }
+    final fresh = Game.fromMap({...data, 'id': gameId});
+
+    // Same crew, scores wiped. Display names are carried over so nobody shows
+    // up as "Creator".
+    final players = source.players
+        .map((p) => Player(
+              userId: p.userId,
+              displayName: p.displayName,
+              totalScore: 0,
+            ))
+        .toList();
+
+    // Same task COUNT, freshly-shuffled tasks from the prebuilt catalog (new
+    // ids, no submissions/statuses). Fall back to recycling the source's own
+    // tasks (as fresh copies) if the catalog is somehow smaller than needed.
+    final tasks = _freshShuffledTasks(source);
+
+    await updateGame(gameId, fresh.copyWith(players: players, tasks: tasks));
+    return gameId;
+  }
+
+  /// "Game Night" → "Game Night — Rematch"; an existing rematch gets a round
+  /// counter ("Game Night — Rematch 2") instead of stacking suffixes.
+  String _rematchName(String name) {
+    final match = RegExp(r'^(.*?) — Rematch(?: (\d+))?$').firstMatch(name);
+    if (match == null) return '$name — Rematch';
+    final base = match.group(1)!;
+    final round = int.tryParse(match.group(2) ?? '1') ?? 1;
+    return '$base — Rematch ${round + 1}';
+  }
+
+  List<Task> _freshShuffledTasks(Game source) {
+    final count = source.tasks.length;
+    if (count <= 0) return const [];
+
+    final pool = List<Task>.from(PrebuiltTasksData.getAllTasks())
+      ..shuffle(_rng);
+    // Avoid handing the crew the exact tasks they just played when the pool
+    // has enough alternatives.
+    final playedTitles = source.tasks.map((t) => t.title).toSet();
+    final unplayed =
+        pool.where((t) => !playedTitles.contains(t.title)).toList();
+    final picked = (unplayed.length >= count ? unplayed : pool).take(count);
+
+    final fresh = picked
+        .map((t) => Task(
+              id: _uuid.v4(),
+              title: t.title,
+              description: t.description,
+              taskType: t.taskType,
+              puzzleAnswer: t.puzzleAnswer,
+              submissions: const [],
+            ))
+        .toList();
+    if (fresh.length >= count) return fresh;
+
+    // Catalog smaller than the source game — top up with fresh copies of the
+    // source's own tasks so the rematch still has the same length.
+    final recycled = source.tasks.take(count - fresh.length).map((t) => Task(
+          id: _uuid.v4(),
+          title: t.title,
+          description: t.description,
+          taskType: t.taskType,
+          puzzleAnswer: t.puzzleAnswer,
+          submissions: const [],
+        ));
+    return [...fresh, ...recycled];
   }
 
   Task _starterTask(String title, String description) => Task(

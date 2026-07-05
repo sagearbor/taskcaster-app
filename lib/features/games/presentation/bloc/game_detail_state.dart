@@ -30,6 +30,19 @@ class GameDetailLoaded extends GameDetailState {
   ];
 }
 
+/// A rematch game is being created — the UI shows a loading treatment.
+class GameDetailRematchInProgress extends GameDetailState {}
+
+/// The rematch lobby exists; the UI should navigate into [gameId].
+class GameDetailRematchReady extends GameDetailState {
+  final String gameId;
+
+  const GameDetailRematchReady({required this.gameId});
+
+  @override
+  List<Object> get props => [gameId];
+}
+
 class GameDetailError extends GameDetailState {
   final String message;
 
