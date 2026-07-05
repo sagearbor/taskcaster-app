@@ -29,14 +29,7 @@ class _TaskBrowserScreenState extends State<TaskBrowserScreen>
 
   final List<String> _categories = [
     'All',
-    'Classic',
-    'Creative',
-    'Physical',
-    'Mental',
-    'Food',
-    'Social',
-    'Household',
-    'Bonus',
+    ...PrebuiltTasksData.categories,
   ];
 
   @override
@@ -69,71 +62,25 @@ class _TaskBrowserScreenState extends State<TaskBrowserScreen>
     setState(() {
       List<Task> tasks = _allTasks;
 
-      // Filter by category
+      // Filter by category (each prebuilt task carries a category field).
       final selectedCategory = _categories[_tabController.index];
       if (selectedCategory != 'All') {
-        // Filter based on task index ranges from PrebuiltTasksData
-        final startIndex = _getCategoryStartIndex(selectedCategory);
-        final endIndex = _getCategoryEndIndex(selectedCategory);
-        tasks = _allTasks.sublist(startIndex, endIndex);
+        tasks =
+            tasks.where((task) => task.category == selectedCategory).toList();
       }
 
       // Filter by search query
       if (_searchQuery.isNotEmpty) {
+        final query = _searchQuery.toLowerCase();
         tasks = tasks.where((task) {
-          return task.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                 task.description.toLowerCase().contains(_searchQuery.toLowerCase());
+          return task.title.toLowerCase().contains(query) ||
+              task.description.toLowerCase().contains(query) ||
+              (task.category?.toLowerCase().contains(query) ?? false);
         }).toList();
       }
 
       _filteredTasks = tasks;
     });
-  }
-
-  int _getCategoryStartIndex(String category) {
-    switch (category) {
-      case 'Classic':
-        return 0;
-      case 'Creative':
-        return 50;
-      case 'Physical':
-        return 80;
-      case 'Mental':
-        return 105;
-      case 'Food':
-        return 130;
-      case 'Social':
-        return 150;
-      case 'Household':
-        return 175;
-      case 'Bonus':
-        return 200;
-      default:
-        return 0;
-    }
-  }
-
-  int _getCategoryEndIndex(String category) {
-    switch (category) {
-      case 'Classic':
-        return 50;
-      case 'Creative':
-        return 80;
-      case 'Physical':
-        return 105;
-      case 'Mental':
-        return 130;
-      case 'Food':
-        return 150;
-      case 'Social':
-        return 175;
-      case 'Household':
-        return 200;
-      case 'Bonus':
-        return _allTasks.length;
-      default:
-        return _allTasks.length;
-    }
   }
 
   void _toggleTaskSelection(Task task) {
@@ -224,6 +171,16 @@ class _TaskBrowserScreenState extends State<TaskBrowserScreen>
                     ),
                   ],
                 ),
+                if (task.category != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Chip(
+                      label: Text(task.category!),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Text(
                   task.description,

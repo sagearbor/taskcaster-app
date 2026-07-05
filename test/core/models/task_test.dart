@@ -168,6 +168,34 @@ void main() {
       expect(restored.isArTask, false);
     });
 
+    test('category round-trips through map and copyWith', () {
+      final categorized = videoTask.copyWith(category: 'Quick & Silly');
+      expect(categorized.category, 'Quick & Silly');
+
+      final map = categorized.toMap();
+      expect(map['category'], 'Quick & Silly');
+
+      final restored = Task.fromMap(map);
+      expect(restored.category, 'Quick & Silly');
+      expect(restored, equals(categorized));
+
+      // Category participates in equality.
+      expect(videoTask, isNot(equals(categorized)));
+    });
+
+    test('old serialized tasks without a category key decode to null', () {
+      final legacyMap = {
+        'id': 'legacy',
+        'title': 'Legacy task',
+        'description': 'No category key here',
+        'taskType': 'video',
+        'submissions': <dynamic>[],
+      };
+
+      final restored = Task.fromMap(legacyMap);
+      expect(restored.category, isNull);
+    });
+
     test('should handle puzzle answers correctly', () {
       expect(puzzleTask.puzzleAnswer, 'keyboard');
       expect(videoTask.puzzleAnswer, isNull);

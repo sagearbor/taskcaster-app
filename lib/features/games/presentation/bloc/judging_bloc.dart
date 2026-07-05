@@ -1,11 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/repositories/game_repository.dart';
 import 'judging_event.dart';
 import 'judging_state.dart';
 
 class JudgingBloc extends Bloc<JudgingEvent, JudgingState> {
   final GameRepository gameRepository;
+
+  /// Judges award whole points from [minScore] to [maxScore] per submission.
+  static const int minScore = 0;
+  static const int maxScore = 10;
 
   JudgingBloc({required this.gameRepository}) : super(JudgingInitial()) {
     on<LoadSubmissions>(_onLoadSubmissions);
@@ -66,7 +72,13 @@ class JudgingBloc extends Bloc<JudgingEvent, JudgingState> {
         scores: {},
       ));
     } catch (e) {
-      emit(JudgingError(message: e.toString()));
+      debugPrint('JudgingBloc.LoadSubmissions failed: $e');
+      emit(JudgingError(
+        message: FriendlyErrors.action(
+          e,
+          fallback: "Couldn't load the submissions. Please try again.",
+        ),
+      ));
     }
   }
 
@@ -79,8 +91,9 @@ class JudgingBloc extends Bloc<JudgingEvent, JudgingState> {
     final currentState = state as JudgingLoaded;
 
     // Validate score range
-    if (event.score < 1 || event.score > 5) {
-      emit(const JudgingError(message: 'Score must be between 1 and 5'));
+    if (event.score < minScore || event.score > maxScore) {
+      emit(JudgingError(
+          message: 'Score must be between $minScore and $maxScore'));
       return;
     }
 
@@ -179,7 +192,13 @@ class JudgingBloc extends Bloc<JudgingEvent, JudgingState> {
         taskIndex: currentState.taskIndex,
       ));
     } catch (e) {
-      emit(JudgingError(message: e.toString()));
+      debugPrint('JudgingBloc.FinishJudging failed: $e');
+      emit(JudgingError(
+        message: FriendlyErrors.action(
+          e,
+          fallback: "Couldn't save the scores. Please try again.",
+        ),
+      ));
     }
   }
 }

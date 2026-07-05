@@ -28,16 +28,12 @@ void main() {
         ),
       );
 
-      // Assert
+      // Assert — one tab per library category, plus "All".
       expect(find.text('All'), findsOneWidget);
-      expect(find.text('Classic'), findsOneWidget);
-      expect(find.text('Creative'), findsOneWidget);
-      expect(find.text('Physical'), findsOneWidget);
-      expect(find.text('Mental'), findsOneWidget);
-      expect(find.text('Food'), findsOneWidget);
-      expect(find.text('Social'), findsOneWidget);
-      expect(find.text('Household'), findsOneWidget);
-      expect(find.text('Bonus'), findsOneWidget);
+      for (final category in PrebuiltTasksData.categories) {
+        expect(find.text(category), findsWidgets,
+            reason: 'Missing tab for category "$category"');
+      }
     });
 
     testWidgets('should display tasks in grid view', (tester) async {
@@ -293,8 +289,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Act - Tap on "Classic" tab
-      await tester.tap(find.text('Classic'));
+      // Act - Tap on the first category tab
+      await tester.tap(find.text(PrebuiltTasksData.categories.first).first);
       await tester.pumpAndSettle();
 
       // Assert - Should still show grid (with filtered tasks)
