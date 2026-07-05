@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../friends/presentation/screens/friends_screen.dart';
 import '../../../auth/presentation/screens/profile_screen.dart';
 import '../../../auth/presentation/screens/create_account_screen.dart';
 import '../../../settings/presentation/screens/settings_screen.dart';
@@ -37,6 +38,9 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
                 switch (value) {
                   case 'profile':
                     _push(context, ProfileScreen(user: user));
+                    break;
+                  case 'friends':
+                    _push(context, const FriendsScreen());
                     break;
                   case 'settings':
                     _push(context, const SettingsScreen());
@@ -96,6 +100,14 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.person_outline),
                     title: Text('Edit Profile'),
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'friends',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.group_outlined),
+                    title: Text('Friends'),
                   ),
                 ),
                 const PopupMenuItem<String>(

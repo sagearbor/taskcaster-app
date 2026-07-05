@@ -13,6 +13,7 @@ import '../../../games/presentation/screens/game_detail_screen.dart';
 import '../../../telephone/presentation/widgets/nearby_auto_cast_banner.dart';
 import '../widgets/game_card.dart';
 import '../widgets/home_app_bar.dart';
+import '../../../friends/presentation/widgets/invite_inbox_card.dart';
 import '../widgets/home_invites_section.dart';
 import '../widgets/play_sheet.dart';
 
@@ -71,9 +72,10 @@ class HomeView extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                     children: [
                       // Zone 1: invites from friends — the first thing an
-                      // invited player sees. One widget slot (SEAM: a richer
-                      // InviteInboxCard from lib/features/friends/ will swap in
-                      // here later).
+                      // invited player sees. Two sources, both one-tap join:
+                      // friend-graph invites (invites collection) and legacy
+                      // email-matched invites. Each self-hides when empty.
+                      const InviteInboxCard(),
                       const HomeInvitesSection(),
                       const SizedBox(height: 24),
                       // Zone 2: jump back into active games, if any.
