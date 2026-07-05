@@ -24,14 +24,20 @@ service cloud.firestore {
                        request.resource.data.creatorId == request.auth.uid;
 
       // The creator and judge have full update rights (scores, status, tasks).
-      // Other signed-in users (players submitting answers) may update the game
-      // but must NOT be able to seize ownership, swap the judge, or rewrite the
-      // invite code. This blocks game hijacking by arbitrary authenticated users.
-      // NOTE: tightening this further to "only actual participants" requires a
-      // dedicated playerIds array on the document (deferred — see DEVELOPMENT_CHECKLIST).
+      // Now that games carry a flat playerIds array, an actual participant is
+      // also allowed to update (submitting answers, AR results). Anyone else
+      // may still write ONLY if they leave ownership/judge/invite code intact —
+      // this is what lets a NOT-yet-member join (they add themselves to
+      // players/playerIds without changing ownership) and blocks hijacking.
       allow update: if isSignedIn() && (
+        // Owner / judge: full rights.
         request.auth.uid == resource.data.creatorId ||
         request.auth.uid == resource.data.judgeId ||
+        // Existing participant (member of the flat playerIds list).
+        (resource.data.playerIds is list &&
+         request.auth.uid in resource.data.playerIds) ||
+        // Non-member (e.g. a joining player) may write only without seizing
+        // ownership, swapping the judge, or rewriting the invite code.
         (unchanged('creatorId') && unchanged('judgeId') && unchanged('inviteCode'))
       );
 
@@ -57,6 +63,39 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && request.auth.uid == userId;
+
+      // ---- Friend graph ----
+      // A user's friends live in their OWN subcollection and are private to
+      // them: only the owner may read or write. The reciprocal edge is written
+      // independently by the other person (in THEIR own subcollection), so
+      // there is never a need to write into someone else's friends.
+      match /friends/{friendId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    // ---- Invites ----
+    // One-tap game invites. Anyone signed in may create an invite, but only as
+    // themselves (they can't forge another user as the inviter).
+    match /invites/{inviteId} {
+      // Create: must stamp yourself as the inviter.
+      allow create: if isSignedIn() &&
+                       request.resource.data.inviterUid == request.auth.uid;
+
+      // Read/update: the named recipient, the inviter, OR — for an as-yet
+      // unclaimed email invite — the person whose verified email matches
+      // (so claimEmailInvites can stamp recipientUid on sign-in, and the
+      // recipient can accept/decline). Decline is modelled as a status update.
+      allow read, update: if isSignedIn() && (
+        resource.data.recipientUid == request.auth.uid ||
+        resource.data.inviterUid == request.auth.uid ||
+        (resource.data.recipientUid == null &&
+         resource.data.recipientEmailLower == request.auth.token.email)
+      );
+
+      // Only the inviter can delete an invite (decline uses update instead).
+      allow delete: if isSignedIn() &&
+                       resource.data.inviterUid == request.auth.uid;
     }
 
     // ---- Community tasks ----

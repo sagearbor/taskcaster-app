@@ -13,6 +13,7 @@ import '../../../../core/models/player_task_status.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../friends/domain/repositories/friends_repository.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/game_detail_bloc.dart';
 import '../widgets/game_lobby_view.dart';
@@ -42,6 +43,7 @@ class GameDetailScreen extends StatelessWidget {
     return BlocProvider(
       create: (context) => GameDetailBloc(
         gameRepository: sl<GameRepository>(),
+        friendsRepository: sl<FriendsRepository>(),
       )..add(LoadGameDetail(gameId: gameId)),
       child: GameDetailView(promptShareOnLoad: promptShareOnLoad),
     );

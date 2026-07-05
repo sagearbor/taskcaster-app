@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/services/invite/pending_invite_service.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../friends/domain/repositories/friends_repository.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../screens/game_detail_screen.dart';
 
@@ -46,12 +47,15 @@ class _PendingInviteGateState extends State<PendingInviteGate> {
     // Defer to after the current frame: notifyListeners can fire mid-build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _dialogOpen) return;
+      // Grab the ref before consume() clears it.
+      final ref = _invites.pendingRef;
       final code = _invites.consume();
       if (code == null) return;
       _dialogOpen = true;
       showDialog<void>(
         context: context,
-        builder: (_) => _JoinInviteDialog(code: code, hostContext: context),
+        builder: (_) =>
+            _JoinInviteDialog(code: code, ref: ref, hostContext: context),
       ).whenComplete(() {
         _dialogOpen = false;
         // Another link may have arrived while the dialog was up.
@@ -69,11 +73,19 @@ class _PendingInviteGateState extends State<PendingInviteGate> {
 class _JoinInviteDialog extends StatefulWidget {
   final String code;
 
+  /// The inviter's uid carried by the share link (`ref=`), if any. Used to
+  /// auto-friend the inviter after a successful join.
+  final String? ref;
+
   /// Context of the gate (survives this dialog being popped) used to navigate
   /// into the joined game.
   final BuildContext hostContext;
 
-  const _JoinInviteDialog({required this.code, required this.hostContext});
+  const _JoinInviteDialog({
+    required this.code,
+    this.ref,
+    required this.hostContext,
+  });
 
   @override
   State<_JoinInviteDialog> createState() => _JoinInviteDialogState();
@@ -110,6 +122,23 @@ class _JoinInviteDialogState extends State<_JoinInviteDialog> {
         authState.user.id,
         displayName,
       );
+
+      // Auto-friend everyone in the joined game (the inviter included). We can
+      // only write OUR own side of the edge; the inviter gains us when they
+      // next load the shared game (addFriendsFromGame runs there too). The
+      // `ref` uid is implicitly covered because the inviter is a co-player, so
+      // loading the game and upserting co-players is sufficient. Best-effort.
+      try {
+        final game = await sl<GameRepository>().getGameStream(gameId).first;
+        if (game != null) {
+          debugPrint('Auto-friending co-players of $gameId '
+              '(invite ref: ${widget.ref ?? "none"})');
+          await sl<FriendsRepository>().addFriendsFromGame(game);
+        }
+      } catch (e) {
+        debugPrint('Auto-friend after join failed: $e');
+      }
+
       if (!mounted) return;
       Navigator.of(context).pop();
       hostNavigator.push(

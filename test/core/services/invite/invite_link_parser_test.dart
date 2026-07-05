@@ -51,6 +51,107 @@ void main() {
         'https://taskmaster-app-3d480.web.app/join/?code=ABC234',
       );
     });
+
+    test('appends the inviter ref when supplied', () {
+      expect(
+        InviteLinks.joinUrl('ABC234', ref: 'uid_123'),
+        'https://taskmaster-app-3d480.web.app/join/?code=ABC234&ref=uid_123',
+      );
+    });
+
+    test('omits the ref when null or blank', () {
+      expect(
+        InviteLinks.joinUrl('ABC234', ref: null),
+        'https://taskmaster-app-3d480.web.app/join/?code=ABC234',
+      );
+      expect(
+        InviteLinks.joinUrl('ABC234', ref: '   '),
+        'https://taskmaster-app-3d480.web.app/join/?code=ABC234',
+      );
+    });
+  });
+
+  group('InviteLinks.refFromUri', () {
+    test('extracts ref from a deep link that also carries a valid code', () {
+      expect(
+        InviteLinks.refFromUri(
+            Uri.parse('taskcaster://join?code=ABC234&ref=uid_123')),
+        'uid_123',
+      );
+      expect(
+        InviteLinks.refFromUri(Uri.parse(
+            'https://taskmaster-app-3d480.web.app/join/?code=ABC234&ref=uid_9')),
+        'uid_9',
+      );
+    });
+
+    test('round-trips the URL built by joinUrl with a ref', () {
+      final url = InviteLinks.joinUrl('QRS789', ref: 'uid_abc');
+      expect(InviteLinks.refFromUri(Uri.parse(url)), 'uid_abc');
+    });
+
+    test('returns null when there is no ref', () {
+      expect(
+        InviteLinks.refFromUri(Uri.parse('taskcaster://join?code=ABC234')),
+        isNull,
+      );
+    });
+
+    test('returns null when the code itself is missing/invalid', () {
+      // A bare ref with no valid code is meaningless.
+      expect(
+        InviteLinks.refFromUri(Uri.parse('taskcaster://join?ref=uid_123')),
+        isNull,
+      );
+      expect(
+        InviteLinks.refFromUri(
+            Uri.parse('taskcaster://join?code=BAD&ref=uid_123')),
+        isNull,
+      );
+    });
+
+    test('returns null for unrelated hosts/schemes', () {
+      expect(
+        InviteLinks.refFromUri(
+            Uri.parse('https://evil.example.com/join/?code=ABC234&ref=uid_1')),
+        isNull,
+      );
+    });
+  });
+
+  group('InviteLinks.refFromReferrer', () {
+    test('extracts ref from invite_code=X&ref=Y', () {
+      expect(
+        InviteLinks.refFromReferrer('invite_code=ABC234&ref=uid_123'),
+        'uid_123',
+      );
+    });
+
+    test('extracts ref amid utm noise', () {
+      expect(
+        InviteLinks.refFromReferrer(
+            'utm_source=x&invite_code=ABC234&ref=uid_7&utm_medium=share'),
+        'uid_7',
+      );
+    });
+
+    test('extracts ref from a still-URL-encoded referrer', () {
+      expect(
+        InviteLinks.refFromReferrer('invite_code%3DABC234%26ref%3Duid_123'),
+        'uid_123',
+      );
+    });
+
+    test('returns null when ref absent or code invalid', () {
+      expect(InviteLinks.refFromReferrer('invite_code=ABC234'), isNull);
+      expect(InviteLinks.refFromReferrer('ref=uid_123'), isNull); // no code
+      expect(InviteLinks.refFromReferrer('invite_code=BAD&ref=uid_123'), isNull);
+      expect(InviteLinks.refFromReferrer(null), isNull);
+    });
+
+    test('does not crash on malformed percent-encoding', () {
+      expect(InviteLinks.refFromReferrer('invite_code=%ZZ&ref=uid'), isNull);
+    });
   });
 
   group('InviteLinks.codeFromUri', () {

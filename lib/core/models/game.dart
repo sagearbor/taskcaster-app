@@ -105,6 +105,9 @@ class Game extends Equatable {
       'inviteCode': inviteCode,
       'createdAt': createdAt.toIso8601String(),
       'players': players.map((e) => e.toMap()).toList(),
+      // Flat list of participant uids, kept in step with players[] so security
+      // rules can check membership cheaply. Derived from players via the getter.
+      'playerIds': playerIds,
       'tasks': tasks.map((e) => e.toMap()).toList(),
       'mode': mode.name,
       'settings': settings.toMap(),
@@ -150,6 +153,13 @@ class Game extends Equatable {
       invitedEmails: invitedEmails ?? this.invitedEmails,
     );
   }
+
+  /// The user ids of every player on the roster. Persisted (see [toMap]) so
+  /// Firestore security rules can gate game updates to actual participants
+  /// without reading the nested players[] objects. Always derived from
+  /// [players] so it can never drift out of sync in memory; [fromMap] backfills
+  /// it for older documents written before this field existed.
+  List<String> get playerIds => players.map((p) => p.userId).toList();
 
   bool get isInLobby => status == GameStatus.lobby;
   bool get isInProgress => status == GameStatus.inProgress;

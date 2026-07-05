@@ -52,10 +52,16 @@ class PendingInviteService extends ChangeNotifier {
   bool _initialized = false;
 
   String? _pendingCode;
+  String? _pendingRef;
   PendingInviteSource? _source;
 
   /// The invite code waiting to be offered to the user, if any.
   String? get pendingCode => _pendingCode;
+
+  /// The inviter's uid (`ref=`) that accompanied [pendingCode], if any. Used to
+  /// auto-friend the inviter once the join succeeds. Null when the link/referrer
+  /// carried no ref.
+  String? get pendingRef => _pendingRef;
 
   /// How [pendingCode] arrived. Null when there is no pending code.
   PendingInviteSource? get source => _source;
@@ -93,6 +99,7 @@ class PendingInviteService extends ChangeNotifier {
     if (code == null) return;
     // A fresh explicit link always wins over anything already pending.
     _pendingCode = code;
+    _pendingRef = InviteLinks.refFromUri(uri);
     _source = PendingInviteSource.link;
     notifyListeners();
   }
@@ -106,10 +113,12 @@ class PendingInviteService extends ChangeNotifier {
       // sideload, missing Play services) is only attempted once.
       await prefs.setBool(referrerCheckedPrefsKey, true);
 
-      final code = InviteLinks.codeFromReferrer(await _getInstallReferrer());
+      final referrer = await _getInstallReferrer();
+      final code = InviteLinks.codeFromReferrer(referrer);
       // A direct deep link (more specific, more recent) is never overwritten.
       if (code == null || _pendingCode != null) return;
       _pendingCode = code;
+      _pendingRef = InviteLinks.refFromReferrer(referrer);
       _source = PendingInviteSource.referrer;
       notifyListeners();
     } catch (e) {
@@ -124,6 +133,7 @@ class PendingInviteService extends ChangeNotifier {
     final code = _pendingCode;
     if (code == null) return null;
     _pendingCode = null;
+    _pendingRef = null;
     _source = null;
     notifyListeners();
     return code;

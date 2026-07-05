@@ -30,6 +30,13 @@ import '../../features/trivia/domain/repositories/trivia_repository.dart';
 import '../../features/trivia/data/datasources/trivia_remote_data_source.dart';
 import '../../features/trivia/data/datasources/mock_trivia_data_source.dart';
 
+import '../../features/friends/domain/repositories/friends_repository.dart';
+import '../../features/friends/domain/repositories/invites_repository.dart';
+import '../../features/friends/data/repositories/firebase_friends_repository.dart';
+import '../../features/friends/data/repositories/firebase_invites_repository.dart';
+import '../../features/friends/data/repositories/mock_friends_repository.dart';
+import '../../features/friends/data/repositories/mock_invites_repository.dart';
+
 import '../services/invite/pending_invite_service.dart';
 import '../services/ad_service_simple.dart';
 import '../services/purchase_service_simple.dart';
@@ -75,11 +82,36 @@ class ServiceLocator {
     }
 
     // Repositories
-    sl.registerLazySingleton<AuthRepository>(
-      () => AuthRepositoryImpl(sl()),
-    );
     sl.registerLazySingleton<GameRepository>(
       () => GameRepositoryImpl(sl()),
+    );
+
+    // Friend graph + one-tap invites (Phase 1b). Mock builds keep an in-memory
+    // graph so the UI is fully exercisable offline / in widget tests.
+    if (useMockServices) {
+      sl.registerLazySingleton<FriendsRepository>(
+        () => MockFriendsRepository(),
+      );
+      sl.registerLazySingleton<InvitesRepository>(
+        () => MockInvitesRepository(gameRepository: sl()),
+      );
+    } else {
+      sl.registerLazySingleton<FriendsRepository>(
+        () => FirebaseFriendsRepository(),
+      );
+      sl.registerLazySingleton<InvitesRepository>(
+        () => FirebaseInvitesRepository(gameRepository: sl()),
+      );
+    }
+
+    // Auth repository is wired with the invites + notification collaborators so
+    // it can claim pending email invites and register the FCM token on sign-in.
+    sl.registerLazySingleton<AuthRepository>(
+      () => AuthRepositoryImpl(
+        sl(),
+        invitesRepository: sl(),
+        notificationService: sl(),
+      ),
     );
     sl.registerLazySingleton<TaskRepository>(
       () => TaskRepositoryImpl(sl()),
