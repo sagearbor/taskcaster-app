@@ -202,11 +202,21 @@ class FirestoreGameDataSource implements GameRemoteDataSource {
 
         await _firestore.collection(_gamesCollection).doc(gameId).update({
           'players': players,
+          // Keep the flat participant-id list in step so the joining player
+          // passes the games update security rule on subsequent writes.
+          'playerIds': players.map((p) => p['userId']).toList(),
         });
 
         developer.log('User $userId joined game $gameId');
       } else {
         developer.log('User $userId already in game $gameId');
+        // Defensively backfill playerIds for legacy docs created before the
+        // field existed, so existing members satisfy the update rule.
+        if (gameData['playerIds'] == null) {
+          await _firestore.collection(_gamesCollection).doc(gameId).update({
+            'playerIds': players.map((p) => p['userId']).toList(),
+          });
+        }
       }
 
       return gameId;

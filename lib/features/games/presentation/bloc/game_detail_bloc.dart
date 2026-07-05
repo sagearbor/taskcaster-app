@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import '../../../../core/models/game.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/utils/friendly_errors.dart';
+import '../../../friends/domain/repositories/friends_repository.dart';
 import '../../domain/repositories/game_repository.dart';
 
 part 'game_detail_event.dart';
@@ -12,11 +13,24 @@ part 'game_detail_state.dart';
 
 class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
   final GameRepository gameRepository;
+
+  /// Optional friend graph. When present, co-players of a game the user is
+  /// actually playing are silently upserted into their friends. Nullable so
+  /// existing bloc tests can construct without it.
+  final FriendsRepository? friendsRepository;
+
   String? _currentGameId;
+
+  /// The last co-player roster we synced to the friend graph (sorted uids
+  /// joined), so identical snapshots don't trigger redundant writes.
+  String? _lastFriendSyncSignature;
 
   String? get gameId => _currentGameId;
 
-  GameDetailBloc({required this.gameRepository}) : super(GameDetailInitial()) {
+  GameDetailBloc({
+    required this.gameRepository,
+    this.friendsRepository,
+  }) : super(GameDetailInitial()) {
     on<LoadGameDetail>(_onLoadGameDetail);
     on<StartGame>(_onStartGame);
     on<SubmitTaskAnswer>(_onSubmitTaskAnswer);
@@ -37,9 +51,13 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     // "emit was called after an event handler completed normally").
     await emit.forEach<Game?>(
       gameRepository.getGameStream(event.gameId),
-      onData: (game) => game != null
-          ? GameDetailLoaded(game: game)
-          : const GameDetailError(message: 'Game not found'),
+      onData: (game) {
+        if (game != null) {
+          _maybeSyncFriends(game);
+          return GameDetailLoaded(game: game);
+        }
+        return const GameDetailError(message: 'Game not found');
+      },
       onError: (error, _) {
         debugPrint('GameDetailBloc.LoadGameDetail stream error: $error');
         return GameDetailError(
@@ -50,6 +68,28 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
         );
       },
     );
+  }
+
+  /// Silently upsert co-players into the friend graph once the crew is actually
+  /// playing together (in-progress or completed, 2+ players). Runs on game
+  /// load and completion (both flow through the game stream). Deduped by roster
+  /// so identical snapshots don't re-write. Fire-and-forget; never blocks the
+  /// UI or surfaces errors.
+  void _maybeSyncFriends(Game game) {
+    final repo = friendsRepository;
+    if (repo == null) return;
+    final playing =
+        game.status == GameStatus.inProgress || game.status == GameStatus.completed;
+    if (!playing || game.players.length < 2) return;
+
+    final signature = (game.playerIds.toList()..sort()).join(',');
+    if (signature == _lastFriendSyncSignature) return;
+    _lastFriendSyncSignature = signature;
+
+    // ignore: discarded_futures
+    repo.addFriendsFromGame(game).catchError((Object e) {
+      debugPrint('GameDetailBloc friend sync failed: $e');
+    });
   }
 
   Future<void> _onStartGame(StartGame event, Emitter<GameDetailState> emit) async {

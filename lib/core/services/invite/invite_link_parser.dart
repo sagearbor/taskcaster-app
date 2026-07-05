@@ -29,8 +29,15 @@ class InviteLinks {
   /// The canonical shareable join URL for [code]. Served by the static
   /// web/join/index.html landing page, which routes the user into the app
   /// (deep link) or to the Play Store (install referrer).
-  static String joinUrl(String code) =>
-      'https://$webHost/join/?code=${Uri.encodeQueryComponent(code)}';
+  ///
+  /// When [ref] (the inviter's uid) is supplied it is carried through as a
+  /// `ref=` query param, so the joiner can auto-friend the person who invited
+  /// them once the join succeeds.
+  static String joinUrl(String code, {String? ref}) {
+    final base = 'https://$webHost/join/?code=${Uri.encodeQueryComponent(code)}';
+    if (ref == null || ref.trim().isEmpty) return base;
+    return '$base&ref=${Uri.encodeQueryComponent(ref.trim())}';
+  }
 
   /// True when [code] is exactly [codeLength] characters from [codeAlphabet].
   static bool isValidCode(String code) => _codePattern.hasMatch(code);
@@ -59,6 +66,52 @@ class InviteLinks {
         uri.pathSegments.first == appHost;
     if (!isAppLink && !isWebLink) return null;
     return normalizeCode(uri.queryParameters['code']);
+  }
+
+  /// Extracts the inviter reference (`ref=`) from a deep link, when present.
+  ///
+  /// Only returns a value for links this app recognises (same host/scheme
+  /// checks as [codeFromUri]) and only when a valid invite code is ALSO present
+  /// — a bare `ref` with no code is meaningless. The ref is an opaque uid, so
+  /// it is only trimmed (not validated against the code alphabet). Returns null
+  /// when absent/blank.
+  static String? refFromUri(Uri uri) {
+    if (codeFromUri(uri) == null) return null;
+    return _cleanRef(uri.queryParameters['ref']);
+  }
+
+  /// Extracts the inviter reference (`ref=`) from a Play Install Referrer
+  /// string of the form `invite_code=X&ref=Y` (URL-decoded or still-encoded).
+  /// Only returns a value when a valid invite code is also present. Returns
+  /// null when absent/blank/malformed.
+  static String? refFromReferrer(String? referrer) {
+    if (referrer == null || referrer.trim().isEmpty) return null;
+    if (codeFromReferrer(referrer) == null) return null;
+
+    final candidates = <String>{referrer};
+    try {
+      candidates.add(Uri.decodeComponent(referrer));
+    } on ArgumentError {
+      // Malformed percent-encoding — the raw pass still runs.
+    }
+
+    for (final candidate in candidates) {
+      Map<String, String> params;
+      try {
+        params = Uri.splitQueryString(candidate);
+      } on ArgumentError {
+        continue;
+      }
+      final ref = _cleanRef(params['ref']);
+      if (ref != null) return ref;
+    }
+    return null;
+  }
+
+  static String? _cleanRef(String? raw) {
+    if (raw == null) return null;
+    final ref = raw.trim();
+    return ref.isEmpty ? null : ref;
   }
 
   /// Extracts an invite code from a Play Install Referrer string.

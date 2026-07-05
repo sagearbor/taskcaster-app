@@ -241,6 +241,8 @@ class GameRepositoryImpl implements GameRepository {
           'totalScore': 0,
         }
       ],
+      // Flat participant-id list kept alongside players[] for security rules.
+      'playerIds': [creatorId],
       'tasks': [],
       // Add missing required fields
       'mode': GameMode.async.name,

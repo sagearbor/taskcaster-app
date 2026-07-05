@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
@@ -18,6 +19,12 @@ abstract class NotificationService {
   /// The FCM registration token for this device, or null if unavailable.
   Future<String?> getToken();
 
+  /// Persist this device's FCM token onto `users/{uid}.fcmTokens` (a map keyed
+  /// by token) so a future server/Cloud Function can target the user's devices.
+  /// Best-effort — must never throw. No-op when there is no token. Nothing
+  /// sends push messages yet; this only prepares the token store.
+  Future<void> registerToken(String uid);
+
   /// Whether the user has granted notification permission.
   Future<bool> requestPermission();
 
@@ -33,6 +40,9 @@ class MockNotificationService implements NotificationService {
   Future<String?> getToken() async => 'mock-fcm-token';
 
   @override
+  Future<void> registerToken(String uid) async {}
+
+  @override
   Future<bool> requestPermission() async => true;
 
   @override
@@ -44,7 +54,11 @@ class MockNotificationService implements NotificationService {
 /// Firebase set up) is swallowed so it never crashes the app.
 class FcmNotificationService implements NotificationService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  final FirebaseFirestore _firestore;
   StreamSubscription<RemoteMessage>? _foregroundSub;
+
+  FcmNotificationService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   @override
   Future<bool> requestPermission() async {
@@ -85,6 +99,23 @@ class FcmNotificationService implements NotificationService {
     } catch (e) {
       debugPrint('NotificationService.getToken failed: $e');
       return null;
+    }
+  }
+
+  @override
+  Future<void> registerToken(String uid) async {
+    if (uid.isEmpty) return;
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return;
+      // Store under a map keyed by the token so multiple devices coexist and a
+      // re-registration of the same token is a harmless no-op overwrite.
+      await _firestore.collection('users').doc(uid).set({
+        'fcmTokens': {token: FieldValue.serverTimestamp()},
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Best-effort: never let token registration disrupt sign-in.
+      debugPrint('NotificationService.registerToken failed: $e');
     }
   }
 

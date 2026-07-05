@@ -9,6 +9,9 @@ import '../../../../core/utils/link_utils.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../community/presentation/screens/community_browser_screen.dart';
+import '../../../friends/domain/models/friend.dart';
+import '../../../friends/domain/repositories/friends_repository.dart';
+import '../../../friends/domain/repositories/invites_repository.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/game_detail_bloc.dart';
 
@@ -316,7 +319,7 @@ class GameLobbyView extends StatelessWidget {
 
               // Action Buttons
               if (isCreator) ...[
-                _InviteByEmailCard(game: game),
+                _InviteFriendsCard(game: game),
                 const SizedBox(height: 8),
                 Card(
                   child: SwitchListTile(
@@ -510,22 +513,28 @@ class GameLobbyView extends StatelessWidget {
   }
 }
 
-/// Creator-only card for inviting specific people by email. The lowercased
-/// email is appended to the game's `invitedEmails` (deduped) and saved via
-/// [GameRepository.updateGame]. Invited people then see this game under
-/// "Invites for you" on the Join screen — no invite code needed.
-class _InviteByEmailCard extends StatefulWidget {
+/// Creator-only "Invite friends" card. Top: one-tap chips for people you've
+/// played with (from [FriendsRepository.watchFriends]) — a tap fires a real
+/// [InvitesRepository.sendToFriend] and flips the chip to "Invited ✓". Below:
+/// an email field that writes a REAL invite via [InvitesRepository.sendToEmail]
+/// AND appends to the legacy `invitedEmails` array (so "Invites for you" on the
+/// Join screen keeps working), plus the existing invited-email chips.
+class _InviteFriendsCard extends StatefulWidget {
   final Game game;
 
-  const _InviteByEmailCard({required this.game});
+  const _InviteFriendsCard({required this.game});
 
   @override
-  State<_InviteByEmailCard> createState() => _InviteByEmailCardState();
+  State<_InviteFriendsCard> createState() => _InviteFriendsCardState();
 }
 
-class _InviteByEmailCardState extends State<_InviteByEmailCard> {
+class _InviteFriendsCardState extends State<_InviteFriendsCard> {
   final _controller = TextEditingController();
   bool _saving = false;
+
+  /// Friend uids we've already invited this session (drives the "Invited ✓"
+  /// chip state without waiting for a round-trip).
+  final Set<String> _invitedFriendUids = {};
 
   @override
   void dispose() {
@@ -539,11 +548,35 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
     return RegExp(r'^[^@\s]+@[^@\s]+\.?[^@\s]*$').hasMatch(value);
   }
 
-  Future<void> _addInvite() async {
+  /// Uids already on the game roster — those friends can't be re-invited.
+  Set<String> get _playerUids =>
+      widget.game.players.map((p) => p.userId).toSet();
+
+  Future<void> _inviteFriend(Friend friend) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _invitedFriendUids.add(friend.uid));
+    try {
+      await sl<InvitesRepository>().sendToFriend(friend.uid, widget.game);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Invited ${friend.displayName}')),
+      );
+    } catch (e) {
+      debugPrint('Invite friend failed: $e');
+      if (mounted) setState(() => _invitedFriendUids.remove(friend.uid));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(FriendlyErrors.action(
+            e,
+            fallback: 'Could not invite ${friend.displayName}. Try again.',
+          )),
+        ),
+      );
+    }
+  }
+
+  Future<void> _addEmailInvite() async {
     final email = _controller.text.trim().toLowerCase();
     final messenger = ScaffoldMessenger.of(context);
-    // Captured before the async gap so the catch below doesn't use a
-    // possibly-stale context.
     final errorColor = Theme.of(context).colorScheme.error;
     if (email.isEmpty) return;
     if (!_looksLikeEmail(email)) {
@@ -562,6 +595,9 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
 
     setState(() => _saving = true);
     try {
+      // Real invite record (surfaces in their inbox once they sign in)...
+      await sl<InvitesRepository>().sendToEmail(email, widget.game);
+      // ...plus the legacy invitedEmails array powering "Invites for you".
       await sl<GameRepository>().updateGame(
         widget.game.id,
         widget.game.copyWith(
@@ -590,7 +626,7 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
     }
   }
 
-  Future<void> _removeInvite(String email) async {
+  Future<void> _removeEmailInvite(String email) async {
     try {
       await sl<GameRepository>().updateGame(
         widget.game.id,
@@ -606,6 +642,7 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final invited = widget.game.invitedEmails;
     return Card(
       child: Padding(
@@ -615,25 +652,76 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
           children: [
             Row(
               children: [
-                Icon(Icons.mail_outline,
-                    color: Theme.of(context).colorScheme.primary),
+                Icon(Icons.group_add, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'Invite by email',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  'Invite friends',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 4),
             Text(
-              'They\'ll see this game under "Invites for you" — no code needed.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+              'Tap a friend to invite them instantly — no code needed.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
+
+            // Friend chips.
+            StreamBuilder<List<Friend>>(
+              stream: sl<FriendsRepository>().watchFriends(),
+              builder: (context, snapshot) {
+                final friends = snapshot.data ?? const <Friend>[];
+                if (friends.isEmpty) {
+                  return Text(
+                    'No friends yet — play a game together and they\'ll show up '
+                    'here. You can still invite by email below.',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  );
+                }
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: friends.map((friend) {
+                    final alreadyInGame = _playerUids.contains(friend.uid);
+                    final invitedThisSession =
+                        _invitedFriendUids.contains(friend.uid);
+                    final done = alreadyInGame || invitedThisSession;
+                    return ActionChip(
+                      avatar: done
+                          ? const Icon(Icons.check, size: 18)
+                          : UserAvatar(
+                              displayName: friend.displayName,
+                              avatarEmoji: friend.avatarEmoji,
+                              radius: 12,
+                            ),
+                      label: Text(
+                        alreadyInGame
+                            ? '${friend.displayName} (joined)'
+                            : invitedThisSession
+                                ? '${friend.displayName} ✓'
+                                : friend.displayName,
+                      ),
+                      onPressed:
+                          done ? null : () => _inviteFriend(friend),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+
+            const Divider(height: 28),
+
+            // Email invite.
+            Text(
+              'Invite by email',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -647,12 +735,12 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
                       hintText: 'friend@example.com',
                       prefixIcon: Icon(Icons.alternate_email),
                     ),
-                    onSubmitted: (_) => _addInvite(),
+                    onSubmitted: (_) => _addEmailInvite(),
                   ),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
-                  onPressed: _saving ? null : _addInvite,
+                  onPressed: _saving ? null : _addEmailInvite,
                   child: _saving
                       ? const SizedBox(
                           height: 18,
@@ -666,10 +754,9 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
             if (invited.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(
-                'Invited (${invited.length})',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                'Invited by email (${invited.length})',
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -679,7 +766,7 @@ class _InviteByEmailCardState extends State<_InviteByEmailCard> {
                     .map(
                       (email) => Chip(
                         label: Text(email),
-                        onDeleted: () => _removeInvite(email),
+                        onDeleted: () => _removeEmailInvite(email),
                         deleteIcon: const Icon(Icons.close, size: 16),
                       ),
                     )

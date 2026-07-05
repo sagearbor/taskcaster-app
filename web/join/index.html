@@ -130,8 +130,11 @@
   <script>
     (function () {
       var PACKAGE = 'com.sagearbor.taskcaster.app';
-      var code = (new URLSearchParams(location.search).get('code') || '')
-        .trim().toUpperCase();
+      var params = new URLSearchParams(location.search);
+      var code = (params.get('code') || '').trim().toUpperCase();
+      // The inviter's uid (optional). Opaque — used to auto-friend the inviter
+      // after the join. Carried through both the deep link and install referrer.
+      var ref = (params.get('ref') || '').trim();
       // Same alphabet the app uses (no I/L/O/0/1).
       var valid = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(code);
 
@@ -143,10 +146,13 @@
       document.getElementById('invite').classList.remove('hidden');
       document.getElementById('code-display').textContent = code;
 
-      // Play Store link carrying the code through install via the referrer,
-      // so the app can pop the join dialog on first launch.
+      // Referrer payload carries the code (and optional ref) through a fresh
+      // install so the app can pop the join dialog on first launch.
+      var referrerPayload = 'invite_code=' + code + (ref ? '&ref=' + ref : '');
+
+      // Play Store link carrying the referrer payload.
       var playUrl = 'https://play.google.com/store/apps/details?id=' + PACKAGE +
-        '&referrer=' + encodeURIComponent('invite_code=' + code);
+        '&referrer=' + encodeURIComponent(referrerPayload);
       document.getElementById('get-play').href = playUrl;
 
       var ua = navigator.userAgent || '';
@@ -154,8 +160,11 @@
 
       if (isAndroid) {
         // Android intent URL: opens the app if installed, otherwise falls
-        // back to the Play Store (still carrying the referrer).
-        var intentUrl = 'intent://join?code=' + encodeURIComponent(code) +
+        // back to the Play Store (still carrying the referrer). The ref rides
+        // along on the deep link so an installed app can auto-friend too.
+        var intentQuery = 'code=' + encodeURIComponent(code) +
+          (ref ? '&ref=' + encodeURIComponent(ref) : '');
+        var intentUrl = 'intent://join?' + intentQuery +
           '#Intent;scheme=taskcaster;package=' + PACKAGE +
           ';S.browser_fallback_url=' + encodeURIComponent(playUrl) + ';end';
         var openBtn = document.getElementById('open-app');
