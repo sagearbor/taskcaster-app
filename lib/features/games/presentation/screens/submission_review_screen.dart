@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../../../../core/theme/app_theme.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../domain/repositories/game_repository.dart';
@@ -214,33 +217,64 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
               );
             }
 
+            final allJudged = state.scoredCount >= submittedSubmissions.length;
+
             return Column(
               children: [
                 // Progress indicator
                 Container(
                   padding: const EdgeInsets.all(16),
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  color: allJudged
+                      ? Colors.green.withOpacity(0.15)
+                      : Theme.of(context).colorScheme.primaryContainer,
+                  child: Column(
                     children: [
-                      Text(
-                        'Scored: ${state.scoredCount} of ${submittedSubmissions.length}',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      if (state.canFinish)
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            _showFinishConfirmation(context);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            allJudged
+                                ? 'All judged! 🎉'
+                                : '${state.scoredCount} of ${submittedSubmissions.length} judged',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: allJudged ? Colors.green[800] : null,
+                                ),
                           ),
-                          icon: const Icon(Icons.check),
-                          label: const Text('Finish'),
+                          if (state.canFinish)
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                _showFinishConfirmation(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                              icon: const Icon(Icons.check),
+                              label: Text(allJudged
+                                  ? 'Reveal the scores'
+                                  : 'Finish'),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: submittedSubmissions.isEmpty
+                              ? 0
+                              : state.scoredCount /
+                                  submittedSubmissions.length,
+                          minHeight: 6,
+                          backgroundColor: Colors.white.withOpacity(0.5),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            allJudged ? Colors.green : AppTheme.violet,
+                          ),
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -404,20 +438,29 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Score This Submission',
+                    'Your verdict, judge',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '0 = tragic · 10 = legendary',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
                   const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
                     children: [
-                      _buildScoreButton(context, submission, 1),
-                      _buildScoreButton(context, submission, 2),
-                      _buildScoreButton(context, submission, 3),
-                      _buildScoreButton(context, submission, 4),
-                      _buildScoreButton(context, submission, 5),
+                      for (var score = JudgingBloc.minScore;
+                          score <= JudgingBloc.maxScore;
+                          score++)
+                        _buildScoreChip(context, submission, score),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -482,53 +525,70 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
     );
   }
 
-  Widget _buildScoreButton(BuildContext context, SubmissionData submission, int score) {
+  Widget _buildScoreChip(
+      BuildContext context, SubmissionData submission, int score) {
     final isSelected = submission.score == score;
-    return Column(
-      children: [
-        IconButton(
-          onPressed: () {
-            context.read<JudgingBloc>().add(
-                  ScoreSubmission(
-                    playerId: submission.playerId,
-                    score: score,
-                  ),
-                );
-            // Auto-advance to next submission after short delay
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (_pageController.hasClients) {
-                final currentPage = _pageController.page?.round() ?? 0;
-                final state = context.read<JudgingBloc>().state;
-                if (state is JudgingLoaded) {
-                  final total = state.submissions.where((s) => s.status.hasSubmitted).length;
-                  if (currentPage < total - 1) {
-                    _pageController.nextPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  }
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: 'Score $score point${score == 1 ? '' : 's'}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () {
+          // A satisfying tick per tap; a firmer thunk when it lands.
+          HapticFeedback.selectionClick();
+          HapticFeedback.mediumImpact();
+          context.read<JudgingBloc>().add(
+                ScoreSubmission(
+                  playerId: submission.playerId,
+                  score: score,
+                ),
+              );
+          // Auto-advance to next submission after short delay
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (_pageController.hasClients) {
+              final currentPage = _pageController.page?.round() ?? 0;
+              final state = context.read<JudgingBloc>().state;
+              if (state is JudgingLoaded) {
+                final total = state.submissions
+                    .where((s) => s.status.hasSubmitted)
+                    .length;
+                if (currentPage < total - 1) {
+                  _pageController.nextPage(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                  );
                 }
               }
-            });
-          },
-          iconSize: 48,
-          icon: Icon(
-            isSelected ? Icons.star : Icons.star_border,
-            color: isSelected
-                ? Colors.amber
-                : Theme.of(context).colorScheme.onSurfaceVariant,
+            }
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isSelected ? AppTheme.violet : Colors.transparent,
+            border: Border.all(
+              color: isSelected
+                  ? AppTheme.violet
+                  : Theme.of(context).colorScheme.outline,
+              width: 2,
+            ),
+          ),
+          child: Text(
+            '$score',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: isSelected
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
           ),
         ),
-        Text(
-          '$score pt${score == 1 ? '' : 's'}',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected
-                    ? Colors.amber
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-        ),
-      ],
+      ),
     );
   }
 

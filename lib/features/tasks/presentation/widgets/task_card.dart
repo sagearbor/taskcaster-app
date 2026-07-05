@@ -117,6 +117,11 @@ class TaskCard extends StatelessWidget {
         ? Colors.red[900]
         : Colors.blue[900];
 
+    // Prefer the library category ("Quick & Silly") over the bare task type —
+    // it tells players far more about what they're picking.
+    final label = task.category?.toUpperCase() ??
+        (task.taskType == TaskType.video ? 'VIDEO' : 'PUZZLE');
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -124,7 +129,9 @@ class TaskCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        task.taskType == TaskType.video ? 'VIDEO' : 'PUZZLE',
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.bold,

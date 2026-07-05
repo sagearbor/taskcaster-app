@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/models/player_task_status.dart';
+import '../../../../core/models/task.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -67,6 +69,7 @@ class TaskExecutionView extends StatefulWidget {
 class _TaskExecutionViewState extends State<TaskExecutionView> {
   final _videoUrlController = TextEditingController();
   bool _isUrlValid = false;
+  String? _urlError;
   // When true, show the submission form even though the user already submitted,
   // so they can change/replace their video.
   bool _editing = false;
@@ -79,22 +82,27 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
 
   void _validateUrl(String url) {
     setState(() {
-      _isUrlValid = _isValidVideoUrl(url);
+      // Accept any well-formed http(s) URL with a real host. We deliberately
+      // do not gate on a hardcoded allowlist of platforms: players
+      // legitimately host videos in many places. The platform names in the UI
+      // are guidance only.
+      _isUrlValid = LinkUtils.isLikelyUrl(url);
+      _urlError = LinkUtils.describeUrlProblem(url);
     });
   }
 
-  bool _isValidVideoUrl(String url) {
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) return false;
-
-    // Accept any well-formed http(s) URL with a real host. We deliberately do
-    // not gate on a hardcoded allowlist of platforms: players legitimately host
-    // videos in many places, and blocking valid links was a dead end. The
-    // platform names in the UI are guidance only.
-    final uri = Uri.tryParse(trimmed);
-    if (uri == null) return false;
-    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
-    return uri.host.isNotEmpty;
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim() ?? '';
+    if (!mounted) return;
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nothing on the clipboard to paste')),
+      );
+      return;
+    }
+    _videoUrlController.text = text;
+    _validateUrl(text);
   }
 
   @override
@@ -202,12 +210,11 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
 
   Widget _buildAlreadySubmittedView(
       BuildContext context, TaskExecutionLoaded state) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             Container(
               width: 100,
               height: 100,
@@ -356,7 +363,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                   setState(() {
                     _editing = true;
                     _videoUrlController.text = current;
-                    _isUrlValid = _isValidVideoUrl(current);
+                    _isUrlValid = LinkUtils.isLikelyUrl(current);
+                    _urlError = LinkUtils.describeUrlProblem(current);
                   });
                 },
                 icon: const Icon(Icons.edit, size: 18),
@@ -369,7 +377,6 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -380,28 +387,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Task Title
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    state.task.title,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    state.task.description,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // Task reveal card — the big moment.
+          _TaskRevealCard(task: state.task),
 
           const SizedBox(height: 16),
 
@@ -478,6 +465,11 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
 
           const SizedBox(height: 24),
 
+          // The game plan — how to get your video in.
+          _buildHowItWorksChecklist(context),
+
+          const SizedBox(height: 20),
+
           // Video URL Input
           Text(
             'Submit Your Video',
@@ -485,24 +477,24 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                   fontWeight: FontWeight.bold,
                 ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Paste a link to your video (YouTube, Google Photos, etc.)',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
           const SizedBox(height: 12),
           TextField(
             controller: _videoUrlController,
             decoration: InputDecoration(
-              labelText: 'Video URL',
+              labelText: 'Video link',
               hintText: 'https://youtube.com/watch?v=...',
+              helperText: 'Any shareable web link works',
+              errorText: _urlError,
+              errorMaxLines: 2,
               border: const OutlineInputBorder(),
               prefixIcon: const Icon(Icons.link),
               suffixIcon: _isUrlValid
                   ? const Icon(Icons.check_circle, color: Colors.green)
-                  : null,
+                  : IconButton(
+                      icon: const Icon(Icons.content_paste),
+                      tooltip: 'Paste from clipboard',
+                      onPressed: _pasteFromClipboard,
+                    ),
             ),
             keyboardType: TextInputType.url,
             onChanged: _validateUrl,
@@ -549,44 +541,65 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             ),
           ],
 
-          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
 
-          // Help Text
-          Card(
-            color: AppTheme.violetSoft,
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.info_outline, color: AppTheme.violet),
-                      const SizedBox(width: 8),
-                      Text(
-                        'How to submit',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.violetDeep,
-                            ),
-                      ),
-                    ],
+  Widget _buildHowItWorksChecklist(BuildContext context) {
+    const steps = [
+      (Icons.videocam_outlined, 'Film it with your camera app'),
+      (Icons.cloud_upload_outlined, 'Upload to Google Photos or YouTube'),
+      (Icons.link, 'Paste the share link below'),
+    ];
+
+    return Card(
+      color: AppTheme.violetSoft,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'How it works',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.violetDeep,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '1. Record your video\n'
-                    '2. Upload to YouTube, Google Photos, or another hosting service\n'
-                    '3. Copy the shareable link\n'
-                    '4. Paste the link above and submit',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.violetDeep,
-                        ),
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < steps.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 12,
+                    backgroundColor: AppTheme.violet,
+                    child: Text(
+                      '${i + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Icon(steps[i].$1, size: 18, color: AppTheme.violetDeep),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      steps[i].$2,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppTheme.violetDeep,
+                          ),
+                    ),
                   ),
                 ],
               ),
-            ),
-          ),
-        ],
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -668,5 +681,85 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     }
 
     return 'Less than a minute';
+  }
+}
+
+/// The task, presented like the envelope-opening moment on the show:
+/// a wax-seal overline, the title front and center, a category chip, and the
+/// full brief underneath. Fades and slides in on first build.
+class _TaskRevealCard extends StatelessWidget {
+  final Task task;
+
+  const _TaskRevealCard({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 24 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: Card(
+        elevation: 4,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20.0),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.violet, width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.theater_comedy, color: AppTheme.violet),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'YOUR TASK, SHOULD YOU ACCEPT IT…',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            letterSpacing: 1.5,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.violetDeep,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                task.title,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                    ),
+              ),
+              if (task.category != null) ...[
+                const SizedBox(height: 10),
+                Chip(
+                  avatar: const Icon(Icons.category_outlined, size: 16),
+                  label: Text(task.category!),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                task.description,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

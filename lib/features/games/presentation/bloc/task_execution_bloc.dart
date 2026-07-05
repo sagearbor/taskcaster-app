@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/task.dart';
@@ -48,11 +50,23 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
           );
         },
         onError: (error, stackTrace) {
-          return TaskExecutionError(message: error.toString());
+          debugPrint('TaskExecutionBloc.LoadTask stream error: $error');
+          return TaskExecutionError(
+            message: FriendlyErrors.action(
+              error,
+              fallback: "Couldn't load the task. Please try again.",
+            ),
+          );
         },
       );
     } catch (e) {
-      emit(TaskExecutionError(message: e.toString()));
+      debugPrint('TaskExecutionBloc.LoadTask failed: $e');
+      emit(TaskExecutionError(
+        message: FriendlyErrors.action(
+          e,
+          fallback: "Couldn't load the task. Please try again.",
+        ),
+      ));
     }
   }
 
@@ -103,7 +117,13 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
 
       await gameRepository.updateGame(event.gameId, updatedGame);
     } catch (e) {
-      emit(TaskExecutionError(message: e.toString()));
+      debugPrint('TaskExecutionBloc.StartTask failed: $e');
+      emit(TaskExecutionError(
+        message: FriendlyErrors.action(
+          e,
+          fallback: "Couldn't start the task. Please try again.",
+        ),
+      ));
     }
   }
 
@@ -169,7 +189,13 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
         taskIndex: event.taskIndex,
       ));
     } catch (e) {
-      emit(TaskExecutionError(message: e.toString()));
+      debugPrint('TaskExecutionBloc.SubmitTask failed: $e');
+      emit(TaskExecutionError(
+        message: FriendlyErrors.action(
+          e,
+          fallback: "Couldn't submit your video. Please try again.",
+        ),
+      ));
     }
   }
 
@@ -239,7 +265,13 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
         taskIndex: event.taskIndex,
       ));
     } catch (e) {
-      emit(TaskExecutionError(message: e.toString()));
+      debugPrint('TaskExecutionBloc.SkipTask failed: $e');
+      emit(TaskExecutionError(
+        message: FriendlyErrors.action(
+          e,
+          fallback: "Couldn't skip the task. Please try again.",
+        ),
+      ));
     }
   }
 }

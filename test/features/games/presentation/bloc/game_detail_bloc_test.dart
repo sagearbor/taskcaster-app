@@ -85,7 +85,8 @@ void main() {
       },
       act: (bloc) => bloc.add(const StartGame(gameId: 'game123')),
       expect: () => [
-        const GameDetailError(message: 'Exception: Failed to start game'),
+        const GameDetailError(
+            message: "Couldn't start the game. Please try again."),
       ],
     );
   });
@@ -148,7 +149,10 @@ void main() {
       act: (bloc) => bloc.add(const LoadGameDetail(gameId: 'game123')),
       expect: () => [
         GameDetailLoading(),
-        const GameDetailError(message: 'Network error'),
+        // Stream errors are mapped to friendly copy; "Network error" is
+        // detected as a connectivity problem.
+        const GameDetailError(
+            message: 'No connection — check your internet and try again.'),
       ],
     );
   });

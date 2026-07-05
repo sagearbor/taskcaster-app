@@ -28,6 +28,12 @@ class Task extends Equatable {
   final String? arGameId;
   final int? arResult;
 
+  /// Library category (e.g. "Quick & Silly"). Nullable so tasks serialized
+  /// before this field existed (and custom/community tasks) deserialize
+  /// cleanly to null. Prebuilt tasks always carry one of
+  /// `PrebuiltTasksData.categories`.
+  final String? category;
+
   // NEW: Async game fields
   final TaskStatus status;
   final DateTime? deadline; // Deadline for submissions
@@ -44,6 +50,7 @@ class Task extends Equatable {
     this.modifiers = const [],
     this.arGameId,
     this.arResult,
+    this.category,
     this.status = TaskStatus.waiting_for_submissions,
     this.deadline,
     this.durationSeconds,
@@ -62,6 +69,7 @@ class Task extends Equatable {
       puzzleAnswer: map['puzzleAnswer'] as String?,
       arGameId: map['arGameId'] as String?,
       arResult: map['arResult'] as int?,
+      category: map['category'] as String?,
       submissions: (map['submissions'] as List<dynamic>?)
           ?.map((e) => Submission.fromMap(e as Map<String, dynamic>))
           .toList() ?? [],
@@ -95,6 +103,7 @@ class Task extends Equatable {
       'puzzleAnswer': puzzleAnswer,
       'arGameId': arGameId,
       'arResult': arResult,
+      'category': category,
       'submissions': submissions.map((e) => e.toMap()).toList(),
       'modifiers': modifiers.map((e) => e.toMap()).toList(),
       'status': status.name,
@@ -116,6 +125,7 @@ class Task extends Equatable {
     List<TaskModifier>? modifiers,
     String? arGameId,
     int? arResult,
+    String? category,
     TaskStatus? status,
     DateTime? deadline,
     int? durationSeconds,
@@ -131,6 +141,7 @@ class Task extends Equatable {
       modifiers: modifiers ?? this.modifiers,
       arGameId: arGameId ?? this.arGameId,
       arResult: arResult ?? this.arResult,
+      category: category ?? this.category,
       status: status ?? this.status,
       deadline: deadline ?? this.deadline,
       durationSeconds: durationSeconds ?? this.durationSeconds,
@@ -224,6 +235,7 @@ class Task extends Equatable {
         modifiers,
         arGameId,
         arResult,
+        category,
         status,
         deadline,
         durationSeconds,

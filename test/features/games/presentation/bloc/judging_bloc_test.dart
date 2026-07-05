@@ -180,9 +180,39 @@ void main() {
           currentIndex: 0,
           scores: {},
         ),
-        act: (bloc) => bloc.add(const ScoreSubmission(playerId: 'user1', score: 10)),
+        act: (bloc) => bloc.add(const ScoreSubmission(playerId: 'user1', score: 11)),
         expect: () => [
-          const JudgingError(message: 'Score must be between 1 and 5'),
+          const JudgingError(message: 'Score must be between 0 and 10'),
+        ],
+      );
+
+      blocTest<JudgingBloc, JudgingState>(
+        'accepts the full 0-10 range, including a brutal 0',
+        build: () => judgingBloc,
+        seed: () => JudgingLoaded(
+          gameId: 'game1',
+          taskIndex: 0,
+          taskTitle: 'Test Task',
+          taskDescription: 'Description',
+          submissions: [
+            SubmissionData(
+              playerId: 'user1',
+              playerName: 'Alice',
+              submissionUrl: 'https://youtube.com',
+              status: PlayerTaskStatus(
+                playerId: 'user1',
+                state: TaskPlayerState.submitted,
+              ),
+            ),
+          ],
+          currentIndex: 0,
+          scores: {},
+        ),
+        act: (bloc) => bloc.add(const ScoreSubmission(playerId: 'user1', score: 0)),
+        expect: () => [
+          isA<JudgingLoaded>()
+              .having((s) => s.scores['user1'], 'user1 score', 0)
+              .having((s) => s.scoredCount, 'scoredCount', 1),
         ],
       );
     });
@@ -290,7 +320,8 @@ void main() {
           isA<JudgingLoaded>(),
           isA<JudgingLoaded>(),
           JudgingLoading(),
-          const JudgingError(message: 'Exception: Failed to submit score'),
+          const JudgingError(
+              message: "Couldn't save the scores. Please try again."),
         ],
       );
     });
