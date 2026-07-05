@@ -22,9 +22,10 @@ class TelephoneStartScreen extends StatefulWidget {
   State<TelephoneStartScreen> createState() => _TelephoneStartScreenState();
 }
 
-/// Which primary card is expanded. Only one opens at a time so the screen
-/// never regresses into the old nine-button decision wall.
-enum _Section { none, start, join }
+/// Which disclosure card is expanded. Only one opens at a time so the screen
+/// never regresses into the old nine-button decision wall. The primary "Start
+/// game" action is a plain button now; Join and Options are the two cards.
+enum _Section { none, join, options }
 
 class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
   final _nameController = TextEditingController();
@@ -296,51 +297,27 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
               ),
               const SizedBox(height: 20),
 
-              // ---- Primary door #1: start a game ---------------------------
-              _SectionCard(
-                icon: Icons.add_circle_outline,
-                title: 'Start a game',
-                subtitle: 'You host — friends join from their phones',
-                expanded: _openSection == _Section.start,
-                onTap: _busy ? null : () => _toggle(_Section.start),
-                children: [
-                  _ModePicker(
-                    mode: _mode,
-                    onChanged:
-                        _busy ? null : (m) => setState(() => _mode = m),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _create,
-                    icon: const Icon(Icons.wifi),
-                    label: const Text('Online game'),
-                  ),
-                  const SizedBox(height: 4),
-                  Text('Share a 6-letter code — anyone on the internet joins.',
-                      style: theme.textTheme.bodySmall),
-                  if (nearbySupported) ...[
-                    const SizedBox(height: 12),
-                    FilledButton.tonalIcon(
-                      onPressed: _busy ? null : _hostOffline,
-                      icon: const Icon(Icons.wifi_tethering),
-                      label: const Text('Offline nearby'),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'No internet needed — Android phones connect directly '
-                      'over Bluetooth & Wi-Fi Direct.',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                ],
+              // ---- Primary action: start a game ----------------------------
+              SizedBox(
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _create,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Start game',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 4),
+              Text('You host online — share a 6-letter code and friends join.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall),
+              const SizedBox(height: 16),
 
-              // ---- Primary door #2: join a game -----------------------------
+              // ---- Secondary: join with a code -----------------------------
               _SectionCard(
                 icon: Icons.group_add,
-                title: 'Join a game',
-                subtitle: 'Got an invite code, or a host nearby?',
+                title: 'Join with a code',
+                subtitle: 'Got a 6-letter code from a friend?',
                 expanded: _openSection == _Section.join,
                 onTap: _busy ? null : () => _toggle(_Section.join),
                 children: [
@@ -362,7 +339,36 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                     icon: const Icon(Icons.login),
                     label: const Text('Join with code'),
                   ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // ---- Options: everything else, tucked away -------------------
+              _SectionCard(
+                icon: Icons.more_horiz,
+                title: 'Options',
+                subtitle: 'Game mode, offline nearby & practice',
+                expanded: _openSection == _Section.options,
+                onTap: _busy ? null : () => _toggle(_Section.options),
+                children: [
+                  _ModePicker(
+                    mode: _mode,
+                    onChanged:
+                        _busy ? null : (m) => setState(() => _mode = m),
+                  ),
                   if (nearbySupported) ...[
+                    const SizedBox(height: 16),
+                    FilledButton.tonalIcon(
+                      onPressed: _busy ? null : _hostOffline,
+                      icon: const Icon(Icons.wifi_tethering),
+                      label: const Text('Host offline nearby'),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'No internet needed — Android phones connect directly '
+                      'over Bluetooth & Wi-Fi Direct.',
+                      style: theme.textTheme.bodySmall,
+                    ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: _busy ? null : _joinOffline,
@@ -376,10 +382,17 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: _busy ? null : _practice,
+                    icon: const Icon(Icons.smart_toy_outlined),
+                    label:
+                        const Text('Practice solo — play vs bots, no internet'),
+                  ),
                 ],
               ),
 
-              // ---- Secondary rows ------------------------------------------
+              // ---- Resume a saved session ----------------------------------
               if (_saved != null) ...[
                 const SizedBox(height: 16),
                 Card(
@@ -403,12 +416,6 @@ class _TelephoneStartScreenState extends State<TelephoneStartScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
-              TextButton.icon(
-                onPressed: _busy ? null : _practice,
-                icon: const Icon(Icons.smart_toy_outlined),
-                label: const Text('Practice solo — play vs bots, no internet'),
-              ),
               if (_busy) ...[
                 const SizedBox(height: 24),
                 const Center(child: CircularProgressIndicator()),

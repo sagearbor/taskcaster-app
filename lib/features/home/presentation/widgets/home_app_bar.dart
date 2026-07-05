@@ -6,7 +6,6 @@ import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/screens/profile_screen.dart';
 import '../../../auth/presentation/screens/create_account_screen.dart';
-import '../../../games/presentation/screens/join_game_screen.dart';
 import '../../../settings/presentation/screens/settings_screen.dart';
 
 class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -17,20 +16,8 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
     return AppBar(
       title: const Text('TaskCaster'),
       actions: [
-        // Persistent "Join" entry point: got a code from a friend? It's always
-        // one tap away instead of buried in a stack of floating buttons.
-        TextButton.icon(
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const JoinGameScreen(),
-              ),
-            );
-          },
-          style: TextButton.styleFrom(foregroundColor: Colors.white),
-          icon: const Icon(Icons.group_add, size: 20),
-          label: const Text('Join'),
-        ),
+        // Code entry now lives in Zone 1's empty state and behind the Play
+        // sheet ("Join with a code"), so the app bar keeps only the avatar menu.
         BlocBuilder<AuthBloc, AuthState>(
           builder: (context, state) {
             if (state is! AuthAuthenticated) {

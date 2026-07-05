@@ -2,28 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/models/game.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
-import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../games/domain/repositories/game_repository.dart';
 import '../../../games/presentation/bloc/games_bloc.dart';
-import '../../../games/presentation/screens/create_game_screen.dart';
 import '../../../games/presentation/screens/game_detail_screen.dart';
-import '../../../games/presentation/screens/discover_games_screen.dart';
-import '../../../balloon_blitz/presentation/screens/balloon_blitz_start_screen.dart';
-import '../../../telephone/presentation/screens/telephone_start_screen.dart';
 import '../../../telephone/presentation/widgets/nearby_auto_cast_banner.dart';
-import '../../../trivia/presentation/screens/trivia_start_screen.dart';
 import '../widgets/game_card.dart';
-import '../widgets/game_mode_card.dart';
 import '../widgets/home_app_bar.dart';
-
-/// Gradient stops without an AppTheme token (the telephone/trivia banners'
-/// secondary hues). Everything else uses AppTheme colors directly.
-const _violetBright = Color(0xFF7C3AED);
-const _blue = Color(0xFF2563EB);
+import '../widgets/home_invites_section.dart';
+import '../widgets/play_sheet.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -69,8 +60,6 @@ class HomeView extends StatelessWidget {
             // Auto-cast: passively surfaces a one-tap "Join" when a nearby
             // phone starts an offline game (Android only; silent otherwise).
             const NearbyAutoCastBanner(),
-            // One scroll area: game-mode entries scroll away with the games
-            // list instead of pinning it into a sliver of screen.
             Expanded(
               child: BlocBuilder<GamesBloc, GamesState>(
                 builder: (context, state) => RefreshIndicator(
@@ -79,19 +68,18 @@ class HomeView extends StatelessWidget {
                   },
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                     children: [
-                      ..._buildModeCards(context),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Your games',
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                      ),
-                      const SizedBox(height: 8),
-                      ..._buildGamesContent(context, state),
+                      // Zone 1: invites from friends — the first thing an
+                      // invited player sees. One widget slot (SEAM: a richer
+                      // InviteInboxCard from lib/features/friends/ will swap in
+                      // here later).
+                      const HomeInvitesSection(),
+                      const SizedBox(height: 24),
+                      // Zone 2: jump back into active games, if any.
+                      ..._buildJumpBackIn(context, state),
+                      // Zone 3: the one big Play button.
+                      _buildPlayButton(context, state),
                     ],
                   ),
                 ),
@@ -99,168 +87,180 @@ class HomeView extends StatelessWidget {
             ),
           ],
         ),
-        // ONE floating action — creating a game. Join lives in the app bar;
-        // every game mode (AR, Discover, …) is an entry in the list above.
-        floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'create',
-          onPressed: () {
-            _handleCreateGame(context);
-          },
-          icon: const Icon(Icons.add),
-          label: const Text('Create Game'),
-        ),
       ),
     );
   }
 
-  /// All game-mode entries: Quick Play hero up top, then one compact banner
-  /// per mode — including AR Games and Discover, which are game entries (not
-  /// nav actions, so they don't belong in floating buttons).
-  List<Widget> _buildModeCards(BuildContext context) {
-    return [
-      GameModeCard(
-        hero: true,
-        title: 'Quick Play',
-        subtitle: 'Jump into a game in seconds!',
-        icon: Icons.flash_on,
-        gradientColors: const [AppTheme.coral, AppTheme.gold],
-        onTap: () => _handleQuickPlay(context),
-      ),
-      const SizedBox(height: 12),
-      GameModeCard(
-        title: 'Drawing Telephone',
-        subtitle: 'Draw → guess → laugh. Play across phones.',
-        icon: Icons.brush,
-        gradientColors: const [_violetBright, _blue],
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const TelephoneStartScreen(),
-            ),
-          );
-        },
-      ),
-      const SizedBox(height: 8),
-      GameModeCard(
-        title: 'Trivia Buzzer',
-        subtitle:
-            'Buzz in fast — fastest correct answer wins. Plays offline.',
-        icon: Icons.quiz,
-        gradientColors: const [AppTheme.violet, AppTheme.gold],
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const TriviaStartScreen(),
-            ),
-          );
-        },
-      ),
-      const SizedBox(height: 8),
-      GameModeCard(
-        title: 'Balloon Blitz',
-        subtitle: 'AR balloon race — works offline',
-        icon: Icons.celebration,
-        gradientColors: const [AppTheme.coral, AppTheme.gold],
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const BalloonBlitzStartScreen(),
-            ),
-          );
-        },
-      ),
-      const SizedBox(height: 8),
-      GameModeCard(
-        title: 'AR Games',
-        subtitle: 'Solo AR challenges — point, pop, score.',
-        icon: Icons.view_in_ar,
-        gradientColors: const [AppTheme.coral, AppTheme.violet],
-        onTap: () =>
-            context.read<GamesBloc>().add(const QuickPlayGame(ar: true)),
-      ),
-      const SizedBox(height: 8),
-      GameModeCard(
-        title: 'Discover',
-        subtitle: 'Browse community games and clone one for your crew.',
-        icon: Icons.public,
-        gradientColors: const [AppTheme.violet, AppTheme.coral],
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const DiscoverGamesScreen(),
-            ),
-          );
-        },
-      ),
-    ];
-  }
-
-  /// The "Your games" section, embedded in the shared scroll view.
-  List<Widget> _buildGamesContent(BuildContext context, GamesState state) {
+  /// Zone 2 — "Jump back in": hero the most recent active (lobby / in-progress)
+  /// game as a one-tap resume card, with any remaining games in a compact list
+  /// below. Completed games stay reachable in that list. Empty games list ->
+  /// nothing here, so the Play button (Zone 3) floats up and takes centre stage.
+  List<Widget> _buildJumpBackIn(BuildContext context, GamesState state) {
     if (state is GamesError) {
       return [
         ErrorView(
           message: 'Failed to load games',
           details: state.message,
-          onRetry: () {
-            context.read<GamesBloc>().add(LoadGames());
-          },
+          onRetry: () => context.read<GamesBloc>().add(LoadGames()),
         ),
+        const SizedBox(height: 24),
       ];
     }
 
     if (state is GamesLoaded) {
-      if (state.games.isEmpty) {
-        return [
-          ErrorView.empty(
-            entity: 'games',
-            action: 'create your first game',
-            onAction: () {
-              _handleCreateGame(context);
-            },
-          ),
-        ];
-      }
+      final games = state.games;
+      if (games.isEmpty) return const [];
+
+      final active = games
+          .where((g) => g.isInLobby || g.isInProgress)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final Game? hero = active.isNotEmpty ? active.first : null;
+      final remaining = games.where((g) => g.id != hero?.id).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       return [
-        for (final game in state.games)
+        Text(
+          hero != null ? 'Jump back in' : 'Your games',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        if (hero != null) ...[
+          _ResumeHeroCard(
+            game: hero,
+            onTap: () => _openGame(context, hero.id),
+          ),
+          const SizedBox(height: 12),
+        ],
+        for (final game in remaining)
           GameCard(
             game: game,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => GameDetailScreen(gameId: game.id),
-                ),
-              );
-            },
+            onTap: () => _openGame(context, game.id),
           ),
+        const SizedBox(height: 24),
       ];
     }
 
     // Loading (and any transient state, e.g. QuickPlay in flight): skeletons.
     return [
-      for (var i = 0; i < 3; i++)
+      for (var i = 0; i < 2; i++)
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: SkeletonLoaders.gameCardSkeleton(context),
         ),
+      const SizedBox(height: 12),
     ];
   }
 
-  // Guests are real Firebase anonymous users — a genuine uid that satisfies
-  // the Firestore rules (`creatorId == request.auth.uid`) — so they get the
-  // full hero CTAs, no sign-up wall. They can upgrade to a named account
-  // later (Settings) without losing their games.
-  void _handleQuickPlay(BuildContext context) {
-    context.read<GamesBloc>().add(const QuickPlayGame());
+  /// Zone 3 — the single, prominent "▶ Play" button. It's the primary action;
+  /// when there are no invites and no games it's the only thing on screen, so it
+  /// naturally takes centre stage.
+  Widget _buildPlayButton(BuildContext context, GamesState state) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SizedBox(
+        height: 64,
+        child: FilledButton.icon(
+          onPressed: () => showPlaySheet(context),
+          icon: const Icon(Icons.play_arrow_rounded, size: 32),
+          label: const Text(
+            'Play',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppTheme.coral,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
-  void _handleCreateGame(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => BlocProvider.value(
-          value: context.read<AuthBloc>(),
-          child: const CreateGameScreen(),
+  void _openGame(BuildContext context, String gameId) {
+    final gamesBloc = context.read<GamesBloc>();
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => GameDetailScreen(gameId: gameId),
+          ),
+        )
+        .then((_) => gamesBloc.add(LoadGames()));
+  }
+}
+
+/// The "Jump back in" hero: a prominent one-tap card resuming the most recent
+/// active game.
+class _ResumeHeroCard extends StatelessWidget {
+  const _ResumeHeroCard({required this.game, required this.onTap});
+
+  final Game game;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = game.isInProgress ? 'In progress' : 'In the lobby';
+    return Card(
+      elevation: 3,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppTheme.violet, AppTheme.coral],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.play_circle_fill,
+                    size: 32, color: Colors.white),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      game.gameName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$label · ${game.players.length} player'
+                      '${game.players.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_ios,
+                  color: Colors.white, size: 18),
+            ],
+          ),
         ),
       ),
     );
