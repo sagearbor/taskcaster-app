@@ -6,7 +6,9 @@ import 'package:uuid/uuid.dart';
 import '../../../telephone/data/datasources/nearby_diagnostics.dart';
 import '../../../telephone/data/datasources/nearby_permissions.dart';
 import '../../../telephone/presentation/widgets/nearby_debug_panel.dart';
+import '../../data/bots/blitz_bot.dart';
 import '../../data/datasources/blitz_transport.dart';
+import '../../data/datasources/loopback_blitz_transport.dart';
 import '../../data/datasources/nearby_blitz_transport.dart';
 import '../../data/repositories/balloon_blitz_repository.dart';
 import '../../domain/entities/blitz_session.dart';
@@ -175,6 +177,96 @@ class _OfflineBlitzHostScreenState extends State<OfflineBlitzHostScreen> {
       );
     }
     return BalloonBlitzSessionScreen(repository: _repo!, selfId: _selfId!);
+  }
+}
+
+// ===========================================================================
+// SOLO TEST — RACE A BOT (one phone, no Bluetooth)
+// ===========================================================================
+
+/// Debug the shared multiplayer race on a SINGLE phone. It stands up a real host
+/// repository on one side of a [LoopbackBlitzTransport] and a [BlitzBot]-driven
+/// peer repository on the other, then drops into the exact same
+/// [BalloonBlitzSessionScreen] hosting uses. Everything downstream is the real
+/// thing — host-authoritative spawns, pop adjudication, the live leaderboard, the
+/// results ceremony — the only fake is the radio, which is replaced by an
+/// in-process loopback. No permissions, no second device.
+class OfflineBlitzSoloScreen extends StatefulWidget {
+  final String displayName;
+  const OfflineBlitzSoloScreen({super.key, required this.displayName});
+
+  @override
+  State<OfflineBlitzSoloScreen> createState() => _OfflineBlitzSoloScreenState();
+}
+
+class _OfflineBlitzSoloScreenState extends State<OfflineBlitzSoloScreen> {
+  BalloonBlitzRepository? _hostRepo;
+  BlitzBot? _bot;
+  String? _selfId;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  void _start() {
+    NearbyDiagnostics.instance.log('— Solo Blitz vs bot: start —');
+    // One in-process link, host on one end, bot on the other. Auto-connects.
+    final (hostTransport, botTransport) = LoopbackBlitzTransport.pair();
+
+    final hostId = _uuid.v4();
+    final hostRepo = BalloonBlitzRepository.host(
+      transport: hostTransport,
+      session: BlitzSession.createHost(
+        hostId: hostId,
+        hostName: widget.displayName,
+      ),
+    );
+
+    final botRepo = BalloonBlitzRepository.peer(
+      transport: botTransport,
+      selfId: _uuid.v4(),
+      selfName: BlitzBot.defaultName,
+    );
+    final bot = BlitzBot(repository: botRepo)..start();
+
+    NearbyDiagnostics.instance
+        .log('solo: host + ${BlitzBot.defaultName} linked over loopback');
+
+    setState(() {
+      _hostRepo = hostRepo;
+      _bot = bot;
+      _selfId = hostId;
+    });
+  }
+
+  @override
+  void dispose() {
+    // Tear down both ends: the bot disposes its peer repo (+ its loopback
+    // endpoint); the host repo disposes the host endpoint.
+    _bot?.dispose();
+    _hostRepo?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = _hostRepo;
+    final selfId = _selfId;
+    if (repo == null || selfId == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Solo test: race a bot')),
+        bottomNavigationBar: const NearbyDebugPanel(),
+        body: const _Status(
+          icon: Icons.smart_toy,
+          message: 'Waking up your rival…',
+          spinner: true,
+        ),
+      );
+    }
+    // Exactly like hosting: the shared session screen, backed by the host repo.
+    return BalloonBlitzSessionScreen(repository: repo, selfId: selfId);
   }
 }
 
