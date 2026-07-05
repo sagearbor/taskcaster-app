@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'ar_engine.dart';
 import 'ar_games.dart';
+import 'ar_race.dart';
 
 /// One live object in the scene (a target or a bomb), with the bookkeeping the
 /// animation + scoring need.
@@ -15,6 +16,7 @@ class _LiveObject {
   final int value; // points awarded when popped (0 for bombs)
   final String modelRef; // which model was placed (lets the UI color the FX)
   final double phase; // per-object wiggle phase so they don't move in lockstep
+  final String raceId; // logical shared-race id (== node.id in solo games)
   double age = 0; // seconds since it appeared (drives rise + escape)
 
   _LiveObject({
@@ -24,7 +26,18 @@ class _LiveObject {
     required this.value,
     required this.modelRef,
     required this.phase,
+    required this.raceId,
   });
+
+  ArRaceObject toRaceObject() => ArRaceObject(
+        id: raceId,
+        position: base,
+        modelRef: modelRef,
+        value: value,
+        isBomb: isBomb,
+        phase: phase,
+        age: age,
+      );
 }
 
 /// Discrete game moments the view layer reacts to with sound/haptics/FX.
@@ -46,6 +59,11 @@ enum ArGameEventType {
   /// A target aged out and floated away unpopped.
   escape,
 
+  /// Shared race only: ANOTHER player popped a balloon ([ArGameEvent.playerName]
+  /// says who) — the view shows it burning away with their name, so it's clear
+  /// they took the points.
+  rivalPop,
+
   /// The round just ended.
   timeUp,
 }
@@ -58,7 +76,15 @@ class ArGameEvent {
   /// 'assets/ar/balloon_red.glb' — lets the view match FX color to the balloon.
   final String? modelRef;
 
-  const ArGameEvent(this.type, {this.value = 0, this.modelRef});
+  /// Who popped it, for [ArGameEventType.rivalPop].
+  final String? playerName;
+
+  const ArGameEvent(
+    this.type, {
+    this.value = 0,
+    this.modelRef,
+    this.playerName,
+  });
 }
 
 /// The ONE shared tap-game framework that drives Balloon Pop and Treasure Hunt.
@@ -81,11 +107,17 @@ class ArMinigameController extends ChangeNotifier {
   /// still starts in a feature-poor room).
   final Duration spawnFallback;
 
+  /// When set, this round is a SHARED multiplayer race (see [ArRaceSync]).
+  /// The authority runs the real logic and publishes events; every other
+  /// device mirrors the same logical balloon set in its own AR frame.
+  final ArRaceSync? race;
+
   ArMinigameController({
     required this.engine,
     required this.config,
     Random? random,
     this.spawnFallback = const Duration(seconds: 2),
+    this.race,
   })  : _random = random ?? Random(),
         secondsRemaining = config.duration.inSeconds;
 
@@ -144,12 +176,19 @@ class ArMinigameController extends ChangeNotifier {
   Timer? _fallbackTimer;
   Timer? _flashTimer;
   Timer? _preRollTimer;
+  Timer? _snapshotTimer;
+  StreamSubscription<ArRaceEvent>? _raceSub;
   bool _preRollStarted = false;
   int _spawnSerial = 0; // how many spawns have been attempted this round
+  int _raceIdSerial = 0; // logical shared-race object ids (authority only)
+  Future<void> _spawnQueue = Future.value(); // serializes mirror placements
   bool _bombSpawnedYet = false;
   bool _roundLive = false; // clocks have started (pre-roll finished)
   double _animClock = 0;
   bool _disposed = false;
+
+  bool get _isRaceAuthority => race != null && race!.isAuthority;
+  bool get _isRaceMirror => race != null && !race!.isAuthority;
 
   /// Cadence of the 3-2-1 pre-roll digits.
   static const Duration _preRollTick = Duration(milliseconds: 900);
@@ -178,6 +217,12 @@ class ArMinigameController extends ChangeNotifier {
     if (_disposed) return;
 
     _tapSub = engine.taps.listen(_onTap);
+    _raceSub = race?.events.listen(_onRaceEvent);
+    if (_isRaceMirror) {
+      // Mirrors never self-spawn: the shared set arrives over the radio (the
+      // objects are free-floating, so no local plane is needed).
+      return;
+    }
     // Spawn once tracking finds a surface, or after a short fallback so we never
     // hang in a featureless room.
     _planeSub = engine.planes.listen((_) => _spawnObjects());
@@ -189,6 +234,16 @@ class ArMinigameController extends ChangeNotifier {
     objectsSpawned = true;
     _planeSub?.cancel();
     _fallbackTimer?.cancel();
+
+    if (_isRaceAuthority) {
+      // Shared race: don't spawn yet. Announce the synchronized GO — every
+      // phone (this one included, via the echoed race event) runs the same
+      // 3-2-1, and the authority spawns the shared set only at GO so nobody
+      // gets a head start on live balloons.
+      race!.announceGo();
+      _safeNotify();
+      return;
+    }
 
     // Spawn the initial objects one at a time (sequential awaits) rather than
     // firing all placements concurrently — concurrent spawns raced on both the
@@ -221,6 +276,17 @@ class ArMinigameController extends ChangeNotifier {
         t.cancel();
         _startClocks();
         _emit(const ArGameEvent(ArGameEventType.go));
+        if (_isRaceAuthority && !hasLiveObjects) {
+          // Shared race: the authority spawns (and publishes) the shared set
+          // exactly at GO, and keeps mirrors healed with periodic snapshots.
+          _spawnInitial();
+          _snapshotTimer ??= Timer.periodic(const Duration(seconds: 3), (_) {
+            if (!finished && !_disposed) {
+              race!.publishSnapshot(
+                  _objects.map((o) => o.toRaceObject()).toList());
+            }
+          });
+        }
       }
       _safeNotify();
     });
@@ -294,17 +360,51 @@ class ArMinigameController extends ChangeNotifier {
         await engine.remove(node);
         return;
       }
-      _objects.add(_LiveObject(
+      final obj = _LiveObject(
         node: node,
         base: pos,
         isBomb: isBomb,
         value: value,
         modelRef: model,
         phase: _random.nextDouble() * 2 * pi,
-      ));
+        raceId: _isRaceAuthority ? 'r${_raceIdSerial++}' : node.id,
+      );
+      _objects.add(obj);
+      if (_isRaceAuthority) race!.publishSpawn(obj.toRaceObject());
       _safeNotify();
     } catch (e) {
       // A single failed placement must not kill the round; record once.
+      error ??= e.toString();
+    }
+  }
+
+  /// MIRROR: place a shared object announced by the authority, in our own AR
+  /// frame, with the same base/phase (and age, for snapshot heals) so it
+  /// animates identically. Serialized like every other spawn.
+  Future<void> _spawnMirror(ArRaceObject descriptor) async {
+    if (_disposed || finished) return;
+    if (_objects.any((o) => o.raceId == descriptor.id)) return;
+    try {
+      final node = await engine.spawn(
+        modelRef: descriptor.modelRef,
+        position: descriptor.position,
+      );
+      if (_disposed || finished) {
+        await engine.remove(node);
+        return;
+      }
+      _objects.add(_LiveObject(
+        node: node,
+        base: descriptor.position,
+        isBomb: descriptor.isBomb,
+        value: descriptor.value,
+        modelRef: descriptor.modelRef,
+        phase: descriptor.phase,
+        raceId: descriptor.id,
+      )..age = descriptor.age);
+      objectsSpawned = true;
+      _safeNotify();
+    } catch (e) {
       error ??= e.toString();
     }
   }
@@ -319,6 +419,8 @@ class ArMinigameController extends ChangeNotifier {
     final obj = _objects.removeAt(idx);
     engine.remove(obj.node);
 
+    // Local feedback is identical in every mode: instant burst/boom. What
+    // differs is who owns the SCORE and the respawn.
     if (obj.isBomb) {
       bombsHit++;
       _points = max(0, _points - config.bombPenalty);
@@ -339,10 +441,126 @@ class ArMinigameController extends ChangeNotifier {
     }
     _safeNotify();
 
+    if (_isRaceAuthority) {
+      // My own tap, already adjudicated (I am the authority): tell everyone.
+      race!.publishPop(
+        objectId: obj.raceId,
+        playerId: race!.selfPlayerId,
+        value: obj.isBomb ? config.bombPenalty : obj.value,
+        isBomb: obj.isBomb,
+      );
+      if (config.respawnOnHit) _spawnOne();
+      return;
+    }
+    if (_isRaceMirror) {
+      // Optimistic removal (the balloon is gone either way — my claim wins or
+      // someone else's already did); the authority owns scoring + respawn.
+      // Local hits/_points above are optimistic HUD feedback; the leaderboard
+      // (from the authority's session) is the truth.
+      race!.claimPop(obj.raceId);
+      return;
+    }
+
     if (config.respawnOnHit) {
       _spawnOne();
     } else if (!obj.isBomb && hits >= config.objectCount) {
       finish();
+    }
+  }
+
+  /// Shared-race events from the authority (or, on the authority, echoed
+  /// locally + claims arriving from mirrors).
+  void _onRaceEvent(ArRaceEvent event) {
+    if (_disposed || finished) return;
+    switch (event.type) {
+      case ArRaceEventType.go:
+        // Synchronized 3-2-1-GO on every phone.
+        objectsSpawned = true;
+        if (!_preRollStarted) {
+          _preRollStarted = true;
+          _emit(const ArGameEvent(ArGameEventType.surfaceFound));
+        }
+        _runPreRoll();
+        break;
+
+      case ArRaceEventType.spawn:
+        if (_isRaceMirror && event.object != null) {
+          _spawnQueue = _spawnQueue.then((_) => _spawnMirror(event.object!));
+        }
+        break;
+
+      case ArRaceEventType.pop:
+        // Somebody (possibly me — then it's already gone locally) popped it.
+        final idx = _objects.indexWhere((o) => o.raceId == event.objectId);
+        if (idx != -1) {
+          final obj = _objects.removeAt(idx);
+          engine.remove(obj.node);
+          if (event.playerId != race!.selfPlayerId) {
+            _emit(ArGameEvent(
+              ArGameEventType.rivalPop,
+              value: event.value,
+              modelRef: obj.modelRef,
+              playerName: race!.playerName(event.playerId ?? ''),
+            ));
+          }
+          _safeNotify();
+        }
+        break;
+
+      case ArRaceEventType.escape:
+        final idx = _objects.indexWhere((o) => o.raceId == event.objectId);
+        if (idx != -1) {
+          final obj = _objects.removeAt(idx);
+          engine.remove(obj.node);
+          if (!obj.isBomb) {
+            _emit(ArGameEvent(ArGameEventType.escape, modelRef: obj.modelRef));
+          }
+          _safeNotify();
+        }
+        break;
+
+      case ArRaceEventType.popClaim:
+        // AUTHORITY: adjudicate a mirror's tap. First claim wins; a claim for
+        // an already-gone object is simply ignored.
+        if (!_isRaceAuthority) break;
+        final idx = _objects.indexWhere((o) => o.raceId == event.objectId);
+        if (idx == -1) break;
+        final obj = _objects.removeAt(idx);
+        engine.remove(obj.node);
+        _emit(ArGameEvent(
+          ArGameEventType.rivalPop,
+          value: obj.isBomb ? config.bombPenalty : obj.value,
+          modelRef: obj.modelRef,
+          playerName: race!.playerName(event.playerId ?? ''),
+        ));
+        race!.publishPop(
+          objectId: obj.raceId,
+          playerId: event.playerId ?? '',
+          value: obj.isBomb ? config.bombPenalty : obj.value,
+          isBomb: obj.isBomb,
+        );
+        _safeNotify();
+        if (config.respawnOnHit) _spawnOne();
+        break;
+
+      case ArRaceEventType.snapshot:
+        if (!_isRaceMirror) break;
+        // Heal drift: add missing objects, drop stale ones, re-sync ages.
+        final byId = {for (final o in event.objects) o.id: o};
+        for (final obj in List<_LiveObject>.of(_objects)) {
+          final match = byId.remove(obj.raceId);
+          if (match == null) {
+            _objects.remove(obj);
+            engine.remove(obj.node);
+          } else {
+            obj.age = match.age;
+          }
+        }
+        for (final missing in byId.values) {
+          _spawnQueue = _spawnQueue.then((_) => _spawnMirror(missing));
+        }
+        _safeNotify();
+        break;
     }
   }
 
@@ -382,7 +600,9 @@ class ArMinigameController extends ChangeNotifier {
           obj.node,
           ArVector3(obj.base.x + wx, obj.base.y + rise, obj.base.z + wz),
         );
-        if (obj.age >= lifespanS) _escape(obj);
+        // Mirrors never decide escapes — the authority announces them (a late
+        // message just means the balloon rises a beat longer here).
+        if (obj.age >= lifespanS && !_isRaceMirror) _escape(obj);
       } else {
         // Gentle bob in place (e.g. Treasure Hunt gems if animated).
         final dy = sin(_animClock + obj.base.x * 3) * 0.04;
@@ -399,6 +619,7 @@ class ArMinigameController extends ChangeNotifier {
   void _escape(_LiveObject obj) {
     if (!_objects.remove(obj)) return;
     engine.remove(obj.node);
+    if (_isRaceAuthority) race!.publishEscape(obj.raceId);
     if (!obj.isBomb) {
       _emit(ArGameEvent(ArGameEventType.escape, modelRef: obj.modelRef));
     }
@@ -462,8 +683,10 @@ class ArMinigameController extends ChangeNotifier {
     _fallbackTimer?.cancel();
     _flashTimer?.cancel();
     _preRollTimer?.cancel();
+    _snapshotTimer?.cancel();
     _tapSub?.cancel();
     _planeSub?.cancel();
+    _raceSub?.cancel();
     _events.close();
     engine.dispose();
     super.dispose();

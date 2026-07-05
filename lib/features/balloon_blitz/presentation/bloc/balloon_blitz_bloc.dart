@@ -22,7 +22,6 @@ class BalloonBlitzBloc extends Bloc<BalloonBlitzEvent, BalloonBlitzState> {
     on<BlitzSubscribed>(_onSubscribed);
     on<_BlitzSessionUpdated>(_onSessionUpdated);
     on<BlitzRoundStarted>(_onRoundStarted);
-    on<BlitzLocalScoreReported>(_onScoreReported);
     on<BlitzRoundEnded>(_onRoundEnded);
     on<BlitzPlayAgainRequested>(_onPlayAgain);
   }
@@ -57,13 +56,6 @@ class BalloonBlitzBloc extends Bloc<BalloonBlitzEvent, BalloonBlitzState> {
     Emitter<BalloonBlitzState> emit,
   ) async {
     await repository.startRound();
-  }
-
-  Future<void> _onScoreReported(
-    BlitzLocalScoreReported event,
-    Emitter<BalloonBlitzState> emit,
-  ) async {
-    await repository.reportLocalScore(event.score);
   }
 
   Future<void> _onRoundEnded(

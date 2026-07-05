@@ -44,6 +44,10 @@ abstract class ArRaceSync {
   /// AUTHORITY: [objectId] aged out and escaped.
   void publishEscape(String objectId);
 
+  /// AUTHORITY: periodic full-set snapshot (ids + positions + ages) so mirrors
+  /// heal dropped messages and pause-induced age drift.
+  void publishSnapshot(List<ArRaceObject> objects);
+
   /// NON-AUTHORITY: ask the authority to score my tap on [objectId].
   void claimPop(String objectId);
 

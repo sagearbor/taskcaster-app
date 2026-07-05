@@ -176,8 +176,10 @@ class _PlayingScaffold extends StatelessWidget {
           // The live local AR game — created ONCE for the round (stable key).
           BlitzPlayView(
             key: const ValueKey('blitz-play'),
-            onScoreChanged: (score) =>
-                bloc.add(BlitzLocalScoreReported(score)),
+            // Shared race: the repository IS the ArRaceSync — one balloon set
+            // for everyone; the host's pop ledger IS the leaderboard, so no
+            // separate score messages exist to get lost.
+            race: bloc.repository,
             onFinished: () {
               // The host's local time-up also ends the authoritative round;
               // peers just wait for the host's results broadcast.

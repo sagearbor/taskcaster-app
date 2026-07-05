@@ -133,6 +133,24 @@ def fanfare():
     write_wav("fanfare.wav", out, peak=0.8)
 
 
+def sizzle():
+    # A rival popped your balloon: short fiery crackle (burning-up feel) —
+    # bright noise bursts through a rising band, quick decay.
+    dur = 0.4
+    n = int(SR * dur)
+    out = []
+    prev = 0.0
+    for i in range(n):
+        t = i / SR
+        # crackle: sparse impulse bursts
+        burst = (rng.random() * 2 - 1) if rng.random() < 0.22 else 0.0
+        alpha = 0.35 + 0.3 * (t / dur)
+        prev = prev + alpha * (burst - prev)
+        hiss = (rng.random() * 2 - 1) * 0.25
+        out.append((prev * 2.2 + hiss) * env_exp(t, 0.16))
+    write_wav("sizzle.wav", out, peak=0.7)
+
+
 def whoosh():
     dur = 0.5
     n = int(SR * dur)
@@ -153,4 +171,5 @@ boom()
 tick()
 go()
 fanfare()
+sizzle()
 whoosh()

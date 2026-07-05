@@ -20,15 +20,6 @@ class BlitzRoundStarted extends BalloonBlitzEvent {
   const BlitzRoundStarted();
 }
 
-/// This device popped a balloon — report the new local score to the host.
-class BlitzLocalScoreReported extends BalloonBlitzEvent {
-  final int score;
-  const BlitzLocalScoreReported(this.score);
-
-  @override
-  List<Object?> get props => [score];
-}
-
 /// HOST: end the round early (e.g. the local AR game finished). Idempotent.
 class BlitzRoundEnded extends BalloonBlitzEvent {
   const BlitzRoundEnded();

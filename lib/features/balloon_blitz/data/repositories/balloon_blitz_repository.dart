@@ -1,5 +1,9 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
+
+import '../../../../core/services/ar/ar_race.dart';
+import '../../../telephone/data/datasources/nearby_diagnostics.dart';
 import '../../domain/entities/blitz_session.dart';
 import '../datasources/blitz_transport.dart';
 
@@ -11,14 +15,24 @@ enum BlitzRole { host, peer }
 /// [BlitzSession]: it applies the pure model mutations ([BlitzSession.started],
 /// [BlitzSession.withScore], [BlitzSession.ended] …) and broadcasts
 /// `session.toMap()` to every peer. PEERS never mutate locally — they rebuild
-/// the session from each broadcast and send their own actions (join, score) to
-/// the host as tiny JSON messages, which the host applies and re-broadcasts.
+/// the session from each broadcast and send their actions to the host as tiny
+/// JSON messages, which the host applies and re-broadcasts.
+///
+/// It also implements [ArRaceSync]: since v1.2.21 everyone races ONE shared
+/// balloon set. The host's game controller owns spawns/escapes/adjudication
+/// and scores every pop into the session (so the leaderboard is always the pop
+/// ledger — no separate score messages that can be lost).
 ///
 /// Wire protocol (all maps carry a `k` kind):
-///  * peer → host  `{'k':'join','id':..,'name':..}`   — announce in the lobby
-///  * peer → host  `{'k':'score','id':..,'score':..}` — my latest pop score
-///  * host → peers `{'k':'session','session':{…}}`     — full authoritative state
-class BalloonBlitzRepository {
+///  * peer → host  `{'k':'join','id':..,'name':..}`  — announce in the lobby
+///  * peer → host  `{'k':'pop','id':..,'by':..}`     — claim a tap on object id
+///  * host → peers `{'k':'session','session':{…}}`    — full authoritative state
+///  * host → peers `{'k':'go'}`                       — run the 3-2-1-GO now
+///  * host → peers `{'k':'spawn','o':{…}}`            — shared object spawned
+///  * host → peers `{'k':'popped','id','by','v','b'}` — object gone, points paid
+///  * host → peers `{'k':'escaped','id':..}`          — object floated away
+///  * host → peers `{'k':'objects','list':[…]}`       — periodic set snapshot
+class BalloonBlitzRepository implements ArRaceSync {
   BalloonBlitzRepository._({
     required this.role,
     required this.transport,
@@ -74,10 +88,100 @@ class BalloonBlitzRepository {
 
   BlitzSession? _current;
   final _controller = StreamController<BlitzSession?>.broadcast();
+  final _raceEvents = StreamController<ArRaceEvent>.broadcast();
   Timer? _roundTimer;
+  String? _hostEndpointId; // peer: remembered at connect time, not send time
 
   bool get isHost => role == BlitzRole.host;
   BlitzSession? get current => _current;
+
+  // ---- ArRaceSync (the shared balloon set) ----------------------------------
+
+  @override
+  bool get isAuthority => isHost;
+
+  @override
+  String get selfPlayerId => selfId;
+
+  @override
+  Stream<ArRaceEvent> get events => _raceEvents.stream;
+
+  @override
+  String playerName(String playerId) {
+    final players = _current?.players ?? const [];
+    for (final p in players) {
+      if (p.id == playerId) return p.name;
+    }
+    return 'Someone';
+  }
+
+  @override
+  void announceGo() {
+    _sendRace({'k': 'go'});
+    _emitRace(const ArRaceEvent(ArRaceEventType.go)); // echo to own controller
+  }
+
+  @override
+  void publishSpawn(ArRaceObject object) {
+    _sendRace({'k': 'spawn', 'o': object.toMap()});
+  }
+
+  @override
+  void publishPop({
+    required String objectId,
+    required String playerId,
+    required int value,
+    required bool isBomb,
+  }) {
+    // The pop ledger IS the score: apply it to the authoritative session (the
+    // _apply broadcast carries the new leaderboard to every phone), then tell
+    // mirrors to remove the object.
+    final s = _current;
+    if (s != null) {
+      final old = s.players
+          .where((p) => p.id == playerId)
+          .map((p) => p.liveScore)
+          .firstOrNull ??
+          0;
+      final next = isBomb ? old - value : old + value;
+      _apply(s.withScore(playerId, next < 0 ? 0 : next));
+    }
+    _sendRace({'k': 'popped', 'id': objectId, 'by': playerId, 'v': value, 'b': isBomb});
+  }
+
+  @override
+  void publishEscape(String objectId) {
+    _sendRace({'k': 'escaped', 'id': objectId});
+  }
+
+  @override
+  void publishSnapshot(List<ArRaceObject> objects) {
+    _sendRace({'k': 'objects', 'list': objects.map((o) => o.toMap()).toList()});
+  }
+
+  @override
+  void claimPop(String objectId) {
+    final host = _hostEndpoint();
+    if (host.isEmpty) {
+      NearbyDiagnostics.instance.log('pop claim dropped: no host connection');
+      return; // optimistic UI already fired; the next snapshot re-syncs us
+    }
+    transport
+        .sendToEndpoint(host, {'k': 'pop', 'id': objectId, 'by': selfId}).catchError(
+      (Object e) =>
+          NearbyDiagnostics.instance.log('pop claim send failed: $e'),
+    );
+  }
+
+  /// Host → everyone else, race messages. One dead peer never blocks the rest.
+  void _sendRace(Map<String, dynamic> message) {
+    transport.broadcast(message).catchError(
+        (Object e) => NearbyDiagnostics.instance.log('race send failed: $e'));
+  }
+
+  void _emitRace(ArRaceEvent event) {
+    if (!_raceEvents.isClosed) _raceEvents.add(event);
+  }
 
   // ---- Lobby plumbing ------------------------------------------------------
 
@@ -139,22 +243,6 @@ class BalloonBlitzRepository {
     _apply(s.backToLobby());
   }
 
-  /// Report THIS device's latest local balloon-pop score. The host updates its
-  /// own player and re-broadcasts; a peer sends it to the host, which applies
-  /// the same mutation — so the leaderboard always converges on the host.
-  Future<void> reportLocalScore(int score) async {
-    if (isHost) {
-      final s = _current;
-      if (s == null) return;
-      _apply(s.withScore(selfId, score));
-    } else {
-      await transport.sendToEndpoint(
-        _hostEndpoint(),
-        {'k': 'score', 'id': selfId, 'score': score},
-      );
-    }
-  }
-
   // ---- Internals -----------------------------------------------------------
 
   void _apply(BlitzSession next) {
@@ -164,11 +252,19 @@ class BalloonBlitzRepository {
   }
 
   String _hostEndpoint() {
+    // Prefer the endpoint remembered at connect time; fall back to the live
+    // set in case of a reconnect under a new id.
+    final remembered = _hostEndpointId;
+    if (remembered != null &&
+        transport.connectedEndpoints.contains(remembered)) {
+      return remembered;
+    }
     final ids = transport.connectedEndpoints;
     return ids.isEmpty ? '' : ids.first;
   }
 
   void _onEndpointConnected(String endpointId) {
+    if (!isHost) _hostEndpointId = endpointId;
     if (isHost) {
       // Push the current state to the freshly-connected peer so it renders the
       // lobby immediately, even before its own join is processed.
@@ -201,19 +297,65 @@ class BalloonBlitzRepository {
           final name = message['name'] as String? ?? 'Player';
           if (id != null) _apply(s.withPlayerJoined(id, name));
           break;
-        case 'score':
-          final id = message['id'] as String?;
-          final score = (message['score'] as num?)?.toInt() ?? 0;
-          if (id != null) _apply(s.withScore(id, score));
+        case 'pop':
+          // A mirror claims a tap — the host's controller adjudicates
+          // (first claim wins) and answers via publishPop.
+          _emitRace(ArRaceEvent(
+            ArRaceEventType.popClaim,
+            objectId: message['id'] as String?,
+            playerId: message['by'] as String?,
+          ));
           break;
       }
     } else {
-      if (kind == 'session') {
-        final raw = message['session'];
-        if (raw is Map) {
-          _current = BlitzSession.fromMap(Map<String, dynamic>.from(raw));
-          if (!_controller.isClosed) _controller.add(_current);
-        }
+      switch (kind) {
+        case 'session':
+          final raw = message['session'];
+          if (raw is Map) {
+            _current = BlitzSession.fromMap(Map<String, dynamic>.from(raw));
+            if (!_controller.isClosed) _controller.add(_current);
+          }
+          break;
+        case 'go':
+          _emitRace(const ArRaceEvent(ArRaceEventType.go));
+          break;
+        case 'spawn':
+          final raw = message['o'];
+          if (raw is Map) {
+            _emitRace(ArRaceEvent(
+              ArRaceEventType.spawn,
+              object: ArRaceObject.fromMap(Map<String, dynamic>.from(raw)),
+            ));
+          }
+          break;
+        case 'popped':
+          _emitRace(ArRaceEvent(
+            ArRaceEventType.pop,
+            objectId: message['id'] as String?,
+            playerId: message['by'] as String?,
+            value: (message['v'] as num?)?.toInt() ?? 0,
+            isBomb: message['b'] as bool? ?? false,
+          ));
+          break;
+        case 'escaped':
+          _emitRace(ArRaceEvent(
+            ArRaceEventType.escape,
+            objectId: message['id'] as String?,
+          ));
+          break;
+        case 'objects':
+          final raw = message['list'];
+          if (raw is List) {
+            _emitRace(ArRaceEvent(
+              ArRaceEventType.snapshot,
+              objects: raw
+                  .whereType<Map>()
+                  .map((m) =>
+                      ArRaceObject.fromMap(Map<String, dynamic>.from(m)))
+                  .toList(),
+            ));
+          }
+          break;
       }
     }
   }
@@ -222,5 +364,6 @@ class BalloonBlitzRepository {
     _roundTimer?.cancel();
     await transport.dispose();
     if (!_controller.isClosed) await _controller.close();
+    if (!_raceEvents.isClosed) await _raceEvents.close();
   }
 }

@@ -27,6 +27,9 @@ abstract class GameSfx {
 
   /// A balloon escaping upward.
   void whoosh();
+
+  /// A RIVAL popped a balloon (shared race) — fiery crackle.
+  void sizzle();
 }
 
 class AudioGameSfx implements GameSfx {
@@ -80,6 +83,9 @@ class AudioGameSfx implements GameSfx {
 
   @override
   void whoosh() => _play('whoosh.wav');
+
+  @override
+  void sizzle() => _play('sizzle.wav');
 }
 
 /// No-op implementation for tests (and any platform without audio).
@@ -98,4 +104,6 @@ class SilentGameSfx implements GameSfx {
   void fanfare() {}
   @override
   void whoosh() {}
+  @override
+  void sizzle() {}
 }

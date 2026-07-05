@@ -7,6 +7,7 @@ import '../../../../core/di/service_locator.dart';
 import '../../../../core/services/ar/ar_engine.dart';
 import '../../../../core/services/ar/ar_games.dart';
 import '../../../../core/services/ar/ar_minigame_controller.dart';
+import '../../../../core/services/ar/ar_race.dart';
 import '../../../../core/services/sfx/game_sfx.dart';
 import '../../../../core/widgets/ar_fx.dart';
 
@@ -26,16 +27,24 @@ import '../../../../core/widgets/ar_fx.dart';
 /// The widget builds and the score/finish callbacks are exercised in tests via a
 /// fake [ArEngine], but the AR surface itself can only be verified on a device.
 class BlitzPlayView extends StatefulWidget {
-  /// Called with the new score each time it changes (i.e. on every pop).
-  final void Function(int score) onScoreChanged;
+  /// Called with the new local score each time it changes (i.e. on every pop).
+  /// In shared-race mode this is display-only feedback — the authoritative
+  /// leaderboard comes from the host's pop ledger via the session stream.
+  final void Function(int score)? onScoreChanged;
 
   /// Called once when the local round's timer runs out.
   final VoidCallback onFinished;
 
+  /// The shared-race sync (the [BalloonBlitzRepository]). When set, every
+  /// phone races ONE host-authoritative balloon set: same balloons, first
+  /// pop wins, rival pops burn away with the winner's name.
+  final ArRaceSync? race;
+
   const BlitzPlayView({
     super.key,
-    required this.onScoreChanged,
+    this.onScoreChanged,
     required this.onFinished,
+    this.race,
   });
 
   @override
@@ -78,6 +87,8 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
   int _shakeTrigger = 0;
   bool _showGo = false;
   Timer? _goTimer;
+  Timer? _rivalFlashTimer;
+  bool _rivalFlash = false;
   int _lastTickedSecond = -1;
 
   @override
@@ -86,7 +97,11 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
     WidgetsBinding.instance.addObserver(this);
     _engine = sl<ArEngine>();
     _sfx = sl<GameSfx>();
-    _controller = ArMinigameController(engine: _engine, config: _config);
+    _controller = ArMinigameController(
+      engine: _engine,
+      config: _config,
+      race: widget.race,
+    );
     _eventSub = _controller.events.listen(_onGameEvent);
     _controller.addListener(_onControllerChanged);
     _controller.start();
@@ -96,7 +111,7 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
     final score = _controller.liveScore;
     if (score != _lastReported) {
       _lastReported = score;
-      widget.onScoreChanged(score);
+      widget.onScoreChanged?.call(score);
     }
     if (_controller.finished && !_finishedNotified) {
       _finishedNotified = true;
@@ -158,6 +173,23 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
           _toastSeq++;
         });
         break;
+      case ArGameEventType.rivalPop:
+        // Someone ELSE got it: it burns away — sizzle + amber flash + who.
+        _sfx.sizzle();
+        HapticFeedback.selectionClick();
+        setState(() {
+          final who = event.playerName ?? 'Someone';
+          _toast = (event.modelRef ?? '').contains('bomb')
+              ? '💥 $who hit a bomb −${event.value}'
+              : '🔥 $who +${event.value}';
+          _toastSeq++;
+          _rivalFlash = true;
+        });
+        _rivalFlashTimer?.cancel();
+        _rivalFlashTimer = Timer(const Duration(milliseconds: 350), () {
+          if (mounted) setState(() => _rivalFlash = false);
+        });
+        break;
       case ArGameEventType.timeUp:
         _sfx.fanfare();
         HapticFeedback.mediumImpact();
@@ -197,6 +229,7 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _goTimer?.cancel();
+    _rivalFlashTimer?.cancel();
     _eventSub?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
@@ -303,6 +336,15 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
               duration: const Duration(milliseconds: 120),
               child: Container(color: Colors.red.withOpacity(0.35)),
             ),
+          ),
+        ),
+
+        // Brief amber flash when a RIVAL takes a balloon (shared race).
+        IgnorePointer(
+          child: AnimatedOpacity(
+            opacity: _rivalFlash ? 1 : 0,
+            duration: const Duration(milliseconds: 120),
+            child: Container(color: Colors.orange.withOpacity(0.18)),
           ),
         ),
       ],
