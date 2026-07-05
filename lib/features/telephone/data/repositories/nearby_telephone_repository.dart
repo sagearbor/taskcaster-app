@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../../core/models/telephone_session.dart';
+import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/nearby_cast_label.dart';
 import '../../domain/repositories/telephone_repository.dart';
 import '../datasources/nearby_telephone_transport.dart';
@@ -142,8 +143,7 @@ class NearbyTelephoneRepository implements TelephoneRepository {
       if (s == null) return;
       _apply(s.withSubmission(uid, content));
     } else {
-      await transport.sendToEndpoint(_hostEndpoint(),
-          {'k': 'submit', 'uid': uid, 'content': content});
+      await _sendToHost({'k': 'submit', 'uid': uid, 'content': content});
     }
   }
 
@@ -173,7 +173,7 @@ class NearbyTelephoneRepository implements TelephoneRepository {
       _apply(s.withRating(
           raterUid: raterUid, targetUid: targetUid, value: value));
     } else {
-      await transport.sendToEndpoint(_hostEndpoint(), {
+      await _sendToHost({
         'k': 'rate',
         'raterUid': raterUid,
         'targetUid': targetUid,
@@ -189,7 +189,7 @@ class NearbyTelephoneRepository implements TelephoneRepository {
       if (s == null) return;
       _apply(s.playAgain());
     } else {
-      await transport.sendToEndpoint(_hostEndpoint(), {'k': 'again'});
+      await _sendToHost({'k': 'again'});
     }
   }
 
@@ -225,6 +225,27 @@ class NearbyTelephoneRepository implements TelephoneRepository {
     // A peer is connected to exactly one endpoint: the host.
     final ids = transport.connectedEndpoints;
     return ids.isEmpty ? '' : ids.first;
+  }
+
+  /// PEER: deliver one action message to the host — failing FAST and LOUD.
+  ///
+  /// Before the transport was hardened, sending with a dropped/never-completed
+  /// connection hung the caller's Future forever, which is exactly the field
+  /// bug "the joiner's Submit button did nothing". Now we throw a
+  /// [StateError] whose message is already player-ready copy, so the bloc can
+  /// surface it verbatim in a SnackBar and the submit button stays usable for
+  /// a retry. Messages stay small; chunking/time-boxing is the transport's job.
+  Future<void> _sendToHost(Map<String, dynamic> message) async {
+    if (!transport.hasConnection) {
+      throw StateError(FriendlyErrors.nearbyHostLost);
+    }
+    try {
+      await transport.sendToEndpoint(_hostEndpoint(), message);
+    } catch (e) {
+      // The transport already logged the specifics to NearbyDiagnostics —
+      // the player just needs to know what to do next.
+      throw StateError(FriendlyErrors.nearbyHostUnreachable);
+    }
   }
 
   void _onEndpointConnected(String endpointId) {

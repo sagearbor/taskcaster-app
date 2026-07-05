@@ -4,17 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/models/telephone_session.dart';
+import '../../data/datasources/nearby_diagnostics.dart';
 import '../../data/datasources/nearby_permissions.dart';
 import '../../data/datasources/nearby_telephone_transport.dart';
 import '../../data/repositories/nearby_telephone_repository.dart';
 import '../../domain/nearby_cast_label.dart';
+import '../widgets/nearby_debug_panel.dart';
 import 'telephone_session_screen.dart';
 
 /// Shared bits for the two offline entry screens.
 const _uuid = Uuid();
 
-NearbyTelephoneTransport _newTransport() =>
-    NearbyTelephoneTransport(serviceId: kTelephoneNearbyServiceId);
+NearbyTelephoneTransport _newTransport() {
+  final t = NearbyTelephoneTransport(serviceId: kTelephoneNearbyServiceId);
+  // Route every advertise/discover/connection/send event into the on-screen
+  // "Connection help" panel — without this the diagnostics were lost entirely.
+  t.onLog = NearbyDiagnostics.instance.log;
+  return t;
+}
 
 /// A centred message with an icon, used for the "not supported" / "permission
 /// denied" / loading states.
@@ -64,7 +71,16 @@ class _Status extends StatelessWidget {
 /// so it is torn down when the user leaves.
 class OfflineHostScreen extends StatefulWidget {
   final String displayName;
-  const OfflineHostScreen({super.key, required this.displayName});
+
+  /// How the game plays out (classic chain / same prompt / turn by turn),
+  /// chosen on the start screen's mode picker — same as online games.
+  final TelephoneGameMode gameMode;
+
+  const OfflineHostScreen({
+    super.key,
+    required this.displayName,
+    this.gameMode = TelephoneGameMode.classicTelephone,
+  });
 
   @override
   State<OfflineHostScreen> createState() => _OfflineHostScreenState();
@@ -84,11 +100,13 @@ class _OfflineHostScreenState extends State<OfflineHostScreen> {
   }
 
   Future<void> _start() async {
+    NearbyDiagnostics.instance.log('— Host Drawing Telephone: start —');
     if (!NearbyPermissions.isSupportedPlatform) {
       _fail('Offline nearby play needs an Android phone or tablet.');
       return;
     }
     final granted = await NearbyPermissions.request();
+    NearbyDiagnostics.instance.log('host permissions granted=$granted');
     if (!mounted) return;
     if (!granted) {
       _fail('Bluetooth, Wi-Fi and location permissions are required to host '
@@ -103,6 +121,7 @@ class _OfflineHostScreenState extends State<OfflineHostScreen> {
       inviteCode: _shortCode(),
       creatorUid: playerId,
       creatorName: widget.displayName,
+      gameMode: widget.gameMode,
     );
     final repo = NearbyTelephoneRepository.host(
       transport: _newTransport(),
@@ -149,6 +168,7 @@ class _OfflineHostScreenState extends State<OfflineHostScreen> {
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Host offline game')),
+        bottomNavigationBar: const NearbyDebugPanel(),
         body: _Status(
           icon: Icons.bluetooth_disabled,
           message: _error!,
@@ -162,6 +182,7 @@ class _OfflineHostScreenState extends State<OfflineHostScreen> {
     if (_busy || _repo == null || _session == null || _playerId == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Host offline game')),
+        bottomNavigationBar: const NearbyDebugPanel(),
         body: const _Status(
           icon: Icons.wifi_tethering,
           message: 'Starting nearby game…\nMake sure Bluetooth & Wi-Fi are on.',
@@ -223,11 +244,13 @@ class _OfflineJoinScreenState extends State<OfflineJoinScreen> {
   }
 
   Future<void> _start() async {
+    NearbyDiagnostics.instance.log('— Find nearby Drawing Telephone: start —');
     if (!NearbyPermissions.isSupportedPlatform) {
       _fail('Offline nearby play needs an Android phone or tablet.');
       return;
     }
     final granted = await NearbyPermissions.request();
+    NearbyDiagnostics.instance.log('join permissions granted=$granted');
     if (!mounted) return;
     if (!granted) {
       _fail('Bluetooth, Wi-Fi and location permissions are required to find '
@@ -349,6 +372,7 @@ class _OfflineJoinScreenState extends State<OfflineJoinScreen> {
     }
     return Scaffold(
       appBar: AppBar(title: const Text('Find nearby game')),
+      bottomNavigationBar: const NearbyDebugPanel(),
       body: body,
     );
   }

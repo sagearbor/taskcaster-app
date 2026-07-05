@@ -246,4 +246,79 @@ void main() {
       expect(lobby.playerCount, 1, reason: 'duplicate uid not added');
     });
   });
+
+  group('TelephoneSession — classic chain by player count (2/3/4)', () {
+    TelephoneSession startedWithPlayers(int n) {
+      var s = TelephoneSession.create(
+        id: 's-n$n',
+        gameName: 'Test',
+        inviteCode: 'CODE12',
+        creatorUid: 'p0',
+        creatorName: 'P0',
+        createdAt: DateTime(2026, 1, 1),
+      );
+      for (var i = 1; i < n; i++) {
+        s = s.withPlayerJoined('p$i', 'P$i');
+      }
+      return s.started();
+    }
+
+    /// Plays a whole classic game to the reveal and returns the final session.
+    TelephoneSession playToReveal(TelephoneSession s) {
+      var guard = 0;
+      while (s.isPlaying && guard++ < 20) {
+        for (final p in [...s.players]) {
+          if (s.isAwaitingSubmission(p.uid)) {
+            s = s.withSubmission(p.uid, 'c-${p.uid}-s${s.step}');
+          }
+        }
+      }
+      return s;
+    }
+
+    List<TelephoneEntryType> typesOf(List<TelephoneEntry> chain) =>
+        chain.map((e) => e.type).toList();
+
+    test('2 players: prompt → drawing, then reveal (no guess step)', () {
+      final s = playToReveal(startedWithPlayers(2));
+      expect(s.phase, TelephonePhase.reveal,
+          reason: '2-player classic must still reach a reveal');
+      for (final chain in s.chains) {
+        expect(typesOf(chain),
+            [TelephoneEntryType.prompt, TelephoneEntryType.drawing],
+            reason: 'with 2 players the game ends after one drawing — '
+                'this is why the mode picker says "best with 3+"');
+        // Two distinct authors: writer then drawer.
+        expect(chain.map((e) => e.authorUid).toSet().length, 2);
+      }
+    });
+
+    test('3 players: prompt → drawing → guess alternation', () {
+      final s = playToReveal(startedWithPlayers(3));
+      expect(s.phase, TelephonePhase.reveal);
+      for (final chain in s.chains) {
+        expect(typesOf(chain), [
+          TelephoneEntryType.prompt,
+          TelephoneEntryType.drawing,
+          TelephoneEntryType.guess,
+        ]);
+        expect(chain.map((e) => e.authorUid).toSet().length, 3,
+            reason: 'every entry in a chain comes from a distinct player');
+      }
+    });
+
+    test('4 players: prompt → drawing → guess → drawing alternation', () {
+      final s = playToReveal(startedWithPlayers(4));
+      expect(s.phase, TelephonePhase.reveal);
+      for (final chain in s.chains) {
+        expect(typesOf(chain), [
+          TelephoneEntryType.prompt,
+          TelephoneEntryType.drawing,
+          TelephoneEntryType.guess,
+          TelephoneEntryType.drawing,
+        ]);
+        expect(chain.map((e) => e.authorUid).toSet().length, 4);
+      }
+    });
+  });
 }

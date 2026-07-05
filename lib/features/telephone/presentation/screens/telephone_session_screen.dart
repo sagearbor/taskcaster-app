@@ -340,6 +340,32 @@ void _playAgain(BuildContext context, TelephoneSession session) {
       .add(TelephonePlayAgainRequested(session.id));
 }
 
+/// The step's submit button. While the bloc has a submission in flight it
+/// shows a spinner and disables itself, and if the send fails (e.g. an offline
+/// peer whose link to the host dropped) it re-enables so the exact same
+/// content can simply be re-sent — no more "the button did nothing".
+class _SubmitButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+  const _SubmitButton({required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final submitting =
+        context.select((TelephoneBloc bloc) => bloc.state.submitting);
+    return FilledButton(
+      onPressed: submitting ? null : onPressed,
+      child: submitting
+          ? const SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            )
+          : Text(label),
+    );
+  }
+}
+
 /// The big one-tap "Play again" button used by both the classic reveal and the
 /// same-prompt results screen — repeat with the same crew and settings.
 class _PlayAgainButton extends StatelessWidget {
@@ -396,10 +422,7 @@ class _PromptInputState extends State<_PromptInput> {
           onSubmitted: (_) => _send(),
         ),
         const SizedBox(height: 8),
-        FilledButton(
-          onPressed: _send,
-          child: const Text('Submit prompt'),
-        ),
+        _SubmitButton(label: 'Submit prompt', onPressed: _send),
       ],
     );
   }
@@ -466,10 +489,7 @@ class _DrawInputState extends State<_DrawInput> {
           const SizedBox(height: 12),
           DrawingCanvas(controller: _controller),
           const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _send,
-            child: const Text('Submit drawing'),
-          ),
+          _SubmitButton(label: 'Submit drawing', onPressed: _send),
         ],
       ),
     );
@@ -530,10 +550,7 @@ class _GuessInputState extends State<_GuessInput> {
           onSubmitted: (_) => _send(),
         ),
         const SizedBox(height: 8),
-        FilledButton(
-          onPressed: _send,
-          child: const Text('Submit guess'),
-        ),
+        _SubmitButton(label: 'Submit guess', onPressed: _send),
       ],
     );
   }
@@ -1131,10 +1148,7 @@ class _SamePromptDrawInputState extends State<_SamePromptDrawInput> {
           const SizedBox(height: 12),
           DrawingCanvas(controller: _controller),
           const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _send,
-            child: const Text('Submit drawing'),
-          ),
+          _SubmitButton(label: 'Submit drawing', onPressed: _send),
         ],
       ),
     );

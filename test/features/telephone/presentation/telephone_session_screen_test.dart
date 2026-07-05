@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskcaster_app/core/models/session_mode.dart';
+import 'package:taskcaster_app/core/utils/friendly_errors.dart';
 import 'package:taskcaster_app/core/models/telephone_session.dart';
 import 'package:taskcaster_app/core/widgets/user_avatar.dart';
 import 'package:taskcaster_app/features/telephone/domain/repositories/telephone_repository.dart';
@@ -228,4 +231,105 @@ void main() {
           findsOneWidget);
     });
   });
+
+  group('submit resilience (offline peer whose send fails)', () {
+    // Playing, step 0 of the classic chain → the prompt input for p1.
+    final promptSession = _session(
+      phase: TelephonePhase.playing,
+      step: 0,
+      players: const [
+        TelephonePlayer(uid: 'p1', displayName: 'Ana'),
+        TelephonePlayer(uid: 'p2', displayName: 'Ben'),
+      ],
+      chains: [[], []],
+    );
+
+    Widget probeScreen(_SubmitProbeRepository repo) => MaterialApp(
+          home: TelephoneSessionScreen(
+            sessionId: promptSession.id,
+            playerId: 'p1',
+            displayName: 'Ana',
+            repository: repo,
+          ),
+        );
+
+    testWidgets('shows a spinner while the submit is in flight',
+        (tester) async {
+      final repo = _SubmitProbeRepository(promptSession)
+        ..pending = Completer<void>();
+      await tester.pumpWidget(probeScreen(repo));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'A cat in space');
+      await tester.tap(find.text('Submit prompt'));
+      await tester.pump();
+
+      // In flight: label swapped for a spinner, button disabled.
+      expect(find.text('Submit prompt'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      repo.pending!.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Submit prompt'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets(
+        'a failed submit shows the friendly SnackBar and re-enables the '
+        'button for a retry — never a silent dead button', (tester) async {
+      final repo = _SubmitProbeRepository(promptSession)
+        ..throwOnSubmit = StateError(FriendlyErrors.nearbyHostLost);
+      await tester.pumpWidget(probeScreen(repo));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'A cat in space');
+      await tester.tap(find.text('Submit prompt'));
+      await tester.pump();
+      await tester.pump();
+
+      // The player is told what happened, in FriendlyErrors voice.
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.text(FriendlyErrors.nearbyHostLost), findsOneWidget);
+
+      // And the button is usable again for a retry with the same content.
+      final button = tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'Submit prompt'));
+      expect(button.onPressed, isNotNull);
+      expect(repo.submitCalls, 1);
+
+      // Retry actually re-sends.
+      repo.throwOnSubmit = null;
+      await tester.tap(find.text('Submit prompt'));
+      await tester.pump();
+      await tester.pump();
+      expect(repo.submitCalls, 2);
+
+      // Let the SnackBar's auto-dismiss timer finish so the test ends clean.
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    });
+  });
+}
+
+/// A [_FakeTelephoneRepository] whose [submitEntry] can be held open (to see
+/// the in-flight spinner) or made to throw (to see the error SnackBar).
+class _SubmitProbeRepository extends _FakeTelephoneRepository {
+  _SubmitProbeRepository(super.session);
+
+  Completer<void>? pending;
+  Object? throwOnSubmit;
+  int submitCalls = 0;
+
+  @override
+  Future<void> submitEntry({
+    required String sessionId,
+    required String uid,
+    required String content,
+  }) async {
+    submitCalls++;
+    final error = throwOnSubmit;
+    if (error != null) throw error;
+    final gate = pending;
+    if (gate != null) await gate.future;
+  }
 }

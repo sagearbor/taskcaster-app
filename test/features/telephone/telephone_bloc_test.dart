@@ -2,6 +2,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:taskcaster_app/core/models/telephone_session.dart';
+import 'package:taskcaster_app/core/utils/friendly_errors.dart';
 import 'package:taskcaster_app/features/telephone/domain/repositories/telephone_repository.dart';
 import 'package:taskcaster_app/features/telephone/presentation/bloc/telephone_bloc.dart';
 
@@ -103,6 +104,56 @@ void main() {
       verify: (_) {
         verify(() => repo.playAgain('s1')).called(1);
       },
+    );
+
+    blocTest<TelephoneBloc, TelephoneState>(
+      'submit toggles the in-flight flag around a successful send',
+      build: () {
+        when(() => repo.submitEntry(
+              sessionId: any(named: 'sessionId'),
+              uid: any(named: 'uid'),
+              content: any(named: 'content'),
+            )).thenAnswer((_) async {});
+        return TelephoneBloc(repository: repo);
+      },
+      act: (bloc) => bloc.add(const TelephoneEntrySubmitted(
+        sessionId: 's1',
+        uid: 'p0',
+        content: 'draw',
+      )),
+      expect: () => [
+        isA<TelephoneState>()
+            .having((s) => s.submitting, 'submitting', true)
+            .having((s) => s.error, 'error', isNull),
+        isA<TelephoneState>()
+            .having((s) => s.submitting, 'submitting', false)
+            .having((s) => s.error, 'error', isNull),
+      ],
+    );
+
+    blocTest<TelephoneBloc, TelephoneState>(
+      "a failed offline submit surfaces the repository's player-ready copy "
+      'and re-enables the submit button',
+      build: () {
+        when(() => repo.submitEntry(
+              sessionId: any(named: 'sessionId'),
+              uid: any(named: 'uid'),
+              content: any(named: 'content'),
+            )).thenThrow(StateError(FriendlyErrors.nearbyHostLost));
+        return TelephoneBloc(repository: repo);
+      },
+      act: (bloc) => bloc.add(const TelephoneEntrySubmitted(
+        sessionId: 's1',
+        uid: 'p0',
+        content: 'draw',
+      )),
+      expect: () => [
+        isA<TelephoneState>()
+            .having((s) => s.submitting, 'submitting', true),
+        isA<TelephoneState>()
+            .having((s) => s.submitting, 'submitting', false)
+            .having((s) => s.error, 'error', FriendlyErrors.nearbyHostLost),
+      ],
     );
 
     blocTest<TelephoneBloc, TelephoneState>(
