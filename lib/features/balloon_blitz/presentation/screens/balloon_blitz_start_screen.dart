@@ -123,32 +123,22 @@ class _BalloonBlitzStartScreenState extends State<BalloonBlitzStartScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            // ---- Primary action: host the race ---------------------------
             if (supported) ...[
-              FilledButton.icon(
-                onPressed: _host,
-                icon: const Icon(Icons.wifi_tethering),
-                label: const Text('Host Balloon Blitz'),
+              SizedBox(
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: _host,
+                  icon: const Icon(Icons.wifi_tethering),
+                  label: const Text('Host Balloon Blitz',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 'One phone hosts. Everyone else taps "Join".',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: 20),
-              Row(children: [
-                const Expanded(child: Divider()),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('Or', style: theme.textTheme.bodySmall),
-                ),
-                const Expanded(child: Divider()),
-              ]),
-              const SizedBox(height: 20),
-              OutlinedButton.icon(
-                onPressed: _join,
-                icon: const Icon(Icons.travel_explore),
-                label: const Text('Join nearby race'),
               ),
             ] else
               const Card(
@@ -162,27 +152,45 @@ class _BalloonBlitzStartScreenState extends State<BalloonBlitzStartScreen> {
                   ),
                 ),
               ),
-            const SizedBox(height: 24),
-            Row(children: [
-              const Expanded(child: Divider()),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child:
-                    Text('Debugging?', style: theme.textTheme.bodySmall),
+            const SizedBox(height: 16),
+            // ---- Options: join a nearby race + practice, tucked away ------
+            Card(
+              clipBehavior: Clip.antiAlias,
+              child: ExpansionTile(
+                leading: const Icon(Icons.more_horiz),
+                title: const Text('Options',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Join a nearby race or practice'),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  if (supported) ...[
+                    OutlinedButton.icon(
+                      onPressed: _join,
+                      icon: const Icon(Icons.travel_explore),
+                      label: const Text('Join nearby race'),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'No code needed — joins a host in the same room.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  OutlinedButton.icon(
+                    onPressed: _soloBot,
+                    icon: const Icon(Icons.smart_toy_outlined),
+                    label: const Text('🤖 Practice vs. robot'),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Race a simulated opponent on this one phone — everything '
+                    'real except Bluetooth.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ),
-              const Expanded(child: Divider()),
-            ]),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _soloBot,
-              icon: const Icon(Icons.smart_toy_outlined),
-              label: const Text('🤖 Solo test: race a bot'),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Debug the race on one phone — everything real except Bluetooth.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
             ),
           ],
         ),

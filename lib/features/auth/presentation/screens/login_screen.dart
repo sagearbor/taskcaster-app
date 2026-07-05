@@ -6,8 +6,18 @@ import '../bloc/auth_bloc.dart';
 import '../widgets/auth_form.dart';
 import 'register_screen.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  // Guest-first: the account options (email/Google/Apple/sign-up) stay tucked
+  // away until the returning user asks for them, so the very first thing a new
+  // player sees is one big "Play" button.
+  bool _showSignIn = false;
 
   @override
   Widget build(BuildContext context) {
@@ -79,59 +89,90 @@ class LoginScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                AuthForm(
-                  title: 'Sign In',
-                  buttonText: 'Sign In',
-                  onSubmit: (email, password, displayName) {
-                    context.read<AuthBloc>().add(
-                      SignInRequested(email: email, password: password),
-                    );
-                  },
-                  showDisplayNameField: false,
-                ),
-                const SizedBox(height: 20),
-                _OrDivider(),
-                const SizedBox(height: 20),
-                _GoogleSignInButton(
-                  onPressed: () {
-                    context.read<AuthBloc>().add(GoogleSignInRequested());
-                  },
-                ),
-                const SizedBox(height: 12),
-                _AppleSignInButton(
-                  onPressed: () {
-                    context.read<AuthBloc>().add(AppleSignInRequested());
-                  },
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    context.read<AuthBloc>().add(AnonymousSignInRequested());
-                  },
-                  icon: const Icon(Icons.person_outline),
-                  label: const Text('Continue as Guest'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => _showForgotPasswordDialog(context),
-                  child: const Text('Forgot password?'),
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => BlocProvider.value(
-                          value: context.read<AuthBloc>(),
-                          child: const RegisterScreen(),
+                    // Primary: one big Play button → guest (anonymous) sign-in.
+                    SizedBox(
+                      height: 64,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          context
+                              .read<AuthBloc>()
+                              .add(AnonymousSignInRequested());
+                        },
+                        icon: const Icon(Icons.play_arrow_rounded, size: 32),
+                        label: const Text(
+                          'Play',
+                          style: TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTheme.coral,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
                         ),
                       ),
-                    );
-                  },
-                  child: const Text('Don\'t have an account? Sign up'),
-                ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Secondary: a single link that reveals the full account
+                    // options for returning / registered users.
+                    TextButton(
+                      onPressed: () =>
+                          setState(() => _showSignIn = !_showSignIn),
+                      child: Text(
+                        _showSignIn
+                            ? 'Hide sign-in options'
+                            : 'Sign in or create account',
+                      ),
+                    ),
+                    if (_showSignIn) ...[
+                      const SizedBox(height: 8),
+                      AuthForm(
+                        title: 'Sign In',
+                        buttonText: 'Sign In',
+                        onSubmit: (email, password, displayName) {
+                          context.read<AuthBloc>().add(
+                                SignInRequested(
+                                    email: email, password: password),
+                              );
+                        },
+                        showDisplayNameField: false,
+                      ),
+                      const SizedBox(height: 20),
+                      _OrDivider(),
+                      const SizedBox(height: 20),
+                      _GoogleSignInButton(
+                        onPressed: () {
+                          context
+                              .read<AuthBloc>()
+                              .add(GoogleSignInRequested());
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _AppleSignInButton(
+                        onPressed: () {
+                          context.read<AuthBloc>().add(AppleSignInRequested());
+                        },
+                      ),
+                      TextButton(
+                        onPressed: () => _showForgotPasswordDialog(context),
+                        child: const Text('Forgot password?'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => BlocProvider.value(
+                                value: context.read<AuthBloc>(),
+                                child: const RegisterScreen(),
+                              ),
+                            ),
+                          );
+                        },
+                        child: const Text('Don\'t have an account? Sign up'),
+                      ),
+                    ],
                   ],
                 ),
               ),

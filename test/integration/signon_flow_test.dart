@@ -31,24 +31,32 @@ void main() {
 
   testWidgets('guest sign-in -> home -> discover -> clone a public game',
       (tester) async {
+    // Tall viewport so the home ListView builds all the way down to the Play
+    // button (it sits below the seeded games list; a short viewport would lazily
+    // skip it).
+    tester.view.physicalSize = const Size(1000, 3000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(_appUnderTest());
     await tester.pumpAndSettle();
 
-    // Login screen offers a guest path. The screen scrolls (it now also shows
-    // Google/Apple sign-in options), so bring the guest button into view first.
-    expect(find.text('Continue as Guest'), findsOneWidget);
-    await tester.ensureVisible(find.text('Continue as Guest'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Continue as Guest'));
+    // Login screen is guest-first: the primary action is one big "Play"
+    // button that does the anonymous sign-in.
+    expect(find.text('Play'), findsOneWidget);
+    await tester.tap(find.text('Play'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
-    // Home screen.
-    expect(find.textContaining('Quick Play'), findsWidgets);
+    // Home screen — the one big Play button opens the destinations sheet.
+    expect(find.text('Play'), findsOneWidget);
+    await tester.tap(find.text('Play'));
+    await tester.pumpAndSettle();
 
-    // Open the public games gallery via the Discover FAB.
-    await tester.tap(find.byIcon(Icons.public));
+    // Open the public games gallery via the sheet's Discover row.
+    await tester.tap(find.text('Discover'));
     await tester.pumpAndSettle();
     expect(find.text('Discover Games'), findsOneWidget);
     expect(find.text('Weekend Warriors'), findsOneWidget);

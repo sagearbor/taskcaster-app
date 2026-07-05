@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../../core/di/service_locator.dart';
+import '../../../../core/services/invite/pending_invite_service.dart';
 import '../../../../core/theme/app_theme.dart';
 
 /// First-run intro that explains the core loop in a few on-brand pages.
@@ -43,24 +45,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _controller = PageController();
   int _page = 0;
 
+  // Trimmed to a single page that names the full spread of game types (not
+  // just video tasks), so a new player sees the breadth at a glance and gets
+  // to "play" in one tap.
   static const List<_OnboardingPage> _pages = [
     _OnboardingPage(
-      icon: Icons.theater_comedy_rounded,
-      title: 'Do a silly task',
-      body: 'Get a playful challenge to pull off — '
-          'the sillier and more creative, the better.',
-    ),
-    _OnboardingPage(
-      icon: Icons.videocam_rounded,
-      title: 'Film it, paste the link',
-      body: 'Record your attempt, upload it anywhere '
-          '(YouTube, Google Photos…) and drop the link in.',
-    ),
-    _OnboardingPage(
-      icon: Icons.emoji_events_rounded,
-      title: 'Get judged, climb the board',
-      body: 'A judge scores everyone\'s submission. '
-          'Rack up points and race to the top of the scoreboard.',
+      icon: Icons.celebration_rounded,
+      title: 'Party games for everyone',
+      body: 'Film silly video-task challenges, play Drawing Telephone, buzz '
+          'in on Trivia, or pop balloons in AR — solo or with friends, '
+          'online or side-by-side. Jump in and play.',
     ),
   ];
 
@@ -228,9 +222,24 @@ class _OnboardingGateState extends State<OnboardingGate> {
   @override
   void initState() {
     super.initState();
+    // A friend's invite is already waiting (deep link / install referrer) —
+    // skip the intro entirely and get straight to joining it. Best-effort:
+    // guarded so a missing service in tests can never crash the gate.
+    if (_hasPendingInvite()) {
+      _seen = true;
+      return;
+    }
     OnboardingScreen.hasBeenSeen().then((seen) {
       if (mounted) setState(() => _seen = seen);
     });
+  }
+
+  bool _hasPendingInvite() {
+    try {
+      return sl<PendingInviteService>().pendingCode != null;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override

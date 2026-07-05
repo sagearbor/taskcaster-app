@@ -169,53 +169,78 @@ class _TriviaStartScreenState extends State<TriviaStartScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              Text('Questions per game', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 8),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 5, label: Text('5')),
-                  ButtonSegment(value: 10, label: Text('10')),
-                  ButtonSegment(value: 15, label: Text('15')),
-                  ButtonSegment(value: 20, label: Text('20')),
-                ],
-                selected: {_questionCount},
-                onSelectionChanged: (s) =>
-                    setState(() => _questionCount = s.first),
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: _busy ? null : _create,
-                icon: const Icon(Icons.add),
-                label: const Text('Create a new game'),
-              ),
-              const SizedBox(height: 28),
-              Row(children: [
-                const Expanded(child: Divider()),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child:
-                      Text('Or join a game', style: theme.textTheme.bodySmall),
+              // ---- Primary action: start a game ----------------------------
+              SizedBox(
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _create,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Start game',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
-                const Expanded(child: Divider()),
-              ]),
+              ),
               const SizedBox(height: 16),
-              TextField(
-                controller: _codeController,
-                maxLength: 6,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Invite code',
-                  hintText: '6-character code',
-                  prefixIcon: Icon(Icons.tag),
+              // ---- Secondary: join with a code -----------------------------
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: ExpansionTile(
+                  leading: const Icon(Icons.group_add),
+                  title: const Text('Join with a code',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Got a 6-letter code from a friend?'),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    TextField(
+                      controller: _codeController,
+                      maxLength: 6,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'Invite code',
+                        hintText: '6-character code',
+                        prefixIcon: Icon(Icons.tag),
+                      ),
+                      style: const TextStyle(
+                          letterSpacing: 3, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _join,
+                      icon: const Icon(Icons.login),
+                      label: const Text('Join game'),
+                    ),
+                  ],
                 ),
-                style: const TextStyle(
-                    letterSpacing: 3, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _join,
-                icon: const Icon(Icons.group_add),
-                label: const Text('Join game'),
+              const SizedBox(height: 12),
+              // ---- Options: everything else, tucked away -------------------
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: ExpansionTile(
+                  leading: const Icon(Icons.more_horiz),
+                  title: const Text('Options',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text('How many questions per game'),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Questions per game',
+                          style: theme.textTheme.titleSmall),
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 5, label: Text('5')),
+                        ButtonSegment(value: 10, label: Text('10')),
+                        ButtonSegment(value: 15, label: Text('15')),
+                        ButtonSegment(value: 20, label: Text('20')),
+                      ],
+                      selected: {_questionCount},
+                      onSelectionChanged: (s) =>
+                          setState(() => _questionCount = s.first),
+                    ),
+                  ],
+                ),
               ),
               if (_busy) ...[
                 const SizedBox(height: 24),
