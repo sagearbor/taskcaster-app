@@ -11,6 +11,7 @@ import '../../../games/presentation/screens/join_game_screen.dart';
 import '../../../balloon_blitz/presentation/screens/balloon_blitz_start_screen.dart';
 import '../../../telephone/presentation/screens/telephone_start_screen.dart';
 import '../../../trivia/presentation/screens/trivia_start_screen.dart';
+import '../../../treasure_hunt/treasure_hunt_screen.dart';
 
 /// The single "▶ Play" entry point (Zone 3). Opens a bottom-sheet picker that
 /// lists every way to start playing — one calm menu instead of nine competing
@@ -99,6 +100,13 @@ class _PlaySheetBody extends StatelessWidget {
           name: 'Balloon Pop',
           description: 'Pop balloons in AR — solo or race a room.',
           onTap: () => _openBalloonChooser(context),
+        ),
+        _PlayRow(
+          icon: Icons.map,
+          color: AppTheme.gold,
+          name: '🗺️ Treasure Hunt',
+          description: 'Hide treasures, pass the phone, hunt!',
+          onTap: () => _push(context, const TreasureHuntScreen()),
         ),
         _PlayRow(
           icon: Icons.diamond,

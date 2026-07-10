@@ -57,6 +57,17 @@ class FakeArEngine implements ArEngine {
   }
 
   @override
+  Future<ArVector3?> cameraPosition() async => null;
+
+  @override
+  Future<ArNode?> spawnInFrontOfCamera({
+    required String modelRef,
+    double distance = 1.0,
+    double drop = 0.0,
+  }) async =>
+      null;
+
+  @override
   Future<void> dispose() async {}
 
   void emitTap(String id) => _taps.add(ArTap(id));
