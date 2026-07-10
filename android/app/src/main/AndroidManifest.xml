@@ -77,6 +77,20 @@
         <!-- ARCore is optional: device shows AR when supported, falls back
              gracefully otherwise. -->
         <meta-data android:name="com.google.ar.core" android:value="optional" />
+        <!-- ============================================================
+             CLOUD ANCHORS (AR Lab spike) — API KEY GOES HERE.
+             The hidden AR Lab screen (Settings > Experimental) tests ARCore
+             Cloud Anchor host/resolve between two phones. Hosting requires the
+             "ARCore API" enabled in the taskmaster-app-3d480 Google Cloud
+             project AND an Android API key added below. Until this tag is
+             present with a real key, hosting fails with an authorization error
+             and the AR Lab surfaces an in-screen explanation (by design — no
+             fake success). DO NOT commit a real key.
+             Exact one-time setup steps: docs/cloud-anchors-spike.md
+             <meta-data
+                 android:name="com.google.android.ar.API_KEY"
+                 android:value="PASTE_ANDROID_API_KEY_HERE" />
+             ============================================================ -->
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

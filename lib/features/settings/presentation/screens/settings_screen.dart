@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/theme_controller.dart';
+import '../../../ar_lab/presentation/screens/ar_lab_screen.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -147,6 +148,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: const Text('Sign Out',
                   style: TextStyle(color: AppTheme.coral)),
               onTap: () => _confirmSignOut(context),
+            ),
+          ),
+          const SizedBox(height: 20),
+          _sectionHeader(context, 'Experimental'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.view_in_ar_outlined,
+                  color: AppTheme.violet),
+              title: const Text('AR Lab (experimental)'),
+              subtitle: const Text(
+                  'Cloud Anchor two-phone diagnostic — not a game'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ArLabScreen(),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 24),
