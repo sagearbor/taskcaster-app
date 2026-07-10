@@ -20,6 +20,11 @@ class FakeArEngine implements ArEngine {
   final List<String> removedIds = [];
   ArNode? lastFrontNode;
 
+  /// When set, [cameraPosition] hangs on this completer instead of returning
+  /// [pose] immediately — lets a test straddle a poll's await across an
+  /// _endTurn() to reproduce the FINDING A soft-lock race.
+  Completer<ArVector3?>? poseGate;
+
   @override
   Widget buildView() => const SizedBox.shrink();
 
@@ -33,7 +38,11 @@ class FakeArEngine implements ArEngine {
   Stream<ArTap> get taps => _taps.stream;
 
   @override
-  Future<ArVector3?> cameraPosition() async => pose;
+  Future<ArVector3?> cameraPosition() {
+    final gate = poseGate;
+    if (gate != null) return gate.future;
+    return Future.value(pose);
+  }
 
   @override
   Future<ArNode?> spawnInFrontOfCamera({
@@ -492,6 +501,173 @@ void main() {
       expect(r.allFound, isTrue);
       expect(r.timeUsedSeconds, lessThan(90),
           reason: 'finishing early beats the clock');
+      c.dispose();
+    });
+  });
+
+  // ---- Regression: async race / double-end / cap / header (FINDINGS A–D) ----
+
+  test('FINDING A: a late null poll resolving after time-up does NOT '
+      'flip to trackingLost (no soft-lock)', () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = TreasureHuntController(
+        engine: eng,
+        huntDuration: const Duration(seconds: 3),
+      );
+      c.start();
+      async.flushMicrotasks();
+      eng.pose = origin;
+      c.hideHere();
+      async.flushMicrotasks();
+      c.doneHiding();
+      c.beginCountdown();
+      async.elapse(const Duration(milliseconds: 2200)); // → hunting
+
+      // Gate the NEXT camera read so a poll suspends mid-await.
+      final gate = Completer<ArVector3?>();
+      eng.poseGate = gate;
+      async.elapse(TreasureHuntController.pollInterval); // poll starts + hangs
+      expect(c.phase, TreasureHuntPhase.hunting);
+
+      // The hunt clock runs out WHILE the poll is still awaiting → _endTurn.
+      async.elapse(const Duration(seconds: 4));
+      async.flushMicrotasks();
+      expect(c.phase, TreasureHuntPhase.betweenTurns);
+
+      // The stale poll now resolves null (tracking-lost signal), too late.
+      gate.complete(null);
+      async.flushMicrotasks();
+
+      expect(c.phase, TreasureHuntPhase.betweenTurns,
+          reason: 'stale null must be dropped, not resurrect trackingLost');
+      expect(c.leaderboard.length, 1, reason: 'no duplicate turn recorded');
+      c.dispose();
+    });
+  });
+
+  test('FINDING B: collect after time-up is ignored; _endTurn clears the '
+      'revealed gem and never double-records', () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      // Two treasures so revealing/finding one does NOT end the turn.
+      final c = TreasureHuntController(
+        engine: eng,
+        huntDuration: const Duration(seconds: 3),
+      );
+      c.start();
+      async.flushMicrotasks();
+      eng.pose = const ArVector3(0, 0, 0);
+      c.hideHere();
+      async.flushMicrotasks();
+      eng.pose = const ArVector3(5, 0, 0);
+      c.hideHere();
+      async.flushMicrotasks();
+      c.doneHiding();
+      c.beginCountdown();
+      async.elapse(const Duration(milliseconds: 2200)); // → hunting
+
+      // Reveal treasure 0 (but don't collect it).
+      eng.pose = const ArVector3(0.5, 0, 0);
+      async.elapse(TreasureHuntController.pollInterval);
+      async.flushMicrotasks();
+      expect(c.revealPending, isTrue);
+      final gemId = eng.lastFrontNode!.id;
+
+      // Let the clock run out with the gem still revealed → _endTurn(timeUp).
+      async.elapse(const Duration(seconds: 4));
+      async.flushMicrotasks();
+      expect(c.phase, TreasureHuntPhase.betweenTurns);
+
+      // _endTurn cleared the reveal state and removed the spawned gem.
+      expect(c.revealPending, isFalse, reason: 'reveal state cleared on end');
+      expect(eng.removedIds, contains(gemId), reason: 'gem node removed');
+      expect(c.leaderboard.length, 1);
+      expect(c.foundThisTurn, 0);
+
+      // A stale tap on the (gone) gem/banner in betweenTurns is a no-op.
+      c.collectRevealed();
+      async.flushMicrotasks();
+      expect(c.leaderboard.length, 1, reason: 'no duplicate result row');
+      expect(c.foundThisTurn, 0, reason: 'stale collect ignored');
+      expect(c.phase, TreasureHuntPhase.betweenTurns);
+      c.dispose();
+    });
+  });
+
+  test('FINDING C: concurrent hideHere at the cap never exceeds maxTreasures',
+      () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = TreasureHuntController(engine: eng, maxTreasures: 5);
+      c.start();
+      async.flushMicrotasks();
+
+      // Fill 4 of 5 serially.
+      for (var i = 0; i < 4; i++) {
+        eng.pose = ArVector3(i.toDouble(), 0, 0);
+        c.hideHere();
+        async.flushMicrotasks();
+      }
+      expect(c.treasureCount, 4);
+      expect(c.canHideMore, isTrue);
+
+      // Double-tap "Hide here" at 4/5: two calls in flight before either awaits.
+      eng.pose = const ArVector3(9, 0, 0);
+      bool? r1, r2;
+      c.hideHere().then((v) => r1 = v);
+      c.hideHere().then((v) => r2 = v);
+      async.flushMicrotasks();
+
+      expect(c.treasureCount, 5, reason: 'the cap holds — never 6/5');
+      expect(c.canHideMore, isFalse);
+      expect([r1, r2], containsAll(<bool>[true, false]),
+          reason: 'exactly one concurrent hide succeeds');
+      c.dispose();
+    });
+  });
+
+  test('FINDING D: lastTurnResult is the turn that just ended, not the best '
+      'leaderboard row', () {
+    fakeAsync((async) {
+      final eng = FakeArEngine();
+      final c = TreasureHuntController(
+        engine: eng,
+        huntDuration: const Duration(seconds: 60),
+        firstSeekerName: 'Ann',
+      );
+      c.start();
+      async.flushMicrotasks();
+      eng.pose = origin;
+      c.hideHere();
+      async.flushMicrotasks();
+      c.doneHiding();
+
+      // Ann aces it (allFound).
+      c.beginCountdown();
+      async.elapse(const Duration(milliseconds: 2200));
+      eng.pose = const ArVector3(0.3, 0, 0);
+      async.elapse(TreasureHuntController.pollInterval);
+      async.flushMicrotasks();
+      c.collectRevealed();
+      expect(c.phase, TreasureHuntPhase.betweenTurns);
+      expect(c.lastTurnResult!.seekerName, 'Ann');
+      expect(c.lastTurnResult!.allFound, isTrue);
+
+      // Bob times out with nothing.
+      c.nextSeeker('Bob');
+      c.beginCountdown();
+      async.elapse(const Duration(milliseconds: 2200));
+      eng.pose = const ArVector3(10, 0, 0);
+      async.elapse(const Duration(seconds: 61));
+      async.flushMicrotasks();
+
+      // Just-ended turn is Bob's failure; leaderboard.first is still Ann.
+      expect(c.lastTurnResult!.seekerName, 'Bob');
+      expect(c.lastTurnResult!.allFound, isFalse,
+          reason: 'header must read "Time\'s up!" for Bob');
+      expect(c.leaderboard.first.seekerName, 'Ann',
+          reason: 'best-sorted row is unchanged — the bug source');
       c.dispose();
     });
   });

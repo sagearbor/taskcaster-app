@@ -211,6 +211,13 @@ class TreasureHuntController extends ChangeNotifier {
 
   final List<TreasureHuntTurnResult> _results = [];
 
+  /// The result of the turn that JUST ended (insertion order, NOT best-sorted),
+  /// or null before any turn. The between-turns header must key off this — using
+  /// [leaderboard].first would show "All found!" for a later failed turn just
+  /// because an earlier seeker aced it (FINDING D).
+  TreasureHuntTurnResult? get lastTurnResult =>
+      _results.isEmpty ? null : _results.last;
+
   /// Leaderboard: most treasures first, then fastest time.
   List<TreasureHuntTurnResult> get leaderboard {
     final sorted = List<TreasureHuntTurnResult>.of(_results);
@@ -235,6 +242,7 @@ class TreasureHuntController extends ChangeNotifier {
   Timer? _pollTimer;
   Timer? _tickTimer;
   bool _polling = false;
+  bool _hiding = false;
   bool _started = false;
   bool _disposed = false;
 
@@ -263,12 +271,25 @@ class TreasureHuntController extends ChangeNotifier {
     if (_disposed || phase != TreasureHuntPhase.hiding || !canHideMore) {
       return false;
     }
-    final pos = await engine.cameraPosition();
-    if (pos == null) return false; // tracking lost — can't store a real spot
-    _treasures.add(_Treasure(pos));
-    _emit(const TreasureHuntEvent(TreasureHuntEventType.hideStored));
-    _safeNotify();
-    return true;
+    // Collapse concurrent taps: only one pose read may be in flight at a time,
+    // so a double-tap at 4/5 can't both slip past the cap check (FINDING C).
+    if (_hiding) return false;
+    _hiding = true;
+    try {
+      final pos = await engine.cameraPosition();
+      // Re-validate after the await — the phase may have moved on and, crucially,
+      // another hideHere may have filled the last slot while we awaited.
+      if (_disposed || phase != TreasureHuntPhase.hiding || !canHideMore) {
+        return false;
+      }
+      if (pos == null) return false; // tracking lost — can't store a real spot
+      _treasures.add(_Treasure(pos));
+      _emit(const TreasureHuntEvent(TreasureHuntEventType.hideStored));
+      _safeNotify();
+      return true;
+    } finally {
+      _hiding = false;
+    }
   }
 
   /// Finish hiding and move to the hand-off card. No-op unless ≥1 spot exists.
@@ -355,7 +376,16 @@ class TreasureHuntController extends ChangeNotifier {
     _polling = true;
     try {
       final pos = await engine.cameraPosition();
-      if (_disposed) return;
+      // The await may have straddled an _endTurn() — the hunt timer can fire
+      // mid-flight, cancel the poll loop and move us to betweenTurns. Drop the
+      // stale result unless we're still in a phase where it matters AND the
+      // poll loop is still live; otherwise a late null would flip us to
+      // trackingLost with no poll running (soft-lock, FINDING A).
+      if (_disposed || _pollTimer == null) return;
+      if (phase != TreasureHuntPhase.hunting &&
+          phase != TreasureHuntPhase.trackingLost) {
+        return;
+      }
 
       if (pos == null) {
         _onTrackingLost();
@@ -398,7 +428,10 @@ class TreasureHuntController extends ChangeNotifier {
   }
 
   void _onTrackingLost() {
-    if (phase == TreasureHuntPhase.trackingLost) return;
+    // Only a live hunt can lose tracking. Guarding on hunting (rather than just
+    // "not already lost") means a late null poll that resolves after the turn
+    // already ended can never resurrect the tracking-lost overlay (FINDING A).
+    if (phase != TreasureHuntPhase.hunting) return;
     phase = TreasureHuntPhase.trackingLost;
     _huntTimer?.cancel(); // freeze the clock
     _huntTimer = null;
@@ -461,7 +494,12 @@ class TreasureHuntController extends ChangeNotifier {
 
   /// Collect the currently-revealed gem (tapping the gem OR the FOUND banner).
   void collectRevealed() {
-    if (_disposed || !revealPending) return;
+    // Only collectable during a live hunt: after time-up the gem/banner may
+    // still be on screen for a frame, and a stale tap must not re-run collect
+    // (which could fire _endTurn again → a duplicate leaderboard row, FINDING B).
+    if (_disposed || phase != TreasureHuntPhase.hunting || !revealPending) {
+      return;
+    }
     final idx = revealedIndex;
     revealPending = false;
     revealedIndex = null;
@@ -492,6 +530,21 @@ class TreasureHuntController extends ChangeNotifier {
     _pollTimer = null;
     _tickTimer?.cancel();
     _tickTimer = null;
+
+    // Clear any still-revealed gem so a stale tap in betweenTurns can't collect
+    // (and possibly double-end) it, and best-effort remove its node from the
+    // engine — ignoring engine errors (FINDING B).
+    revealPending = false;
+    revealedIndex = null;
+    final revealed = _revealedNode;
+    _revealedNode = null;
+    if (revealed != null) {
+      try {
+        engine.remove(revealed);
+      } catch (_) {
+        // Best-effort: a failed removal must not derail turn-end.
+      }
+    }
 
     final timeUsed = huntDuration.inSeconds - secondsRemaining;
     _results.add(TreasureHuntTurnResult(
