@@ -253,31 +253,37 @@ class _TreasureHuntScreenState extends State<TreasureHuntScreen>
     final c = _controller!;
     final defaultName = 'Seeker ${c.leaderboard.length + 1}';
     final ctl = TextEditingController(text: defaultName);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Next seeker'),
-        content: TextField(
-          controller: ctl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Name'),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+    try {
+      final name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Next seeker'),
+          content: TextField(
+            controller: ctl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(labelText: 'Name'),
+            onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(ctl.text.trim()),
+              child: const Text('Hand off'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(ctl.text.trim()),
-            child: const Text('Hand off'),
-          ),
-        ],
-      ),
-    );
-    if (name != null && name.isNotEmpty) {
-      c.nextSeeker(name);
+      );
+      if (name != null && name.isNotEmpty) {
+        c.nextSeeker(name);
+      }
+    } finally {
+      // Dispose the dialog's controller once it closes — one leak per handoff
+      // otherwise (FINDING E).
+      ctl.dispose();
     }
   }
 }
@@ -523,9 +529,9 @@ class _BetweenTurnsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final last = controller.leaderboard.isEmpty
-        ? null
-        : controller.leaderboard.first;
+    // Header reflects the turn that JUST ended, not the best-sorted leaderboard
+    // row — otherwise a later failed turn shows "All found!" (FINDING D).
+    final last = controller.lastTurnResult;
     return Container(
       color: Colors.black.withOpacity(0.82),
       alignment: Alignment.center,
