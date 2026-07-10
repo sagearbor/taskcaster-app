@@ -8,6 +8,7 @@ import 'package:taskcaster_app/core/models/user.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:taskcaster_app/features/games/domain/repositories/game_repository.dart';
 import 'package:taskcaster_app/features/games/presentation/bloc/games_bloc.dart';
+import 'package:taskcaster_app/core/services/ar/ar_games.dart';
 
 class MockGameRepository extends Mock implements GameRepository {}
 class MockAuthRepository extends Mock implements AuthRepository {}
@@ -362,6 +363,55 @@ void main() {
           const GamesError(
               message: 'Could not start a quick game. Please try again.'),
         ],
+      );
+
+      blocTest<GamesBloc, GamesState>(
+        'seeds exactly one Balloon Pop task when arGameId is balloonPop',
+        build: () {
+          when(() => mockAuthRepository.getCurrentUser())
+              .thenAnswer((_) async => testUser);
+          when(() => mockGameRepository.createGame(any(), any(), any()))
+              .thenAnswer((_) async => 'quick_game_123');
+          when(() => mockGameRepository.updateGame(any(), any()))
+              .thenAnswer((_) async {});
+          return gamesBloc;
+        },
+        act: (bloc) => bloc.add(
+          const QuickPlayGame(arGameId: ArGameIds.balloonPop),
+        ),
+        verify: (_) {
+          final captured = verify(
+            () => mockGameRepository.updateGame('quick_game_123', captureAny()),
+          ).captured;
+          final game = captured.single as Game;
+          expect(game.tasks, hasLength(1));
+          expect(game.tasks.single.arGameId, ArGameIds.balloonPop);
+        },
+      );
+
+      blocTest<GamesBloc, GamesState>(
+        'seeds exactly one Gem Rush task when arGameId is treasureHunt',
+        build: () {
+          when(() => mockAuthRepository.getCurrentUser())
+              .thenAnswer((_) async => testUser);
+          when(() => mockGameRepository.createGame(any(), any(), any()))
+              .thenAnswer((_) async => 'quick_game_123');
+          when(() => mockGameRepository.updateGame(any(), any()))
+              .thenAnswer((_) async {});
+          return gamesBloc;
+        },
+        act: (bloc) => bloc.add(
+          const QuickPlayGame(arGameId: ArGameIds.treasureHunt),
+        ),
+        verify: (_) {
+          final captured = verify(
+            () => mockGameRepository.updateGame('quick_game_123', captureAny()),
+          ).captured;
+          final game = captured.single as Game;
+          expect(game.tasks, hasLength(1));
+          expect(game.tasks.single.arGameId, ArGameIds.treasureHunt);
+          expect(game.tasks.single.title, 'Gem Rush');
+        },
       );
     });
   });
