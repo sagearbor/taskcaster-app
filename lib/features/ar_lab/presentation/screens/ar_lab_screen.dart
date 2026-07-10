@@ -97,6 +97,13 @@ class _ArLabScreenState extends State<ArLabScreen> {
   final TextEditingController _resolveController = TextEditingController();
   bool _resolving = false;
   DateTime? _resolveStartedAt;
+
+  /// Fail-safe for the fire-and-forget downloadAnchor: onAnchorDownloaded /
+  /// onError are the only things that clear [_resolving], so a resolve that
+  /// never matches (expired/mistyped id, viewpoint too different) would disable
+  /// the Resolve button forever. This timeout re-enables it after 30s.
+  Timer? _resolveTimeout;
+  static const Duration _resolveTimeoutDuration = Duration(seconds: 30);
   Duration? _resolveDuration;
   bool _resolveSucceeded = false;
 
@@ -121,6 +128,7 @@ class _ArLabScreenState extends State<ArLabScreen> {
 
   @override
   void dispose() {
+    _resolveTimeout?.cancel();
     _sessionManager?.dispose();
     _resolveController.dispose();
     super.dispose();
@@ -198,6 +206,7 @@ class _ArLabScreenState extends State<ArLabScreen> {
         lower.contains('error_')) {
       if (mounted) setState(() => _looksLikeConfigError = true);
     }
+    _resolveTimeout?.cancel();
     if (mounted) {
       setState(() {
         _hosting = false;
@@ -342,8 +351,22 @@ class _ArLabScreenState extends State<ArLabScreen> {
       _looksLikeConfigError = false;
     });
     _resolveStartedAt = DateTime.now();
+    _resolveTimeout?.cancel();
+    _resolveTimeout = Timer(_resolveTimeoutDuration, _onResolveTimeout);
     _addLog('downloadAnchor("$id") — resolving…', ArLabLogLevel.step);
     await anchorManager.downloadAnchor(id);
+  }
+
+  /// The resolve never called back within the window — re-enable the button and
+  /// explain the likely causes, instead of leaving it disabled forever.
+  void _onResolveTimeout() {
+    if (!mounted || !_resolving) return;
+    setState(() => _resolving = false);
+    _addLog(
+      'Resolve timed out after 30s (anchor may be expired, id mistyped, or '
+      'viewpoint too different)',
+      ArLabLogLevel.error,
+    );
   }
 
   /// Fired by the plugin when a resolve succeeds. Must return an [ARAnchor]
@@ -364,6 +387,7 @@ class _ArLabScreenState extends State<ArLabScreen> {
     if (elapsed != null) {
       _addLog('  resolved in ${elapsed.inMilliseconds} ms', ArLabLogLevel.info);
     }
+    _resolveTimeout?.cancel();
     if (mounted) {
       setState(() {
         _resolving = false;

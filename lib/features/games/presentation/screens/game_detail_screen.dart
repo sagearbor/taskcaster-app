@@ -227,9 +227,15 @@ class _GameDetailViewState extends State<GameDetailView> {
                     GameStatus.completed => GameCompletedView(
                         game: state.game,
                         currentUserId: currentUserId,
-                        onRematch: () => context
-                            .read<GameDetailBloc>()
-                            .add(RematchGame(game: state.game)),
+                        // Generic rematch reshuffles 5 random party tasks and
+                        // resets judgePlays=true — wrong for a House Hunt, whose
+                        // rematch IS "Send one back" (role swap + fresh hunt).
+                        // So suppress it for hunts.
+                        onRematch: HouseHuntService.isHouseHuntGame(state.game)
+                            ? null
+                            : () => context
+                                .read<GameDetailBloc>()
+                                .add(RematchGame(game: state.game)),
                         // Role swap: only on a finished House Hunt, pre-targeted
                         // at the other player (the original hider you hunt back).
                         onSendHouseHunt:
@@ -276,6 +282,31 @@ class _GameDetailViewState extends State<GameDetailView> {
       // Use the safe getter rather than tasks[currentTaskIndex], which could
       // throw a RangeError if the index ever drifts past the task list.
       final currentTask = game.currentTask!;
+
+      // Non-playing judge (House Hunt: hider only judges). Route strictly by the
+      // TASK state — the judge has no playerStatus, so we must NEVER fall into
+      // the playerStatus == null branch below (which opens the seeker's submit
+      // UI). Only "ready to judge" is actionable; the waiting banner is inert.
+      if (game.judgeId == currentUserId && !game.settings.judgePlays) {
+        final hasUnjudgedSubmissions =
+            currentTask.submittedCount > currentTask.judgedCount;
+        if (currentTask.status == TaskStatus.ready_to_judge ||
+            hasUnjudgedSubmissions) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => BlocProvider.value(
+                value: context.read<GameDetailBloc>(),
+                child: JudgingScreen(
+                  gameId: game.id,
+                  taskIndex: game.currentTaskIndex,
+                ),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       final playerStatus = currentTask.playerStatuses[currentUserId];
 
       if (playerStatus == null ||

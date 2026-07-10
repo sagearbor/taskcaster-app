@@ -118,6 +118,44 @@ class GameStatusBanner extends StatelessWidget {
     if (game.status == GameStatus.inProgress && game.currentTask != null) {
       // Safe getter avoids a RangeError if currentTaskIndex is out of bounds.
       final currentTask = game.currentTask!;
+
+      // Non-playing judge (asymmetric modes like House Hunt: the hider only
+      // judges, the seeker plays). Such a judge is never seeded a per-task
+      // playerStatus, so we must drive the banner from the TASK state — not the
+      // judge's (absent) status. Without this, the judge falls through to the
+      // player branches below (playerStatus == null) and gets routed into the
+      // seeker's submit UI, and could never reach judging.
+      if (isJudge && !game.settings.judgePlays) {
+        final hasUnjudgedSubmissions =
+            currentTask.submittedCount > currentTask.judgedCount;
+        if (currentTask.status == TaskStatus.ready_to_judge ||
+            hasUnjudgedSubmissions) {
+          return _BannerInfo(
+            title: 'Ready to judge!',
+            subtitle: 'The seeker has submitted — score their find',
+            icon: Icons.gavel,
+            backgroundColor: Colors.purple,
+            iconColor: Colors.white,
+            textColor: Colors.white,
+            actionText: 'Judge',
+          );
+        }
+        if (currentTask.status != TaskStatus.completed) {
+          // Waiting on the seeker: an info banner with no action (tapping it
+          // must never open the seeker's submit UI).
+          return _BannerInfo(
+            title: 'Waiting for the seeker…',
+            subtitle: 'They\'re hunting down "${currentTask.title}"',
+            icon: Icons.hourglass_empty,
+            backgroundColor: Colors.indigo,
+            iconColor: Colors.white,
+            textColor: Colors.white,
+          );
+        }
+        // Task just completed and the game hasn't advanced yet — no banner.
+        return null;
+      }
+
       final playerStatus = currentTask.playerStatuses[currentUserId];
 
       // Check submission status for current player
@@ -164,12 +202,17 @@ class GameStatusBanner extends StatelessWidget {
         final submittedCount = currentTask.playerStatuses.values
             .where((status) => status.state == TaskPlayerState.submitted)
             .length;
-        final totalPlayers = game.players.length;
+        // Denominator is the number of EXPECTED submitters (the players seeded a
+        // per-task status), not every player — in judgePlays=false games the
+        // judge is excluded from statuses, so game.players.length would never be
+        // reachable (n/n could never show).
+        final expectedSubmitters = currentTask.playerStatuses.length;
 
-        if (submittedCount < totalPlayers) {
+        if (submittedCount < expectedSubmitters) {
           return _BannerInfo(
             title: 'Submission received!',
-            subtitle: 'Waiting for others ($submittedCount/$totalPlayers done)',
+            subtitle:
+                'Waiting for others ($submittedCount/$expectedSubmitters done)',
             icon: Icons.check_circle,
             backgroundColor: Colors.green,
             iconColor: Colors.white,

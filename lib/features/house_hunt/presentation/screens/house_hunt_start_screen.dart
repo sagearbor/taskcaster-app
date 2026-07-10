@@ -91,39 +91,45 @@ class _HouseHuntStartScreenState extends State<HouseHuntStartScreen> {
 
   Future<void> _editCustom(int index) async {
     final controller = TextEditingController(text: _texts[index]);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Write your own prompt'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 120,
-          maxLines: 3,
-          minLines: 1,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'e.g. Find something that reminds you of me',
+    try {
+      final result = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Write your own prompt'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 120,
+            maxLines: 3,
+            minLines: 1,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: 'e.g. Find something that reminds you of me',
+            ),
+            onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
           ),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (result != null && result.isNotEmpty) {
-      setState(() {
-        _texts[index] = result;
-        _ids[index] = null; // now a custom prompt
-      });
+      );
+      if (result != null && result.isNotEmpty) {
+        setState(() {
+          _texts[index] = result;
+          _ids[index] = null; // now a custom prompt
+        });
+      }
+    } finally {
+      // The dialog's controller outlives the dialog future; dispose it once the
+      // dialog has closed to avoid leaking it on every edit.
+      controller.dispose();
     }
   }
 
