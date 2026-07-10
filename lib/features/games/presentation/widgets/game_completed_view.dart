@@ -22,11 +22,16 @@ class GameCompletedView extends StatefulWidget {
   /// button is hidden (e.g. previews/tests without a bloc).
   final VoidCallback? onRematch;
 
+  /// Invoked when the user taps "Send one back 🏠" — the House Hunt role swap.
+  /// Null hides the button (non-House-Hunt games, previews/tests).
+  final VoidCallback? onSendHouseHunt;
+
   const GameCompletedView({
     super.key,
     required this.game,
     this.currentUserId,
     this.onRematch,
+    this.onSendHouseHunt,
   });
 
   @override
@@ -170,6 +175,15 @@ class _GameCompletedViewState extends State<GameCompletedView>
                   onPressed: widget.onRematch,
                   icon: const Icon(Icons.replay),
                   label: const Text('Rematch — same crew'),
+                ),
+                const SizedBox(height: 12),
+              ],
+              // House Hunt role swap: fire a fresh hunt back at the hider.
+              if (widget.onSendHouseHunt != null) ...[
+                OutlinedButton.icon(
+                  onPressed: widget.onSendHouseHunt,
+                  icon: const Icon(Icons.home_work_outlined),
+                  label: const Text('Send one back 🏠'),
                 ),
                 const SizedBox(height: 12),
               ],
