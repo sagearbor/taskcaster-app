@@ -83,10 +83,16 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
                 initializeARView(arguments: arguments!, result: result)
                 break
             case "getCameraPose":
-                if let cameraPose = sceneView.session.currentFrame?.camera.transform {
-                    result(serializeMatrix(cameraPose))
+                // Local patch (mirrors the ArView.kt patch): a null pose is the
+                // app's canonical "tracking lost" signal, so only return the
+                // camera transform while tracking is normal. FlutterError here
+                // would surface as a PlatformException on the Dart side instead
+                // of the null the ArEngine.cameraPosition() contract needs.
+                if let frame = sceneView.session.currentFrame,
+                   case .normal = frame.camera.trackingState {
+                    result(serializeMatrix(frame.camera.transform))
                 } else {
-                    result(FlutterError())
+                    result(nil)
                 }
                 break
             case "getAnchorPose":
