@@ -14,6 +14,8 @@ import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../friends/domain/repositories/friends_repository.dart';
+import '../../../house_hunt/domain/house_hunt_service.dart';
+import '../../../house_hunt/presentation/screens/house_hunt_start_screen.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/game_detail_bloc.dart';
 import '../widgets/game_lobby_view.dart';
@@ -228,6 +230,13 @@ class _GameDetailViewState extends State<GameDetailView> {
                         onRematch: () => context
                             .read<GameDetailBloc>()
                             .add(RematchGame(game: state.game)),
+                        // Role swap: only on a finished House Hunt, pre-targeted
+                        // at the other player (the original hider you hunt back).
+                        onSendHouseHunt:
+                            HouseHuntService.isHouseHuntGame(state.game)
+                                ? () => _sendHouseHuntBack(
+                                    context, state.game, currentUserId)
+                                : null,
                       ),
                   },
                 ),
@@ -237,6 +246,23 @@ class _GameDetailViewState extends State<GameDetailView> {
 
           return const SizedBox.shrink();
         },
+      ),
+    );
+  }
+
+  /// Open the House Hunt authoring screen pre-targeted at the other player —
+  /// the original hider the current user (the seeker) is now hunting back.
+  void _sendHouseHuntBack(
+      BuildContext context, Game game, String currentUserId) {
+    final others =
+        game.players.where((p) => p.userId != currentUserId).toList();
+    final other = others.isNotEmpty ? others.first : null;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HouseHuntStartScreen(
+          preselectedFriendUid: other?.userId,
+          preselectedFriendName: other?.displayName,
+        ),
       ),
     );
   }
