@@ -335,11 +335,16 @@ class GameRepositoryImpl implements GameRepository {
       throw Exception('Need at least 1 task to start');
     }
 
-    // Initialize playerStatuses for all tasks
+    // Initialize playerStatuses for all tasks. When the judge doesn't play
+    // (settings.judgePlays == false, e.g. House Hunt where the hider only
+    // judges), skip the judge — a seeded status they never fulfil would keep
+    // allPlayersJudged false forever. Guard: only skip when someone else is
+    // actually playing, so a solo judge-is-the-player game still works.
+    final contestants = _contestantsOf(gameObj);
     final updatedTasks = gameObj.tasks.map((task) {
       final playerStatuses = <String, PlayerTaskStatus>{};
 
-      for (final player in gameObj.players) {
+      for (final player in contestants) {
         playerStatuses[player.userId] = PlayerTaskStatus(
           playerId: player.userId,
           state: TaskPlayerState.not_started,
@@ -373,6 +378,16 @@ class GameRepositoryImpl implements GameRepository {
     await updateGame(gameId, updatedGame);
   }
 
+  /// The players expected to submit to tasks. Everyone, unless the game says
+  /// the judge doesn't play — then the judge is left out, provided at least
+  /// one other player exists (a solo creator-judge still plays their own game).
+  List<Player> _contestantsOf(Game game) {
+    if (game.settings.judgePlays) return game.players;
+    final others =
+        game.players.where((p) => p.userId != game.judgeId).toList();
+    return others.isEmpty ? game.players : others;
+  }
+
   @override
   Future<void> addTasksToGame(String gameId, List<Task> tasks) async {
     if (tasks.isEmpty) return;
@@ -393,7 +408,7 @@ class GameRepositoryImpl implements GameRepository {
     // was added mid-game fails with "Player status not found".
     if (game.status == GameStatus.inProgress && game.players.isNotEmpty) {
       final seededStatuses = <String, PlayerTaskStatus>{
-        for (final player in game.players)
+        for (final player in _contestantsOf(game))
           player.userId: PlayerTaskStatus(
             playerId: player.userId,
             state: TaskPlayerState.not_started,

@@ -121,6 +121,9 @@ class HouseHuntService {
         ),
       ],
       tasks: cleaned.map(buildTask).toList(),
+      // The hider only judges — without this, startGame seeds the hider a
+      // per-task status they'd never fulfil and the hunt could never complete.
+      settings: fresh.settings.copyWith(judgePlays: false),
     );
     await gameRepository.updateGame(gameId, complete);
 

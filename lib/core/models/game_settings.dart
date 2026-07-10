@@ -5,12 +5,18 @@ class GameSettings extends Equatable {
   final bool autoAdvanceTasks; // Auto-unlock next task when current is judged
   final bool allowSkips; // Players can skip tasks
   final int? maxPlayers; // Maximum players allowed (null = unlimited)
+  // Whether the judge also does the tasks. Asymmetric modes (House Hunt: the
+  // hider only judges) set this false so the judge is never seeded a per-task
+  // status — otherwise allPlayersJudged waits forever on a submission the
+  // judge will never make. Absent in older game docs -> true (judge plays).
+  final bool judgePlays;
 
   const GameSettings({
     this.taskDeadline,
     this.autoAdvanceTasks = true,
     this.allowSkips = false,
     this.maxPlayers,
+    this.judgePlays = true,
   });
 
   // Default settings for quick play
@@ -41,6 +47,7 @@ class GameSettings extends Equatable {
       autoAdvanceTasks: map['autoAdvanceTasks'] as bool? ?? true,
       allowSkips: map['allowSkips'] as bool? ?? false,
       maxPlayers: map['maxPlayers'] as int?,
+      judgePlays: map['judgePlays'] as bool? ?? true,
     );
   }
 
@@ -50,6 +57,7 @@ class GameSettings extends Equatable {
       'autoAdvanceTasks': autoAdvanceTasks,
       'allowSkips': allowSkips,
       'maxPlayers': maxPlayers,
+      'judgePlays': judgePlays,
     };
   }
 
@@ -58,12 +66,14 @@ class GameSettings extends Equatable {
     bool? autoAdvanceTasks,
     bool? allowSkips,
     int? maxPlayers,
+    bool? judgePlays,
   }) {
     return GameSettings(
       taskDeadline: taskDeadline ?? this.taskDeadline,
       autoAdvanceTasks: autoAdvanceTasks ?? this.autoAdvanceTasks,
       allowSkips: allowSkips ?? this.allowSkips,
       maxPlayers: maxPlayers ?? this.maxPlayers,
+      judgePlays: judgePlays ?? this.judgePlays,
     );
   }
 
@@ -73,5 +83,6 @@ class GameSettings extends Equatable {
         autoAdvanceTasks,
         allowSkips,
         maxPlayers,
+        judgePlays,
       ];
 }
