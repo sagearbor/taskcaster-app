@@ -71,6 +71,27 @@ abstract class ArEngine {
   /// Stream of taps on spawned objects (e.g. balloon pops).
   Stream<ArTap> get taps;
 
+  /// The current camera position in AR world space (translation only), or null
+  /// when tracking is unavailable/lost. The native side returns null unless
+  /// ARCore is actively TRACKING (see the vendored-plugin patch in
+  /// third_party/.../ArView.kt handleGetCameraPose), so a null result is the
+  /// canonical "tracking lost" signal for Treasure Hunt's geiger. Never throws.
+  Future<ArVector3?> cameraPosition();
+
+  /// Spawn [modelRef] roughly [distance] metres in FRONT of the current camera
+  /// (using the live camera orientation), dropped [drop] metres for eye comfort,
+  /// and return its node handle — or null if there is no pose / the spawn failed.
+  ///
+  /// Deliberately camera-relative (NOT a stored world spot): AR drift means a
+  /// spot stored earlier may be off by a metre, so the object is placed relative
+  /// to where the seeker is looking NOW. This is the load-bearing, drift-immune
+  /// "reveal" for Treasure Hunt. Best-effort: never throws.
+  Future<ArNode?> spawnInFrontOfCamera({
+    required String modelRef,
+    double distance,
+    double drop,
+  });
+
   /// Tear down the AR session and release the camera.
   Future<void> dispose();
 }

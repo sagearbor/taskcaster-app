@@ -247,6 +247,48 @@ class ArFlutterEngine implements ArEngine {
   }
 
   @override
+  Future<ArVector3?> cameraPosition() async {
+    final session = _sessionManager;
+    if (session == null) return null;
+    // getCameraPose() returns a Matrix4 (or null when the native side reports no
+    // TRACKING — our vendored patch). We only need the translation column.
+    final pose = await session.getCameraPose();
+    if (pose == null) return null;
+    final t = pose.getTranslation();
+    return ArVector3(t.x, t.y, t.z);
+  }
+
+  @override
+  Future<ArNode?> spawnInFrontOfCamera({
+    required String modelRef,
+    double distance = 1.0,
+    double drop = 0.0,
+  }) async {
+    final session = _sessionManager;
+    if (session == null) return null;
+    final pose = await session.getCameraPose();
+    if (pose == null) return null;
+    // Column 2 of the camera→world matrix is the camera's local +Z in world
+    // space; the camera looks down -Z, so forward is its negation.
+    final col2 = pose.getColumn(2);
+    final forward = vm.Vector3(-col2.x, -col2.y, -col2.z);
+    if (forward.length2 == 0) return null;
+    forward.normalize();
+    final eye = pose.getTranslation();
+    final target = eye + forward * distance - vm.Vector3(0, drop, 0);
+    // Reuse the robust world-space spawn path (model copy + serialized addNode +
+    // transform write). Returns null on placement failure instead of throwing.
+    try {
+      return await spawn(
+        modelRef: modelRef,
+        position: ArVector3(target.x, target.y, target.z),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Future<void> remove(ArNode node) async {
     final concrete = _nodes.remove(node.id);
     if (concrete == null) return;

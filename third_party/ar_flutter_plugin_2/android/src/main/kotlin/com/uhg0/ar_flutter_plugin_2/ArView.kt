@@ -810,31 +810,23 @@ class ArView(
         }
     }
 
+    // PATCH (taskmaster, Geiger/Treasure Hunt): the Dart getCameraPose()
+    // (ARSessionManager → MatrixConverter) expects a flat 16-element column-major
+    // Matrix4, and Treasure Hunt uses a NULL pose as its "tracking lost" signal.
+    // So this returns (a) the pose as a column-major matrix via Pose.toMatrix and
+    // (b) success(null) whenever ARCore is not actively TRACKING (instead of the
+    // old position/rotation map + error, which the Dart side could not parse).
+    // Minimal + local to this vendored copy (see pubspec dependency_overrides).
     private fun handleGetCameraPose(result: MethodChannel.Result) {
         try {
-            val frame = sceneView.session?.update()
-            val cameraPose = frame?.camera?.pose
-            if (cameraPose != null) {
-                val poseData =
-                    mapOf(
-                        "position" to
-                            mapOf(
-                                "x" to cameraPose.tx(),
-                                "y" to cameraPose.ty(),
-                                "z" to cameraPose.tz(),
-                            ),
-                        "rotation" to
-                            mapOf(
-                                "x" to cameraPose.rotationQuaternion[0],
-                                "y" to cameraPose.rotationQuaternion[1],
-                                "z" to cameraPose.rotationQuaternion[2],
-                                "w" to cameraPose.rotationQuaternion[3],
-                            ),
-                    )
-                result.success(poseData)
-            } else {
-                result.error("NO_CAMERA_POSE", "Camera pose is not available", null)
+            val camera = sceneView.session?.update()?.camera
+            if (camera == null || camera.trackingState != TrackingState.TRACKING) {
+                result.success(null)
+                return
             }
+            val matrix = FloatArray(16)
+            camera.pose.toMatrix(matrix, 0)
+            result.success(matrix.map { it.toDouble() })
         } catch (e: Exception) {
             result.error("CAMERA_POSE_ERROR", e.message, null)
         }
