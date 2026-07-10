@@ -150,7 +150,7 @@ class _IntroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isTreasure = config.speedBonus;
+    final isGemRush = config.speedBonus;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -158,7 +158,7 @@ class _IntroCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isTreasure ? Icons.diamond : Icons.celebration,
+              isGemRush ? Icons.diamond : Icons.celebration,
               size: 72,
               color: theme.colorScheme.primary,
             ),
@@ -170,9 +170,9 @@ class _IntroCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              isTreasure
-                  ? 'Find and tap all ${config.objectCount} gems hidden around '
-                      'you. Faster finishes score higher — you have '
+              isGemRush
+                  ? 'Tap all ${config.objectCount} gems before the clock runs '
+                      'out. Faster finishes score higher — you have '
                       '${config.duration.inSeconds}s.'
                   : 'Pop as many balloons as you can in '
                       '${config.duration.inSeconds} seconds. Move your phone to '

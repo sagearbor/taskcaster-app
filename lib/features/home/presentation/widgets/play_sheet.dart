@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/services/ar/ar_games.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../games/presentation/bloc/games_bloc.dart';
@@ -16,8 +17,8 @@ import '../../../trivia/presentation/screens/trivia_start_screen.dart';
 /// banners on the home screen.
 ///
 /// [homeContext] must sit below the home [GamesBloc] and [AuthBloc] providers;
-/// Quick Play / Balloon Pop (Solo) dispatch to that bloc, and Create / Join
-/// forward the auth bloc into the pushed route.
+/// Quick Play / Balloon Pop (Solo) / Gem Rush dispatch to that bloc, and
+/// Create / Join forward the auth bloc into the pushed route.
 Future<void> showPlaySheet(BuildContext homeContext) {
   final gamesBloc = homeContext.read<GamesBloc>();
   final authBloc = homeContext.read<AuthBloc>();
@@ -100,6 +101,18 @@ class _PlaySheetBody extends StatelessWidget {
           onTap: () => _openBalloonChooser(context),
         ),
         _PlayRow(
+          icon: Icons.diamond,
+          color: AppTheme.violet,
+          name: '💎 Gem Rush',
+          description: 'Tap gems fast — beat the clock, solo.',
+          onTap: () {
+            Navigator.of(context).pop();
+            gamesBloc.add(
+              const QuickPlayGame(arGameId: ArGameIds.treasureHunt),
+            );
+          },
+        ),
+        _PlayRow(
           icon: Icons.add_circle_outline,
           color: AppTheme.coral,
           name: 'Create custom game',
@@ -158,7 +171,9 @@ class _PlaySheetBody extends StatelessWidget {
               description: 'Pop at your pace.',
               onTap: () {
                 Navigator.of(chooserContext).pop();
-                gamesBloc.add(const QuickPlayGame(ar: true));
+                gamesBloc.add(
+                  const QuickPlayGame(arGameId: ArGameIds.balloonPop),
+                );
               },
             ),
             _PlayRow(

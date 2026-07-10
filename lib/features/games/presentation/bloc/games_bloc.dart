@@ -108,9 +108,10 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       // Generate fun game name
       final gameName = _generateGameName();
 
-      // AR quick-play seeds the AR mini-games; otherwise 5 random video tasks.
-      final randomTasks =
-          event.ar ? ArTaskSeeds.all() : _getRandomTasks(count: 5);
+      // AR quick-play seeds the single requested AR mini-game task; otherwise
+      // 5 random video tasks.
+      final arTask = ArTaskSeeds.forId(event.arGameId);
+      final randomTasks = arTask != null ? [arTask] : _getRandomTasks(count: 5);
 
       // Initialize player statuses for all tasks
       final initializedTasks = randomTasks.map((task) {

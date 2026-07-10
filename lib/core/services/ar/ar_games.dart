@@ -125,7 +125,7 @@ class ArGameConfig {
 
   static const ArGameConfig treasureHunt = ArGameConfig(
     id: ArGameIds.treasureHunt,
-    title: 'Treasure Hunt',
+    title: 'Gem Rush',
     modelRef: 'assets/ar/gem.glb',
     objectCount: 5,
     duration: Duration(seconds: 60),
@@ -161,12 +161,25 @@ class ArTaskSeeds {
   static Task treasureHunt() => _fromConfig(
         ArGameConfig.treasureHunt,
         description:
-            'Five gems are hidden around your space. Find and tap all of '
-            'them as fast as you can — faster finishes score higher!',
+            'Tap all 5 gems before the clock runs out — finish fast for a '
+            'speed bonus!',
       );
 
   /// Both AR seed tasks, in display order.
   static List<Task> all() => [balloonPop(), treasureHunt()];
+
+  /// The seed [Task] for a single AR mini-game by its [ArGameIds] id, or null
+  /// if [gameId] isn't a known AR game.
+  static Task? forId(String? gameId) {
+    switch (gameId) {
+      case ArGameIds.balloonPop:
+        return balloonPop();
+      case ArGameIds.treasureHunt:
+        return treasureHunt();
+      default:
+        return null;
+    }
+  }
 
   static Task _fromConfig(ArGameConfig config, {required String description}) {
     return Task(
