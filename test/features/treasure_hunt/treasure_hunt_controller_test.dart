@@ -45,6 +45,13 @@ class FakeArEngine implements ArEngine {
   }
 
   @override
+  Future<ArCameraPose?> cameraPose() async {
+    final p = pose;
+    if (p == null) return null;
+    return ArCameraPose(position: p, forward: const ArVector3(0, 0, -1));
+  }
+
+  @override
   Future<ArNode?> spawnInFrontOfCamera({
     required String modelRef,
     double distance = 1.0,
