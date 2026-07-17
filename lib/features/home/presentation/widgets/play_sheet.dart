@@ -13,6 +13,7 @@ import '../../../telephone/presentation/screens/telephone_start_screen.dart';
 import '../../../trivia/presentation/screens/trivia_start_screen.dart';
 import '../../../treasure_hunt/treasure_hunt_screen.dart';
 import '../../../house_hunt/presentation/screens/house_hunt_start_screen.dart';
+import '../../../clue_hunt/presentation/screens/clue_hunt_start_screen.dart';
 
 /// The single "▶ Play" entry point (Zone 3). Opens a bottom-sheet picker that
 /// lists every way to start playing — one calm menu instead of nine competing
@@ -127,6 +128,13 @@ class _PlaySheetBody extends StatelessWidget {
           name: '🏠 House Hunt',
           description: 'Send a treasure hunt to a faraway friend.',
           onTap: () => _push(context, const HouseHuntStartScreen()),
+        ),
+        _PlayRow(
+          icon: Icons.search,
+          color: AppTheme.gold,
+          name: '🔍 Clue Hunt',
+          description: 'Hide a real thing, drive the warmer-colder meter.',
+          onTap: () => _push(context, const ClueHuntStartScreen()),
         ),
         _PlayRow(
           icon: Icons.add_circle_outline,
