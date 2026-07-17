@@ -41,6 +41,9 @@ class FakeArEngine implements ArEngine {
   Future<ArCameraPose?> cameraPose() async => cameraPoseValue;
 
   @override
+  Future<ArCameraProjection?> cameraProjection() async => null;
+
+  @override
   Future<ArNode> spawn({
     required String modelRef,
     required ArVector3 position,
