@@ -273,6 +273,26 @@ class ArFlutterEngine implements ArEngine {
   }
 
   @override
+  Future<ArCameraPose?> cameraPose() async {
+    final session = _sessionManager;
+    if (session == null) return null;
+    final pose = await session.getCameraPose();
+    if (pose == null) return null;
+    // Column 2 of the camera→world matrix is the camera's local +Z in world
+    // space; the camera looks down -Z, so forward is its negation (same math
+    // as [spawnInFrontOfCamera]).
+    final col2 = pose.getColumn(2);
+    final forward = vm.Vector3(-col2.x, -col2.y, -col2.z);
+    if (forward.length2 == 0) return null;
+    forward.normalize();
+    final t = pose.getTranslation();
+    return ArCameraPose(
+      position: ArVector3(t.x, t.y, t.z),
+      forward: ArVector3(forward.x, forward.y, forward.z),
+    );
+  }
+
+  @override
   Future<ArNode?> spawnInFrontOfCamera({
     required String modelRef,
     double distance = 1.0,

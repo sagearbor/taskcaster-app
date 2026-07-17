@@ -32,6 +32,10 @@ class _FakeEngine implements ArEngine {
   @override
   Future<ArCameraProjection?> cameraProjection() async => projection;
   @override
+  Future<ArCameraPose?> cameraPose() async => pose == null
+      ? null
+      : ArCameraPose(position: pose!, forward: const ArVector3(0, 0, -1));
+  @override
   Future<ArNode?> spawnInFrontOfCamera({
     required String modelRef,
     double distance = 1.0,

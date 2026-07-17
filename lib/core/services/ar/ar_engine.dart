@@ -16,6 +16,17 @@ class ArVector3 {
   const ArVector3(this.x, this.y, this.z);
 }
 
+/// The camera's position AND facing in AR world space — for games that need to
+/// know where the player is AIMING (e.g. Tower Trials' preview block), not just
+/// where they stand. [forward] is the unit vector the camera looks along.
+/// Plugin-agnostic like everything else at this boundary.
+class ArCameraPose {
+  final ArVector3 position;
+  final ArVector3 forward;
+
+  const ArCameraPose({required this.position, required this.forward});
+}
+
 /// A detected AR plane (e.g. a floor or table) the player can place objects on.
 class ArPlane {
   final String id;
@@ -90,6 +101,12 @@ abstract class ArEngine {
   /// many objects, so query once per FX burst, not once per object.
   /// Never throws.
   Future<ArCameraProjection?> cameraProjection();
+
+  /// The current camera position + facing direction, or null when tracking is
+  /// unavailable/lost (same null contract as [cameraPosition]). Used by games
+  /// that aim with the camera (Tower Trials): the view computes where the
+  /// camera ray meets the tower-top plane. Never throws.
+  Future<ArCameraPose?> cameraPose();
 
   /// Spawn [modelRef] roughly [distance] metres in FRONT of the current camera
   /// (using the live camera orientation), dropped [drop] metres for eye comfort,
