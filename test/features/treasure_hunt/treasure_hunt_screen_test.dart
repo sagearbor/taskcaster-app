@@ -24,6 +24,13 @@ class _FakeEngine implements ArEngine {
   Stream<ArTap> get taps => _taps.stream;
   @override
   Future<ArVector3?> cameraPosition() async => pose;
+
+  /// Configurable so tests can drive world→screen projection; null = the
+  /// "tracking lost" signal.
+  ArCameraProjection? projection;
+
+  @override
+  Future<ArCameraProjection?> cameraProjection() async => projection;
   @override
   Future<ArNode?> spawnInFrontOfCamera({
     required String modelRef,

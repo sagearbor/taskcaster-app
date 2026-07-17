@@ -60,6 +60,13 @@ class FakeArEngine implements ArEngine {
   @override
   Future<ArVector3?> cameraPosition() async => null;
 
+  /// Configurable so tests can drive world→screen projection; null = the
+  /// "tracking lost" signal.
+  ArCameraProjection? projection;
+
+  @override
+  Future<ArCameraProjection?> cameraProjection() async => projection;
+
   @override
   Future<ArNode?> spawnInFrontOfCamera({
     required String modelRef,

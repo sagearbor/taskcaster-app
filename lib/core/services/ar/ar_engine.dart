@@ -1,5 +1,9 @@
 import 'package:flutter/widgets.dart';
 
+import 'ar_projection.dart';
+
+export 'ar_projection.dart' show ArCameraProjection;
+
 /// A plain (plugin-agnostic) 3D position in AR world space, in meters relative
 /// to the session origin. Right-handed: +x right, +y up, -z forward (away from
 /// the device at session start). Kept free of any vector-math/plugin type so
@@ -77,6 +81,15 @@ abstract class ArEngine {
   /// third_party/.../ArView.kt handleGetCameraPose), so a null result is the
   /// canonical "tracking lost" signal for Treasure Hunt's geiger. Never throws.
   Future<ArVector3?> cameraPosition();
+
+  /// The current camera view + projection matrices for world→screen
+  /// projection (see [worldToScreen] in ar_projection.dart), or null when
+  /// tracking is unavailable/lost — mirroring [cameraPosition]'s null-unless-
+  /// tracking contract (native: the vendored getCameraProjection patches in
+  /// third_party/.../ArView.kt and IosARView.swift). One call serves projecting
+  /// many objects, so query once per FX burst, not once per object.
+  /// Never throws.
+  Future<ArCameraProjection?> cameraProjection();
 
   /// Spawn [modelRef] roughly [distance] metres in FRONT of the current camera
   /// (using the live camera orientation), dropped [drop] metres for eye comfort,

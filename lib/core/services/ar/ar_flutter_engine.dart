@@ -259,6 +259,20 @@ class ArFlutterEngine implements ArEngine {
   }
 
   @override
+  Future<ArCameraProjection?> cameraProjection() async {
+    final session = _sessionManager;
+    if (session == null) return null;
+    // getCameraProjection() (vendored patch) returns {'view','proj'} Matrix4s,
+    // or null when the native side reports no tracking / any channel error —
+    // null propagates as the "can't project right now" signal.
+    final matrices = await session.getCameraProjection();
+    final view = matrices?['view'];
+    final proj = matrices?['proj'];
+    if (view == null || proj == null) return null;
+    return ArCameraProjection(view: view, proj: proj);
+  }
+
+  @override
   Future<ArNode?> spawnInFrontOfCamera({
     required String modelRef,
     double distance = 1.0,

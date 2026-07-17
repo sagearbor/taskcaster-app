@@ -170,6 +170,177 @@ class _BurstPainter extends CustomPainter {
   bool shouldRepaint(_BurstPainter old) => old.t != t;
 }
 
+/// A rival took a balloon: a flame burn-up at [center] — flame tongues licking
+/// upward, bright embers rising with a sway, and a soft smoke puff drifting
+/// off — plus a floating label ("🔥 Dad +3"). Same lightweight one-shot
+/// CustomPaint style as [PopBurst]; positioned by projecting the balloon's
+/// local world position to screen (ar_projection.dart). [accent] tints the
+/// embers toward the balloon's color so the burn still reads as THAT balloon.
+class FlameBurst extends StatefulWidget {
+  final Offset center;
+  final Color accent;
+  final String? label;
+  final VoidCallback onDone;
+
+  const FlameBurst({
+    super.key,
+    required this.center,
+    required this.accent,
+    required this.onDone,
+    this.label,
+  });
+
+  @override
+  State<FlameBurst> createState() => _FlameBurstState();
+}
+
+class _FlameBurstState extends State<FlameBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )
+      ..addStatusListener((s) {
+        if (s == AnimationStatus.completed) widget.onDone();
+      })
+      ..forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) => CustomPaint(
+          size: Size.infinite,
+          painter: _FlamePainter(
+            t: _c.value,
+            center: widget.center,
+            accent: widget.accent,
+            label: widget.label,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FlamePainter extends CustomPainter {
+  final double t; // 0..1
+  final Offset center;
+  final Color accent;
+  final String? label;
+
+  _FlamePainter({
+    required this.t,
+    required this.center,
+    required this.accent,
+    required this.label,
+  });
+
+  static const _flameColors = [
+    Color(0xFFFF3D00), // deep flame red-orange
+    Color(0xFFFF9100), // orange
+    Color(0xFFFFC400), // amber
+    Color(0xFFFFF176), // hot yellow core
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rng = Random(center.dx.round() * 31 + center.dy.round());
+    final fade = (1 - t).clamp(0.0, 1.0);
+
+    // Flame tongues: teardrop-ish blobs licking UP from the pop point, hottest
+    // (yellow) innermost, dying down as the burn completes.
+    const tongues = 9;
+    for (var i = 0; i < tongues; i++) {
+      final jitter = rng.nextDouble();
+      final spread = (i / (tongues - 1) - 0.5) * 34; // horizontal fan
+      final flicker = sin(t * 22 + i * 1.7) * 3.5;
+      final height = (26 + 30 * jitter) * Curves.easeOut.transform(t);
+      final pos = center + Offset(spread * (0.4 + 0.6 * t) + flicker, -height);
+      final radius = (7.0 - 4.5 * t) * (0.6 + 0.5 * jitter);
+      if (radius <= 0) continue;
+      final color = _flameColors[i % _flameColors.length];
+      canvas.drawCircle(
+        pos,
+        radius,
+        Paint()..color = color.withOpacity(0.85 * fade),
+      );
+    }
+
+    // Rising embers: small bright sparks swaying upward past the flames, a few
+    // tinted with the balloon's own color.
+    const embers = 12;
+    for (var i = 0; i < embers; i++) {
+      final ex = (rng.nextDouble() - 0.5) * 44;
+      final speed = 70 + rng.nextDouble() * 60;
+      final sway = sin(t * 10 + i) * 6;
+      final pos = center + Offset(ex + sway, -speed * t - 6);
+      final emberFade = (1 - t * (0.8 + 0.4 * rng.nextDouble())).clamp(0.0, 1.0);
+      if (emberFade <= 0) continue;
+      final color = i % 3 == 0 ? accent : _flameColors[i % _flameColors.length];
+      canvas.drawCircle(
+        pos,
+        1.8 + rng.nextDouble() * 1.6,
+        Paint()..color = color.withOpacity(emberFade),
+      );
+    }
+
+    // Smoke: soft grey puffs that appear as the flame dies (second half),
+    // growing and thinning as they drift up.
+    if (t > 0.35) {
+      final st = ((t - 0.35) / 0.65).clamp(0.0, 1.0);
+      for (var i = 0; i < 4; i++) {
+        final sx = (rng.nextDouble() - 0.5) * 26;
+        final pos = center + Offset(sx + sin(st * 5 + i) * 5, -30 - 55 * st);
+        canvas.drawCircle(
+          pos,
+          8 + 10 * st,
+          Paint()
+            ..color = const Color(0xFF9E9E9E).withOpacity(0.28 * (1 - st)),
+        );
+      }
+    }
+
+    // Floating "🔥 Name +N" label, same feel as PopBurst's score flyout.
+    if (label != null) {
+      final labelT = Curves.easeOut.transform(t);
+      final labelFade = t < 0.15 ? t / 0.15 : (1 - t).clamp(0.0, 1.0) / 0.85;
+      final painter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(labelFade.clamp(0.0, 1.0)),
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            shadows: const [Shadow(blurRadius: 6, color: Colors.black87)],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        center + Offset(-painter.width / 2, -64 * labelT - painter.height / 2),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_FlamePainter old) => old.t != t;
+}
+
 /// The 3-2-1-GO pre-roll: giant digits that elastically punch in.
 /// Show while `controller.inPreRoll`; pass [showGo] for a beat after "GO".
 class GoCountdownOverlay extends StatelessWidget {

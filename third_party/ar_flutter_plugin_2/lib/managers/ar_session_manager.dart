@@ -58,6 +58,28 @@ class ARSessionManager {
     }
   }
 
+  /// Local patch (taskmaster, companion to the native getCameraProjection
+  /// handlers in ArView.kt / IosARView.swift): returns the current camera
+  /// VIEW (world→eye) and PROJECTION (eye→clip) matrices under the keys
+  /// 'view' and 'proj', or null when tracking is unavailable (the native side
+  /// answers null unless actively tracking) or on any channel error — same
+  /// parsing/error style as [getCameraPose] above. One call serves projecting
+  /// any number of world points to screen coordinates on the Dart side.
+  Future<Map<String, Matrix4>?> getCameraProjection() async {
+    try {
+      final serialized = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('getCameraProjection', {});
+      if (serialized == null) return null;
+      return {
+        'view': MatrixConverter().fromJson(serialized['view'] as List<dynamic>),
+        'proj': MatrixConverter().fromJson(serialized['proj'] as List<dynamic>),
+      };
+    } catch (e) {
+      print('Error caught: ' + e.toString());
+      return null;
+    }
+  }
+
   /// Returns the given anchor pose in Matrix4 format with respect to the world coordinate system of the [ARView]
   Future<Matrix4?> getPose(ARAnchor anchor) async {
     try {
