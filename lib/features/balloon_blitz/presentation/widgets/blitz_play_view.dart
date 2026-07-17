@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:vector_math/vector_math_64.dart' as vm;
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/services/ar/ar_engine.dart';
 import '../../../../core/services/ar/ar_games.dart';
 import '../../../../core/services/ar/ar_minigame_controller.dart';
+import '../../../../core/services/ar/ar_projection.dart';
 import '../../../../core/services/ar/ar_race.dart';
 import '../../../../core/services/sfx/game_sfx.dart';
 import '../../../../core/widgets/ar_fx.dart';
@@ -81,6 +83,7 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
   Offset? _lastTouch;
   DateTime _lastTouchAt = DateTime.fromMillisecondsSinceEpoch(0);
   final List<_FxEntry> _bursts = [];
+  final List<_FxEntry> _flames = []; // rival burn-ups at projected positions
   int _fxSeq = 0;
   String? _toast;
   int _toastSeq = 0;
@@ -174,27 +177,69 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
         });
         break;
       case ArGameEventType.rivalPop:
-        // Someone ELSE got it: it burns away — sizzle + amber flash + who.
+        // Someone ELSE got it: it burns away where it stood (positioned flame
+        // via world→screen projection), or amber flash + toast as fallback.
         _sfx.sizzle();
         HapticFeedback.selectionClick();
-        setState(() {
-          final who = event.playerName ?? 'Someone';
-          _toast = (event.modelRef ?? '').contains('bomb')
-              ? '💥 $who hit a bomb −${event.value}'
-              : '🔥 $who +${event.value}';
-          _toastSeq++;
-          _rivalFlash = true;
-        });
-        _rivalFlashTimer?.cancel();
-        _rivalFlashTimer = Timer(const Duration(milliseconds: 350), () {
-          if (mounted) setState(() => _rivalFlash = false);
-        });
+        _showRivalPop(event);
         break;
       case ArGameEventType.timeUp:
         _sfx.fanfare();
         HapticFeedback.mediumImpact();
         break;
     }
+  }
+
+  /// A rival's pop, ideally rendered AT the balloon: project its local world
+  /// position (carried on the event) through the live camera view+projection
+  /// matrices to a screen point and burn a [FlameBurst] there. Falls back to
+  /// the legacy amber flash + toast whenever a screen point can't be produced —
+  /// no position on the event, tracking lost (null matrices, incl. any iOS
+  /// quirk), or the balloon is behind the camera / far off screen.
+  Future<void> _showRivalPop(ArGameEvent event) async {
+    final who = event.playerName ?? 'Someone';
+    final isBomb = (event.modelRef ?? '').contains('bomb');
+    Offset? point;
+    final world = event.position;
+    // Bombs keep the full-screen treatment: a rival "winning" a bomb is a
+    // score LOSS, and the flame burn-up would misread as a reward.
+    if (!isBomb && world != null) {
+      final cam = await _engine.cameraProjection();
+      if (cam != null && mounted) {
+        point = worldToScreen(
+          vm.Vector3(world.x, world.y, world.z),
+          cam.view,
+          cam.proj,
+          MediaQuery.of(context).size,
+        );
+      }
+    }
+    if (!mounted) return;
+
+    if (point != null) {
+      setState(() {
+        _flames.add(_FxEntry(
+          id: _fxSeq++,
+          center: point!,
+          color: arFxColorFor(event.modelRef),
+          label: '🔥 $who +${event.value}',
+        ));
+      });
+      return;
+    }
+
+    // FALLBACK: exactly the pre-projection behavior — amber flash + toast.
+    setState(() {
+      _toast = isBomb
+          ? '💥 $who hit a bomb −${event.value}'
+          : '🔥 $who +${event.value}';
+      _toastSeq++;
+      _rivalFlash = true;
+    });
+    _rivalFlashTimer?.cancel();
+    _rivalFlashTimer = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) setState(() => _rivalFlash = false);
+    });
   }
 
   void _addBurst({required Color color, String? label, bool isBomb = false}) {
@@ -303,6 +348,17 @@ class _BlitzPlayViewState extends State<BlitzPlayView>
             isBomb: b.isBomb,
             onDone: () => setState(
                 () => _bursts.removeWhere((entry) => entry.id == b.id)),
+          ),
+
+        // Rival burn-ups at the balloon's projected screen position.
+        for (final f in _flames)
+          FlameBurst(
+            key: ValueKey('flame-${f.id}'),
+            center: f.center,
+            accent: f.color,
+            label: f.label,
+            onDone: () => setState(
+                () => _flames.removeWhere((entry) => entry.id == f.id)),
           ),
 
         // Escape toast.

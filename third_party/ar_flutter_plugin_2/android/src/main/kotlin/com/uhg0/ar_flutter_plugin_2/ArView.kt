@@ -105,6 +105,7 @@ class ArView(
                 "dispose" -> dispose()
                 "getAnchorPose" -> handleGetAnchorPose(call, result)
                 "getCameraPose" -> handleGetCameraPose(result)
+                "getCameraProjection" -> handleGetCameraProjection(result)
                 "snapshot" -> handleSnapshot(result)
                 "disableCamera" -> handleDisableCamera(result)
                 "enableCamera" -> handleEnableCamera(result)
@@ -829,6 +830,40 @@ class ArView(
             result.success(matrix.map { it.toDouble() })
         } catch (e: Exception) {
             result.error("CAMERA_POSE_ERROR", e.message, null)
+        }
+    }
+
+    // PATCH (taskmaster, Balloon Blitz rival-pop FX): world→screen projection
+    // support. Returns BOTH matrices Dart needs to project world points into
+    // screen space — the camera VIEW matrix (world→eye) and the PROJECTION
+    // matrix (eye→clip) — each as a flat column-major 16-double list:
+    //   {"view": [16 doubles], "proj": [16 doubles]}
+    // Deliberately NO per-object projection here: the matrices are shipped once
+    // per query and the (cheap, pure) clip-space math runs in Dart
+    // (lib/core/services/ar/ar_projection.dart), so ONE channel round-trip can
+    // serve any number of objects in a frame. Like handleGetCameraPose above,
+    // success(null) unless ARCore is actively TRACKING — null is the app's
+    // canonical "can't project right now, fall back" signal. Near/far match the
+    // gameplay envelope (objects live ~1.5–3.6 m out; far 30 m is generous).
+    private fun handleGetCameraProjection(result: MethodChannel.Result) {
+        try {
+            val camera = sceneView.session?.update()?.camera
+            if (camera == null || camera.trackingState != TrackingState.TRACKING) {
+                result.success(null)
+                return
+            }
+            val view = FloatArray(16)
+            camera.getViewMatrix(view, 0)
+            val proj = FloatArray(16)
+            camera.getProjectionMatrix(proj, 0, 0.01f, 30f)
+            result.success(
+                mapOf(
+                    "view" to view.map { it.toDouble() },
+                    "proj" to proj.map { it.toDouble() },
+                ),
+            )
+        } catch (e: Exception) {
+            result.error("CAMERA_PROJECTION_ERROR", e.message, null)
         }
     }
 

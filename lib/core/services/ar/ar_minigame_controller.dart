@@ -79,11 +79,19 @@ class ArGameEvent {
   /// Who popped it, for [ArGameEventType.rivalPop].
   final String? playerName;
 
+  /// The object's world position in THIS phone's local AR frame at the moment
+  /// it went away, for [ArGameEventType.rivalPop] — lets the view project the
+  /// burn-up FX to the balloon's actual on-screen spot. Purely a LOCAL lookup
+  /// (each phone renders the shared logical set at its own local positions);
+  /// nothing position-related crosses the radio.
+  final ArVector3? position;
+
   const ArGameEvent(
     this.type, {
     this.value = 0,
     this.modelRef,
     this.playerName,
+    this.position,
   });
 }
 
@@ -514,6 +522,7 @@ class ArMinigameController extends ChangeNotifier {
               value: event.value,
               modelRef: obj.modelRef,
               playerName: race!.playerName(event.playerId ?? ''),
+              position: _livePosition(obj),
             ));
           }
           _safeNotify();
@@ -545,6 +554,7 @@ class ArMinigameController extends ChangeNotifier {
           value: obj.isBomb ? config.bombPenalty : obj.value,
           modelRef: obj.modelRef,
           playerName: race!.playerName(event.playerId ?? ''),
+          position: _livePosition(obj),
         ));
         race!.publishPop(
           objectId: obj.raceId,
@@ -624,27 +634,28 @@ class ArMinigameController extends ChangeNotifier {
     // Iterate a copy: escaping mutates _objects.
     for (final obj in List<_LiveObject>.of(_objects)) {
       obj.age += _animDt;
-      if (lifespanS > 0) {
-        // Rise straight up with a sideways S-curve wiggle (air escaping).
-        final rise = _riseSpeed * obj.age;
-        final wx = sin(obj.age * 2.4 + obj.phase) * 0.10;
-        final wz = cos(obj.age * 1.6 + obj.phase) * 0.05;
-        engine.move(
-          obj.node,
-          ArVector3(obj.base.x + wx, obj.base.y + rise, obj.base.z + wz),
-        );
-        // Mirrors never decide escapes — the authority announces them (a late
-        // message just means the balloon rises a beat longer here).
-        if (obj.age >= lifespanS && !_isRaceMirror) _escape(obj);
-      } else {
-        // Gentle bob in place (e.g. Treasure Hunt gems if animated).
-        final dy = sin(_animClock + obj.base.x * 3) * 0.04;
-        engine.move(
-          obj.node,
-          ArVector3(obj.base.x, obj.base.y + dy, obj.base.z),
-        );
-      }
+      engine.move(obj.node, _livePosition(obj));
+      // Mirrors never decide escapes — the authority announces them (a late
+      // message just means the balloon rises a beat longer here).
+      if (lifespanS > 0 && obj.age >= lifespanS && !_isRaceMirror) _escape(obj);
     }
+  }
+
+  /// Where [obj] is RIGHT NOW in this phone's local AR frame: its base plus
+  /// the current animation offset. A pure function of (base, phase, age) —
+  /// exactly what [_onAnim] renders — so the rival-pop FX projection lands on
+  /// the balloon the player actually sees.
+  ArVector3 _livePosition(_LiveObject obj) {
+    if (config.objectLifespan > Duration.zero) {
+      // Rise straight up with a sideways S-curve wiggle (air escaping).
+      final rise = _riseSpeed * obj.age;
+      final wx = sin(obj.age * 2.4 + obj.phase) * 0.10;
+      final wz = cos(obj.age * 1.6 + obj.phase) * 0.05;
+      return ArVector3(obj.base.x + wx, obj.base.y + rise, obj.base.z + wz);
+    }
+    // Gentle bob in place (e.g. Treasure Hunt gems if animated).
+    final dy = sin(_animClock + obj.base.x * 3) * 0.04;
+    return ArVector3(obj.base.x, obj.base.y + dy, obj.base.z);
   }
 
   /// An object floated away unpopped: remove it and (for respawning games) put a

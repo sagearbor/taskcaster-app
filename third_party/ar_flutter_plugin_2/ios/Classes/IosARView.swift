@@ -95,6 +95,36 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
                     result(nil)
                 }
                 break
+            case "getCameraProjection":
+                // Local patch (mirrors ArView.kt handleGetCameraProjection):
+                // ship the camera VIEW (world→eye) and PROJECTION (eye→clip)
+                // matrices once per query as {"view": [...], "proj": [...]}
+                // (flat column-major 16-float lists via serializeMatrix), so
+                // the Dart side (ar_projection.dart) can project MANY world
+                // points to screen without further channel traffic. Null unless
+                // tracking is .normal — null is the app's canonical "can't
+                // project, fall back to non-positioned FX" signal. The app runs
+                // portrait-only, hence the fixed .portrait orientation; the
+                // viewport size comes from the live view bounds so the aspect
+                // ratio matches what is actually on screen. Near/far mirror the
+                // Android patch (gameplay objects live ~1.5–3.6 m out).
+                // NOT device-verified here (no iOS device in this environment).
+                if let frame = sceneView.session.currentFrame,
+                   case .normal = frame.camera.trackingState {
+                    let viewMatrix = frame.camera.viewMatrix(for: .portrait)
+                    let projectionMatrix = frame.camera.projectionMatrix(
+                        for: .portrait,
+                        viewportSize: sceneView.bounds.size,
+                        zNear: 0.01,
+                        zFar: 30)
+                    result([
+                        "view": serializeMatrix(viewMatrix),
+                        "proj": serializeMatrix(projectionMatrix),
+                    ])
+                } else {
+                    result(nil)
+                }
+                break
             case "getAnchorPose":
             if let cameraPose = anchorCollection[arguments?["anchorId"] as! String]?.transform {
                     result(serializeMatrix(cameraPose))
