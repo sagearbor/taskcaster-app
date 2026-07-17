@@ -62,8 +62,26 @@ void main() {
       expect(HouseHuntService.gameNameFor('   '), "A Sneaky Hider's House Hunt");
     });
 
-    test('isHouseHuntGame detects by name convention', () {
+    test('isHouseHuntGame detects via gameKind', () {
       final hunt = Game(
+        id: 'g',
+        gameName: 'Whatever Name',
+        creatorId: 'h',
+        judgeId: 'h',
+        status: GameStatus.lobby,
+        inviteCode: 'ABC234',
+        createdAt: DateTime(2026, 1, 1),
+        players: const [],
+        tasks: const [],
+        settings: GameSettings.quickPlay(),
+        gameKind: HouseHuntService.kindHouseHunt,
+      );
+      expect(HouseHuntService.isHouseHuntGame(hunt), isTrue);
+    });
+
+    test('isHouseHuntGame falls back to the legacy name-suffix convention '
+        'for pre-existing docs with no gameKind', () {
+      final legacyHunt = Game(
         id: 'g',
         gameName: "Alice's House Hunt",
         creatorId: 'h',
@@ -74,12 +92,28 @@ void main() {
         players: const [],
         tasks: const [],
         settings: GameSettings.quickPlay(),
+        // No gameKind — simulates a game document written before the field
+        // existed.
       );
-      expect(HouseHuntService.isHouseHuntGame(hunt), isTrue);
-      expect(
-        HouseHuntService.isHouseHuntGame(hunt.copyWith(gameName: 'Epic Quest')),
-        isFalse,
+      expect(legacyHunt.gameKind, isNull);
+      expect(HouseHuntService.isHouseHuntGame(legacyHunt), isTrue);
+    });
+
+    test('isHouseHuntGame is false for an ordinary game (neither kind nor '
+        'name match)', () {
+      final ordinary = Game(
+        id: 'g',
+        gameName: 'Epic Quest',
+        creatorId: 'h',
+        judgeId: 'h',
+        status: GameStatus.lobby,
+        inviteCode: 'ABC234',
+        createdAt: DateTime(2026, 1, 1),
+        players: const [],
+        tasks: const [],
+        settings: GameSettings.quickPlay(),
       );
+      expect(HouseHuntService.isHouseHuntGame(ordinary), isFalse);
     });
   });
 
@@ -102,6 +136,10 @@ void main() {
 
       // Framed name.
       expect(game.gameName, "Alice's House Hunt");
+
+      // Carries the real type discriminator (not just the name convention).
+      expect(game.gameKind, HouseHuntService.kindHouseHunt);
+      expect(HouseHuntService.isHouseHuntGame(game), isTrue);
 
       // Single player (the hider), with the real display name (not "Creator").
       expect(game.players.length, 1);

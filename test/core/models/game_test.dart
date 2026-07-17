@@ -111,6 +111,28 @@ void main() {
       expect(reconstructedGame.tasks.length, testGame.tasks.length);
     });
 
+    test('gameKind defaults to null and round-trips through toMap/fromMap',
+        () {
+      expect(testGame.gameKind, isNull);
+
+      final map = testGame.toMap();
+      expect(map['gameKind'], isNull);
+      final reconstructed = Game.fromMap(map);
+      expect(reconstructed.gameKind, isNull);
+
+      final kindedGame = testGame.copyWith(gameKind: 'house_hunt');
+      expect(kindedGame.gameKind, 'house_hunt');
+      final kindedMap = kindedGame.toMap();
+      expect(kindedMap['gameKind'], 'house_hunt');
+      expect(Game.fromMap(kindedMap).gameKind, 'house_hunt');
+    });
+
+    test('gameKind parses as null when the key is absent from the map '
+        '(pre-existing docs written before the field existed)', () {
+      final map = testGame.toMap()..remove('gameKind');
+      expect(Game.fromMap(map).gameKind, isNull);
+    });
+
     test('should create copy with modified fields', () {
       final modifiedGame = testGame.copyWith(
         gameName: 'Modified Game',

@@ -50,6 +50,9 @@ class HouseHuntService {
   /// Library category stamped on every hunt task.
   static const String category = 'House Hunt';
 
+  /// The [Game.gameKind] value stamped on every hunt created by this service.
+  static const String kindHouseHunt = 'house_hunt';
+
   /// The default game name for a hunt authored by [hiderName].
   static String gameNameFor(String hiderName) {
     final trimmed = hiderName.trim();
@@ -57,11 +60,13 @@ class HouseHuntService {
     return "$base's House Hunt";
   }
 
-  /// Whether [game] is a House Hunt, detected by its name convention. Used to
-  /// decide when to offer "Send one back" on the winner ceremony. (Games carry
-  /// no type field, and adding one would touch the shared model + rules, so the
-  /// naming convention set by [gameNameFor] is the marker.)
+  /// Whether [game] is a House Hunt. Used to decide when to offer "Send one
+  /// back" on the winner ceremony. Primarily keyed off [Game.gameKind]; falls
+  /// back to the legacy name-suffix convention (set by [gameNameFor]) for
+  /// games created before the gameKind field existed. The fallback can be
+  /// deleted once those pre-existing docs have aged out.
   static bool isHouseHuntGame(Game game) =>
+      game.gameKind == kindHouseHunt ||
       game.gameName.trimRight().endsWith('House Hunt');
 
   /// Wrap a raw prompt in the hunt framing and build an ordinary video task —
@@ -124,6 +129,7 @@ class HouseHuntService {
       // The hider only judges — without this, startGame seeds the hider a
       // per-task status they'd never fulfil and the hunt could never complete.
       settings: fresh.settings.copyWith(judgePlays: false),
+      gameKind: kindHouseHunt,
     );
     await gameRepository.updateGame(gameId, complete);
 
