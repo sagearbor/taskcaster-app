@@ -7,7 +7,9 @@ import '../../data/repositories/balloon_blitz_repository.dart';
 import '../../domain/entities/blitz_session.dart';
 import '../bloc/balloon_blitz_bloc.dart';
 import '../widgets/blitz_leaderboard.dart';
+import '../widgets/blitz_live_rank_strip.dart';
 import '../widgets/blitz_play_view.dart';
+import '../widgets/blitz_podium.dart';
 
 /// The shared Balloon Blitz game screen, used by both the host and every peer.
 /// It renders one of three phases from the authoritative session — lobby,
@@ -188,17 +190,26 @@ class _PlayingScaffold extends StatelessWidget {
             },
           ),
 
-          // Live family leaderboard, top-right, updating on every score message.
+          // Live, always-visible ranked strip: top 3 + you (if you're outside
+          // the top 3). Thin, translucent, bottom edge — never blocks the AR
+          // camera view above it. Updates on every score message.
           Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            right: 8,
-            width: 220,
-            child: BlocBuilder<BalloonBlitzBloc, BalloonBlitzState>(
-              buildWhen: (p, c) => p.session != c.session,
-              builder: (context, state) => BlitzLeaderboard(
-                session: state.session!,
-                selfId: selfId,
-                overlay: true,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: BlocBuilder<BalloonBlitzBloc, BalloonBlitzState>(
+                    buildWhen: (p, c) => p.session != c.session,
+                    builder: (context, state) => BlitzLiveRankStrip(
+                      session: state.session!,
+                      selfId: selfId,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -254,9 +265,16 @@ class _ResultsScaffoldState extends State<_ResultsScaffold>
     final theme = Theme.of(context);
     final isHost = widget.isHost;
     final selfId = widget.selfId;
-    final trophyIn = _slice(0.0, 0.55, curve: Curves.elasticOut);
-    final winnerIn = _slice(0.2, 0.6);
-    final standingsIn = _slice(0.45, 1.0);
+    final trophyIn = _slice(0.0, 0.4, curve: Curves.elasticOut);
+    final winnerIn = _slice(0.1, 0.45);
+    // Linear (uncurved) slice so the podium's own internal per-stand
+    // staggering — which applies its own Intervals/curves on top — reads
+    // cleanly instead of compounding two easing curves.
+    final podiumIn = CurvedAnimation(
+      parent: _ceremony,
+      curve: const Interval(0.3, 0.9, curve: Curves.linear),
+    );
+    final standingsIn = _slice(0.7, 1.0);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Balloon Blitz — Results'),
@@ -299,7 +317,13 @@ class _ResultsScaffoldState extends State<_ResultsScaffold>
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
+                BlitzPodium(
+                  ranked: session.leaderboard,
+                  selfId: selfId,
+                  reveal: podiumIn,
+                ),
+                const SizedBox(height: 10),
                 Expanded(
                   child: FadeTransition(
                     opacity: standingsIn,
