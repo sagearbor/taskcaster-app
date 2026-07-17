@@ -40,6 +40,11 @@ class Game extends Equatable {
   /// invite code. Backward-compatible: defaults to an empty list.
   final List<String> invitedEmails;
 
+  /// Discriminates special game variants that reuse the ordinary games
+  /// collection (e.g. 'house_hunt'). Null means an ordinary game.
+  /// Backward-compatible: older docs without this key parse as null.
+  final String? gameKind;
+
   const Game({
     required this.id,
     required this.gameName,
@@ -56,6 +61,7 @@ class Game extends Equatable {
     this.isPublic = false,
     this.cloneCount = 0,
     this.invitedEmails = const [],
+    this.gameKind,
   });
 
   factory Game.fromMap(Map<String, dynamic> map) {
@@ -92,6 +98,9 @@ class Game extends Equatable {
               ?.map((e) => (e as String).toLowerCase())
               .toList() ??
           const [],
+      // Backward-compatible: older docs have no gameKind key, so absence
+      // parses as null (an ordinary game).
+      gameKind: map['gameKind'] as String?,
     );
   }
 
@@ -115,6 +124,7 @@ class Game extends Equatable {
       'isPublic': isPublic,
       'cloneCount': cloneCount,
       'invitedEmails': invitedEmails,
+      'gameKind': gameKind,
     };
   }
 
@@ -134,6 +144,7 @@ class Game extends Equatable {
     bool? isPublic,
     int? cloneCount,
     List<String>? invitedEmails,
+    String? gameKind,
   }) {
     return Game(
       id: id ?? this.id,
@@ -151,6 +162,7 @@ class Game extends Equatable {
       isPublic: isPublic ?? this.isPublic,
       cloneCount: cloneCount ?? this.cloneCount,
       invitedEmails: invitedEmails ?? this.invitedEmails,
+      gameKind: gameKind ?? this.gameKind,
     );
   }
 
@@ -219,7 +231,7 @@ class Game extends Equatable {
   }
 
   @override
-  List<Object> get props => [
+  List<Object?> get props => [
         id,
         gameName,
         creatorId,
@@ -235,5 +247,6 @@ class Game extends Equatable {
         isPublic,
         cloneCount,
         invitedEmails,
+        gameKind,
       ];
 }
