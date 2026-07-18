@@ -162,6 +162,53 @@ void main() {
     });
   });
 
+  group('hasVisibleInk (the "Draw something first!" submit guard)', () {
+    test('a fresh canvas has no visible ink', () {
+      expect(DrawingController().hasVisibleInk, isFalse);
+    });
+
+    test('an eraser-only scribble on a blank canvas is NOT visible ink', () {
+      // The bug: eraser strokes have points + a (background) colour, so the
+      // old isEmpty-based guard treated an eraser-only canvas as "drawn on"
+      // and let a blank submission through.
+      final controller = DrawingController()..toggleEraser();
+      controller.startStroke(const Offset(0.4, 0.4));
+      controller.appendPoint(const Offset(0.5, 0.5));
+
+      expect(controller.eraserActive, isTrue);
+      expect(controller.isEmpty, isFalse,
+          reason: 'the eraser stroke has points');
+      expect(controller.hasVisibleInk, isFalse,
+          reason: 'but an eraser leaves no ink on a blank canvas');
+    });
+
+    test('a single pen stroke IS visible ink', () {
+      final controller = DrawingController();
+      controller.startStroke(const Offset(0.2, 0.2));
+      expect(controller.hasVisibleInk, isTrue);
+    });
+
+    test('pen ink under later eraser strokes still counts as visible', () {
+      final controller = DrawingController();
+      controller.startStroke(const Offset(0.2, 0.2)); // pen
+      controller.toggleEraser();
+      controller.startStroke(const Offset(0.3, 0.3)); // eraser over it
+      expect(controller.hasVisibleInk, isTrue);
+    });
+
+    test('the eraser flag is authoring-only — never serialized', () {
+      final controller = DrawingController()..toggleEraser();
+      controller.startStroke(const Offset(0.1, 0.1));
+      final json = controller.toJson();
+      // Round-trips as an ordinary background-coloured stroke; nothing marks it
+      // as an eraser on the wire, and a re-parsed stroke is not an eraser.
+      final parsed = parseStrokes(json).single;
+      expect(parsed.isEraser, isFalse);
+      expect(parsed.color, kCanvasBackgroundColor.value);
+      expect(parsed.width, kEraserWidth);
+    });
+  });
+
   group('DrawingCanvas widget toolbar', () {
     Future<DrawingController> pumpCanvas(WidgetTester tester) async {
       final controller = DrawingController();

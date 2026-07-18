@@ -330,6 +330,12 @@ class TowerTrialsController extends ChangeNotifier {
 
   double _baseX = 0, _baseY = -baseDrop, _baseZ = -towerDistance;
   ArNode? _ghostNode;
+
+  /// Bumped on every [_spawnBase]. An in-flight async spawn captures the value
+  /// at its start and, once its await resolves, discards its node if the token
+  /// has moved on (a collapse began or a new round's base started spawning) —
+  /// the stale-async-result guard, mirroring treasure_hunt's `_poll` fix.
+  int _spawnGeneration = 0;
   Timer? _animTimer;
   Timer? _collapseTimer;
   double _animClock = 0;
@@ -379,13 +385,14 @@ class TowerTrialsController extends ChangeNotifier {
   /// like the other games (no plane-tap dependency); falls back to the session
   /// origin when tracking hasn't locked yet.
   Future<void> _spawnBase() async {
+    final generation = ++_spawnGeneration;
     ArVector3? cam;
     try {
       cam = await engine.cameraPosition();
     } catch (_) {
       cam = null;
     }
-    if (_disposed) return;
+    if (_disposed || generation != _spawnGeneration) return;
     _baseX = cam?.x ?? 0;
     _baseY = (cam?.y ?? 0) - baseDrop;
     _baseZ = (cam?.z ?? 0) - towerDistance;
@@ -393,12 +400,30 @@ class TowerTrialsController extends ChangeNotifier {
         TowerBlock(level: 0, x: _baseX, z: _baseZ, modelRef: baseModelRef);
     _tower.add(base);
     _safeNotify();
-    base.node =
+    final baseNode =
         await _trySpawn(baseModelRef, ArVector3(_baseX, _baseY, _baseZ));
+    // The round may have collapsed / a new round may have begun while the base
+    // was in flight; a node for a base that's no longer the live one must not
+    // linger (same class of leak as the ghost below).
+    if (baseNode != null && (generation != _spawnGeneration || !_tower.contains(base))) {
+      engine.remove(baseNode);
+    } else {
+      base.node = baseNode;
+    }
     // One ghost per round, hovering where the next block would land; aiming
     // just moves it.
-    _ghostNode =
+    final ghostNode =
         await _trySpawn(ghostModelRef, ArVector3(_baseX, _previewY, _baseZ));
+    // Stale-async guard: _beginCollapse (or a new round's _spawnBase) bumps
+    // _spawnGeneration and nulls _ghostNode. If this spawn resolved after that,
+    // the freshly-spawned ghost belongs to a phase that's over — remove it and
+    // leave _ghostNode null, or it would haunt the scene across rounds.
+    if (ghostNode == null) return;
+    if (generation != _spawnGeneration) {
+      engine.remove(ghostNode);
+      return;
+    }
+    _ghostNode = ghostNode;
   }
 
   Future<ArNode?> _trySpawn(String modelRef, ArVector3 position) async {
@@ -548,7 +573,11 @@ class TowerTrialsController extends ChangeNotifier {
       TowerTrialsEventType.collapse,
       playerName: loser.name,
     ));
-    // The ghost has no business hovering over rubble.
+    // The ghost has no business hovering over rubble. Bumping the spawn
+    // generation also invalidates a base/ghost spawn that's still in flight for
+    // this round, so a late-resolving node can't re-populate _ghostNode after
+    // this point (the across-rounds ghost leak).
+    _spawnGeneration++;
     final ghost = _ghostNode;
     _ghostNode = null;
     if (ghost != null) engine.remove(ghost);

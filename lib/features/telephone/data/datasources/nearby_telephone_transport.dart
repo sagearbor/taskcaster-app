@@ -7,7 +7,19 @@ import 'package:nearby_connections/nearby_connections.dart';
 
 /// App-unique Nearby service id. Must be identical on advertiser + discoverer,
 /// and distinct enough that we only ever find *our* games.
-const String kTelephoneNearbyServiceId = 'com.sagearbor.taskcaster.telephone';
+///
+/// The `.v2` suffix is a WIRE-PROTOCOL version gate. Drawing strokes now
+/// serialize a per-stroke `w` (width) key: a v1 build ignores `w` and would
+/// replay a 22px eraser stroke as a 3.5px white hairline, silently garbling a
+/// mixed-version offline drawing. Following the Balloon Blitz precedent
+/// (protocol change ⇒ new service id) we simply make old and new builds
+/// invisible to each other during discovery, so a family can only pair when
+/// both phones are on the latest build. Bump this suffix again on the next
+/// breaking wire change. This id is telephone-specific — Balloon Blitz
+/// (`kBlitzNearbyServiceId`) and Clue Hunt (`kClueHuntNearbyServiceId`) carry
+/// their own ids, so this bump does not affect their pairing.
+const String kTelephoneNearbyServiceId =
+    'com.sagearbor.taskcaster.telephone.v2';
 
 /// A discovered nearby advertiser (a host offering an offline game).
 class NearbyDevice {

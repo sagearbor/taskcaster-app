@@ -496,7 +496,7 @@ class _DrawInputState extends State<_DrawInput> {
   }
 
   void _send() {
-    if (_controller.isEmpty) {
+    if (!_controller.hasVisibleInk) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Draw something first!')),
       );
@@ -1155,7 +1155,7 @@ class _SamePromptDrawInputState extends State<_SamePromptDrawInput> {
   }
 
   void _send() {
-    if (_controller.isEmpty) {
+    if (!_controller.hasVisibleInk) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Draw something first!')),
       );
