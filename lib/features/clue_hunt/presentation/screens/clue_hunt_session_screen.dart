@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -201,15 +203,22 @@ class _HuntScaffold extends StatelessWidget {
       appBar: AppBar(title: Text(title), automaticallyImplyLeading: false),
       body: iAmHider
           ? ClueHiderView(repository: repository, session: session)
-          : _seekerBody(),
+          : _seekerBody(context),
     );
   }
 
-  Widget _seekerBody() {
+  Widget _seekerBody(BuildContext context) {
     // While the hider is still hiding, seekers wait; the meter goes live only
     // once the hunt begins.
     if (session.phase == CluePhase.hiding) {
-      return _WaitingToHide(session: session);
+      return _WaitingToHide(
+        session: session,
+        // The HOST can rescue a stalled/departed hider after a short grace
+        // period so nobody is stuck on "X is hiding…" forever.
+        canSkip: repository.isHost,
+        onSkip: () =>
+            context.read<ClueHuntBloc>().add(const ClueHiderSkipped()),
+      );
     }
     return ClueSeekerView(
       repository: repository,
@@ -220,13 +229,64 @@ class _HuntScaffold extends StatelessWidget {
   }
 }
 
-class _WaitingToHide extends StatelessWidget {
+/// Shown to non-hiders while the hider hides. For the HOST it reveals a
+/// "Skip their turn" escape hatch after [_skipAfter] so a hider whose phone has
+/// dropped (or who is simply taking forever) can be rotated past — the fix for
+/// the soft-lock where the hider role lands on a departed phone.
+class _WaitingToHide extends StatefulWidget {
   final ClueHuntSession session;
-  const _WaitingToHide({required this.session});
+  final bool canSkip;
+  final VoidCallback onSkip;
+  const _WaitingToHide({
+    required this.session,
+    required this.canSkip,
+    required this.onSkip,
+  });
+
+  @override
+  State<_WaitingToHide> createState() => _WaitingToHideState();
+}
+
+class _WaitingToHideState extends State<_WaitingToHide> {
+  static const Duration _skipAfter = Duration(seconds: 20);
+  Timer? _skipTimer;
+  bool _canOfferSkip = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _armSkipTimer();
+  }
+
+  @override
+  void didUpdateWidget(_WaitingToHide old) {
+    super.didUpdateWidget(old);
+    // A fresh hider (skip applied, or a new round rolled into hiding) restarts
+    // the grace period.
+    if (old.session.hiderId != widget.session.hiderId) {
+      _canOfferSkip = false;
+      _armSkipTimer();
+    }
+  }
+
+  void _armSkipTimer() {
+    _skipTimer?.cancel();
+    if (!widget.canSkip) return;
+    _skipTimer = Timer(_skipAfter, () {
+      if (mounted) setState(() => _canOfferSkip = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _skipTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final session = widget.session;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -244,6 +304,18 @@ class _WaitingToHide extends StatelessWidget {
                 textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
             const SizedBox(height: 24),
             const CircularProgressIndicator(),
+            if (widget.canSkip && _canOfferSkip) ...[
+              const SizedBox(height: 24),
+              Text('Taking too long?',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: widget.onSkip,
+                icon: const Icon(Icons.skip_next),
+                label: const Text('Skip their turn'),
+              ),
+            ],
           ],
         ),
       ),

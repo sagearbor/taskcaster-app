@@ -117,8 +117,17 @@ class _OfflineClueHuntHostScreenState extends State<OfflineClueHuntHostScreen> {
         transport: _newTransport(),
         session: session,
       );
+      // Capture the repo for disposal BEFORE the await: startHosting() spins up a
+      // live advertising session, so if we back out mid-await, State.dispose (and
+      // the unmounted check below) must be able to tear it down — otherwise the
+      // radio keeps advertising (battery drain + STATUS_ALREADY_ADVERTISING on
+      // every retry until the app is killed).
+      _repo = repo;
       final ok = await repo.startHosting();
-      if (!mounted) return;
+      if (!mounted) {
+        await repo.dispose();
+        return;
+      }
       if (!ok) {
         await repo.dispose();
         _fail('Could not start advertising. Make sure Bluetooth and Wi-Fi are '
@@ -126,7 +135,6 @@ class _OfflineClueHuntHostScreenState extends State<OfflineClueHuntHostScreen> {
         return;
       }
       setState(() {
-        _repo = repo;
         _selfId = hostId;
         _busy = false;
       });
@@ -201,8 +209,15 @@ class OfflineClueHuntJoinScreen extends StatefulWidget {
 enum _JoinPhase { starting, discovering, connecting, playing, failed }
 
 class _OfflineClueHuntJoinScreenState extends State<OfflineClueHuntJoinScreen> {
+  /// How long to wait after tapping a host before giving up and returning to the
+  /// device list — `connect()` returning true only means the request was sent,
+  /// so without this a failed handshake would hang on "Connecting…" forever.
+  static const Duration _connectTimeout = Duration(seconds: 15);
+
   ClueHuntRepository? _repo;
   StreamSubscription<ClueHuntSession?>? _sessionSub;
+  StreamSubscription<String>? _disconnectSub;
+  Timer? _connectTimer;
   final String _selfId = _uuid.v4();
   _JoinPhase _phase = _JoinPhase.starting;
   String? _error;
@@ -234,23 +249,30 @@ class _OfflineClueHuntJoinScreenState extends State<OfflineClueHuntJoinScreen> {
         selfId: _selfId,
         selfName: widget.displayName,
       );
+      // Capture the repo for disposal BEFORE the await so backing out mid-await
+      // can't leak a live discovery session (finding 5).
+      _repo = repo;
       // The host's first authoritative session means we're in.
       _sessionSub = repo.watchSession().listen((session) {
         if (!mounted || session == null) return;
+        _connectTimer?.cancel();
         setState(() => _phase = _JoinPhase.playing);
       });
+      // A dropped link while we're mid-handshake must not leave us stuck on
+      // "Connecting…" (finding 7).
+      _disconnectSub = repo.disconnections.listen((_) => _onLinkLost());
       final ok = await repo.startDiscovery();
-      if (!mounted) return;
+      if (!mounted) {
+        await repo.dispose();
+        return;
+      }
       if (!ok) {
         await repo.dispose();
         _fail('Could not start scanning. Make sure Bluetooth and Wi-Fi are on. '
             '(Tap "Connection help" below for details.)');
         return;
       }
-      setState(() {
-        _repo = repo;
-        _phase = _JoinPhase.discovering;
-      });
+      setState(() => _phase = _JoinPhase.discovering);
     } catch (e) {
       NearbyDiagnostics.instance.log('join start ERROR: $e');
       _fail('Something went wrong while searching. '
@@ -270,19 +292,46 @@ class _OfflineClueHuntJoinScreenState extends State<OfflineClueHuntJoinScreen> {
     final repo = _repo;
     if (repo == null) return;
     setState(() => _phase = _JoinPhase.connecting);
+    // `connect()` only initiates the request; the first session (via the stream
+    // listener) is the real "we're in" signal. Guard the wait with a timeout so
+    // a handshake that never completes falls back to the device list instead of
+    // hanging on "Connecting…" indefinitely.
+    _connectTimer?.cancel();
+    _connectTimer = Timer(_connectTimeout, () {
+      _connectFailed("Couldn't connect — try again");
+    });
     final ok = await repo.connect(device.endpointId);
     if (!mounted) return;
     if (!ok) {
-      setState(() => _phase = _JoinPhase.discovering);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not connect. Try again.')),
-      );
+      _connectFailed('Could not connect. Try again.');
     }
+  }
+
+  /// A dropped link — if it lands while we're still handshaking, treat it like a
+  /// failed connect (finding 7).
+  void _onLinkLost() {
+    if (_phase == _JoinPhase.connecting) {
+      _connectFailed("Couldn't connect — try again");
+    }
+  }
+
+  /// Return to the device list with a friendly message. Only acts while we're
+  /// still in the connecting state, so a late timeout/disconnect after we've
+  /// already started playing is ignored.
+  void _connectFailed(String message) {
+    _connectTimer?.cancel();
+    if (!mounted || _phase != _JoinPhase.connecting) return;
+    setState(() => _phase = _JoinPhase.discovering);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
   void dispose() {
+    _connectTimer?.cancel();
     _sessionSub?.cancel();
+    _disconnectSub?.cancel();
     _repo?.dispose();
     super.dispose();
   }

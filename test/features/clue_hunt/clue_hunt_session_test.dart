@@ -159,6 +159,92 @@ void main() {
     });
   });
 
+  group('connectivity & hider liveness (finding 1 — no soft-lock)', () {
+    test('withPlayerConnection flags a drop but keeps the player in the roster',
+        () {
+      final s = _threePlayerLobby().withPlayerConnection('p1', false);
+      final p1 = s.players.firstWhere((p) => p.id == 'p1');
+      expect(p1.connected, isFalse);
+      // Still present — scores and history survive a drop.
+      expect(s.players.length, 3);
+    });
+
+    test('re-joining a dropped player clears the disconnected flag', () {
+      final s = _threePlayerLobby()
+          .withPlayerConnection('p1', false)
+          .withPlayerJoined('p1', 'Ava');
+      expect(s.players.firstWhere((p) => p.id == 'p1').connected, isTrue);
+    });
+
+    test('advancedRound skips a disconnected next hider', () {
+      // Order h, p1, p2. Host hides round 1; p1 (next) is disconnected, so the
+      // role must skip to p2 rather than landing on the departed p1.
+      var s = _threePlayerLobby().started().withPlayerConnection('p1', false);
+      s = s.beganSeeking(now: 0).withClaim('p2').claimConfirmed(now: 1000);
+      s = s.advancedRound();
+      expect(s.hiderId, 'p2');
+      expect(s.phase, CluePhase.hiding);
+    });
+
+    test('advancedRound falls back to the host when nobody else is connected',
+        () {
+      var s = _threePlayerLobby()
+          .started()
+          .withPlayerConnection('p1', false)
+          .withPlayerConnection('p2', false);
+      s = s.beganSeeking(now: 0).withClaim('p1').claimConfirmed(now: 1000);
+      // Even though p1 was the finder, the NEXT hider skips both dropped peers
+      // and wraps back to the host.
+      s = s.advancedRound();
+      expect(s.hiderId, 'h');
+    });
+
+    test('hiderSkipped hands off to the next connected player, same round', () {
+      // Host started; role is on p1 after a rotation, but p1 has dropped.
+      var s = _threePlayerLobby().started();
+      s = s.beganSeeking(now: 0).withClaim('p1').claimConfirmed(now: 1000);
+      s = s.advancedRound(); // round 2, hider p1
+      expect(s.hiderId, 'p1');
+      final round = s.roundNumber;
+      s = s.withPlayerConnection('p1', false).hiderSkipped();
+      expect(s.hiderId, 'p2', reason: 'skips the departed hider to the next');
+      expect(s.roundNumber, round, reason: 'skipping does NOT advance the round');
+      expect(s.phase, CluePhase.hiding);
+    });
+
+    test('hiderSkipped is a no-op outside the hiding phase', () {
+      final seeking = _threePlayerLobby().started().beganSeeking(now: 0);
+      expect(seeking.hiderSkipped(), seeking);
+    });
+  });
+
+  group('stale verdict guards (finding 3 — wrong-seeker scoring)', () {
+    test('confirm with a mismatched expected claimant is ignored', () {
+      final seeking =
+          _threePlayerLobby().started().beganSeeking(now: 1000).withClaim('p1');
+      // A stale confirm naming p2 (not the pending p1) awards nobody.
+      final result = seeking.claimConfirmed(now: 5000, expectClaimant: 'p2');
+      expect(result, seeking);
+      expect(result.phase, CluePhase.seeking);
+    });
+
+    test('confirm naming the actual pending claimant still scores', () {
+      final seeking =
+          _threePlayerLobby().started().beganSeeking(now: 1000).withClaim('p1');
+      final result = seeking.claimConfirmed(now: 11000, expectClaimant: 'p1');
+      expect(result.phase, CluePhase.roundResult);
+      expect(result.lastFinderId, 'p1');
+    });
+
+    test('reject with a mismatched expected claimant is ignored', () {
+      final claimed =
+          _threePlayerLobby().started().beganSeeking(now: 0).withClaim('p1');
+      // A stale reject for p2 must NOT drop p1's live claim.
+      final after = claimed.claimRejected(expectClaimant: 'p2');
+      expect(after.pendingClaimBy, 'p1');
+    });
+  });
+
   group('serialization', () {
     test('toMap/fromMap round-trips every field', () {
       final s = _threePlayerLobby()
@@ -167,6 +253,13 @@ void main() {
           .withClaim('p1');
       final round = ClueHuntSession.fromMap(s.toMap());
       expect(round, equals(s));
+    });
+
+    test('a disconnected flag survives serialization', () {
+      final s = _threePlayerLobby().withPlayerConnection('p1', false);
+      final round = ClueHuntSession.fromMap(s.toMap());
+      expect(round, equals(s));
+      expect(round.players.firstWhere((p) => p.id == 'p1').connected, isFalse);
     });
 
     test('a round-result session round-trips (finder + award survive)', () {

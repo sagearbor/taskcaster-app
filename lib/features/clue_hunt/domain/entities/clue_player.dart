@@ -17,19 +17,30 @@ class CluePlayer extends Equatable {
   /// True for the device that hosts the lobby and owns the authoritative game.
   final bool isHost;
 
+  /// Whether this player's phone currently has a live link to the host. A drop
+  /// flips this to false (the player is KEPT in the roster so their score and
+  /// history survive), and it flips back to true when they re-join. The hider
+  /// rotation skips non-connected players so the role can never land on a
+  /// departed phone and soft-lock the game. The host is always connected to
+  /// itself, so its own record stays true.
+  final bool connected;
+
   const CluePlayer({
     required this.id,
     required this.name,
     this.totalScore = 0,
     this.isHost = false,
+    this.connected = true,
   });
 
-  CluePlayer copyWith({String? name, int? totalScore, bool? isHost}) {
+  CluePlayer copyWith(
+      {String? name, int? totalScore, bool? isHost, bool? connected}) {
     return CluePlayer(
       id: id,
       name: name ?? this.name,
       totalScore: totalScore ?? this.totalScore,
       isHost: isHost ?? this.isHost,
+      connected: connected ?? this.connected,
     );
   }
 
@@ -38,6 +49,7 @@ class CluePlayer extends Equatable {
         'name': name,
         'totalScore': totalScore,
         'isHost': isHost,
+        'connected': connected,
       };
 
   factory CluePlayer.fromMap(Map<String, dynamic> map) => CluePlayer(
@@ -45,8 +57,10 @@ class CluePlayer extends Equatable {
         name: map['name'] as String? ?? 'Player',
         totalScore: (map['totalScore'] as num?)?.toInt() ?? 0,
         isHost: map['isHost'] as bool? ?? false,
+        // Older snapshots without the field default to connected.
+        connected: map['connected'] as bool? ?? true,
       );
 
   @override
-  List<Object?> get props => [id, name, totalScore, isHost];
+  List<Object?> get props => [id, name, totalScore, isHost, connected];
 }

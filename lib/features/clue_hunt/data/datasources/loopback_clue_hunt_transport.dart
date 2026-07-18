@@ -44,6 +44,11 @@ class LoopbackClueHuntTransport implements ClueHuntTransport {
   final Set<String> _connected = {};
   final _devices = StreamController<List<NearbyDevice>>.broadcast();
 
+  /// Test seam: when set and it returns true for a given outbound message, the
+  /// send FAILS (the returned future rejects) instead of delivering — simulating
+  /// a dropped radio send so retry/self-heal paths can be exercised.
+  bool Function(Map<String, dynamic> message)? failSend;
+
   bool _linkScheduled = false;
   bool _linkedUp = false;
   bool _disposed = false;
@@ -132,6 +137,10 @@ class LoopbackClueHuntTransport implements ClueHuntTransport {
       String endpointId, Map<String, dynamic> message) async {
     final peer = _peer;
     if (peer == null || _disposed) return;
+    // A simulated dropped send: reject before anything is delivered.
+    if (failSend?.call(message) ?? false) {
+      throw StateError('simulated dropped send: ${message['k']}');
+    }
     // Round-trip through JSON exactly like the wire: no shared references, and a
     // non-serialisable payload fails here just as it would on the radio.
     final wire = jsonEncode(message);
