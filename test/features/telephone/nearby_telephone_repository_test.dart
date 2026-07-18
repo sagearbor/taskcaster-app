@@ -245,4 +245,16 @@ void main() {
       await expectLater(peer.playAgain('game-1'), throwsA(isA<StateError>()));
     });
   });
+
+  group('telephone Nearby service id (wire-protocol version gate)', () {
+    test('carries a .v2 version token so pre-"w" builds can\'t pair', () {
+      // Bumped when drawing strokes started serializing a per-stroke width
+      // ('w'). Old builds ignore 'w' and would garble mixed-version drawings,
+      // so the version suffix makes old/new builds invisible to each other in
+      // discovery (the Balloon Blitz protocol-change precedent).
+      expect(kTelephoneNearbyServiceId, contains('.v2'));
+      expect(kTelephoneNearbyServiceId,
+          'com.sagearbor.taskcaster.telephone.v2');
+    });
+  });
 }

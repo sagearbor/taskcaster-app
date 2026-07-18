@@ -42,7 +42,17 @@ class DrawingStroke {
   final List<Offset> points;
   final double width;
 
-  DrawingStroke(this.color, this.points, {double? width})
+  /// Authoring-only flag: this stroke was drawn with the eraser (it "paints"
+  /// the background colour to overdraw earlier ink). Deliberately NOT part of
+  /// the wire format — an eraser stroke serializes exactly like any other
+  /// stroke (background colour + width) and replays as a background overdraw,
+  /// which is the whole point of erasing. It exists purely so the live canvas
+  /// can tell whether any *visible* ink was actually laid down (see
+  /// [DrawingController.hasVisibleInk]); parsed/replayed strokes are never
+  /// erasers as far as anyone downstream is concerned.
+  final bool isEraser;
+
+  DrawingStroke(this.color, this.points, {double? width, this.isEraser = false})
       : width = width ?? kLegacyStrokeWidth;
 
   Map<String, dynamic> toJson() => {
@@ -155,6 +165,15 @@ class DrawingController extends ChangeNotifier {
 
   bool get isEmpty => _strokes.every((s) => s.points.isEmpty);
 
+  /// Whether the drawing contains any *visible* ink — i.e. at least one PEN
+  /// stroke with points. Eraser strokes are background-coloured overdraws and
+  /// leave nothing behind on a blank canvas, so an eraser-only scribble must
+  /// NOT count as "the player drew something" (that would let a blank
+  /// submission through the "Draw something first!" guard). This is the check
+  /// the submit buttons use, not [isEmpty].
+  bool get hasVisibleInk =>
+      _strokes.any((s) => !s.isEraser && s.points.isNotEmpty);
+
   double get _activeWidth =>
       eraserActive ? kEraserWidth : kBrushWidths[brushSize]!;
 
@@ -179,7 +198,8 @@ class DrawingController extends ChangeNotifier {
 
   void startStroke(Offset normalized) {
     _strokes.add(
-      DrawingStroke(_activeColor, [normalized], width: _activeWidth),
+      DrawingStroke(_activeColor, [normalized],
+          width: _activeWidth, isEraser: eraserActive),
     );
     notifyListeners();
   }

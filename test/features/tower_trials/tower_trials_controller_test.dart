@@ -76,6 +76,33 @@ class FakeArEngine implements ArEngine {
   Future<void> dispose() async {}
 }
 
+/// Fake engine that GATES the first ghost spawn behind a [Completer] so a test
+/// can hold a round's ghost in flight, force a collapse underneath it, and then
+/// resolve the spawn — reproducing the "late ghost haunts the scene" race.
+class GatedGhostArEngine extends FakeArEngine {
+  final Completer<void> ghostGate = Completer<void>();
+  bool _firstGhostGated = false;
+
+  /// Node ids handed out for ghost spawns, in order (round 1 gated, round 2+ not).
+  final List<String> ghostNodeIds = [];
+
+  @override
+  Future<ArNode> spawn({
+    required String modelRef,
+    required ArVector3 position,
+    ArPlane? onPlane,
+  }) async {
+    if (modelRef.contains('ghost') && !_firstGhostGated) {
+      _firstGhostGated = true;
+      await ghostGate.future; // hold the round-1 ghost in flight
+    }
+    final node = await super.spawn(
+        modelRef: modelRef, position: position, onPlane: onPlane);
+    if (modelRef.contains('ghost')) ghostNodeIds.add(node.id);
+    return node;
+  }
+}
+
 void main() {
   /// Build a controller mid-game: started, roster locked, base spawned, and
   /// (by default) the first turn live.
@@ -497,6 +524,58 @@ void main() {
       // Spawned: base n0, ghost n1, Ann's n2, Bob's n3 — ALL removed.
       expect(eng.removedIds.toSet(), {'n0', 'n1', 'n2', 'n3'});
       expect(c.tower, isEmpty);
+      c.dispose();
+    });
+  });
+
+  test('a ghost that spawns AFTER the round collapsed is removed, never '
+      'assigned — no stale ghost haunts later rounds', () {
+    fakeAsync((async) {
+      final eng = GatedGhostArEngine();
+      final c = TowerTrialsController(engine: eng);
+      c.start();
+      async.flushMicrotasks();
+      c.startGame(['Ann', 'Bob', 'Cy']);
+      async.flushMicrotasks(); // base spawns; round-1 ghost is GATED (in flight)
+      expect(c.baseReady, isTrue);
+      expect(eng.ghostNodeIds, isEmpty, reason: 'round-1 ghost still gated');
+
+      // Play round 1 to a collapse while that ghost is still in flight.
+      c.beginTurn();
+      drop(async, c, 0.25, 0); // Ann +0.55 → handoff
+      expect(c.phase, TowerTrialsPhase.handoff);
+      nextTurn(c);
+      drop(async, c, 0.25, 0); // Bob +0.55 → 1.10 → collapse (Bob out)
+      expect(c.phase, TowerTrialsPhase.collapsing);
+      expect(c.collapsedBy, 'Bob');
+
+      // NOW the gated ghost resolves — AFTER _beginCollapse nulled _ghostNode.
+      eng.ghostGate.complete();
+      async.flushMicrotasks();
+
+      // The late ghost was spawned then immediately removed by the stale-async
+      // guard; it is NOT retained as _ghostNode.
+      expect(eng.ghostNodeIds, hasLength(1), reason: 'exactly one round-1 ghost');
+      expect(eng.removedIds, contains(eng.ghostNodeIds.single),
+          reason: 'late ghost removed, not assigned');
+
+      // Finish the collapse → round 2 (Ann & Cy remain). The next round is
+      // unaffected: a fresh ghost spawns and aiming moves THAT one.
+      async.elapse(const Duration(milliseconds: 1500));
+      async.flushMicrotasks();
+      expect(c.phase, TowerTrialsPhase.handoff);
+      expect(c.round, 2);
+      expect(eng.ghostNodeIds, hasLength(2), reason: 'round 2 spawns a new ghost');
+
+      final round2Ghost = eng.ghostNodeIds[1];
+      expect(eng.removedIds, isNot(contains(round2Ghost)),
+          reason: 'the live round-2 ghost is not removed');
+      c.beginTurn();
+      c.updateAim(TowerTrialsController.maxAim, 0);
+      expect(eng.positions[round2Ghost]!.x,
+          closeTo(TowerTrialsController.maxAim, 1e-9),
+          reason: 'aiming moves the round-2 ghost — _ghostNode points at it, '
+              'not the discarded stale one');
       c.dispose();
     });
   });
