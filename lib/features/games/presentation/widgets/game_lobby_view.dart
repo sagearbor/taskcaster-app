@@ -153,7 +153,9 @@ class GameLobbyView extends StatelessWidget {
                                   Icon(
                                     Icons.group_add,
                                     size: 48,
-                                    color: Colors.grey[400],
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
@@ -166,7 +168,9 @@ class GameLobbyView extends StatelessWidget {
                                   Text(
                                     'Share the invite code to get started!',
                                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: Colors.grey[500],
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                     ),
                                   ),
                                 ],
