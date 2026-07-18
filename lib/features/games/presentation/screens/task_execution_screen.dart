@@ -523,7 +523,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             label: Text(
               'Submit Video',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onPrimary,
                     fontWeight: FontWeight.bold,
                   ),
             ),

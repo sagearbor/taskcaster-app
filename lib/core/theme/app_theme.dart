@@ -23,6 +23,19 @@ class AppTheme {
   static const Color surfaceColor = surface;
   static const Color errorColor = Color(0xFFE0395E);
 
+  // Dark palette — tuned for contrast on dark surfaces rather than inverted.
+  // Violet is lightened to a readable lavender (deep violet is unreadable on
+  // dark); gold/coral stay vivid as game-show accents. Surfaces layer from the
+  // scaffold background up through cards to elevated sheets/dialogs.
+  static const Color darkBg = Color(0xFF17121F); // scaffold background
+  static const Color darkSurface = Color(0xFF221C33); // cards, app bar
+  static const Color darkSurfaceHigh = Color(0xFF2C2542); // sheets, dialogs, menus
+  static const Color darkAppBar = Color(0xFF2A2150); // violet-tinted brand bar
+  static const Color violetLight = Color(0xFFB79CFF); // primary on dark
+  static const Color onDark = Color(0xFFEDE9F5); // primary text on dark
+  static const Color onDarkMuted = Color(0xFFAEA4C6); // secondary text on dark
+  static const Color darkError = Color(0xFFFF8A9B); // readable red on dark
+
   static const String _display = 'Fredoka';
   static const String _body = 'PlusJakartaSans';
 
@@ -186,54 +199,146 @@ class AppTheme {
   }
 
   static ThemeData get darkTheme {
-    const darkSurface = Color(0xFF221C33);
-    const darkBg = Color(0xFF17121F);
     final scheme = ColorScheme.fromSeed(
       seedColor: violet,
       brightness: Brightness.dark,
     ).copyWith(
-      primary: goldBright,
+      primary: violetLight,
       onPrimary: violetDeep,
-      secondary: coral,
-      tertiary: goldBright,
+      primaryContainer: violetDeep,
+      onPrimaryContainer: violetSoft,
+      secondary: goldBright,
+      onSecondary: const Color(0xFF3A2600),
+      secondaryContainer: const Color(0xFF4A3A12),
+      onSecondaryContainer: goldBright,
+      tertiary: coral,
+      onTertiary: Colors.white,
       surface: darkSurface,
-      onSurface: const Color(0xFFEDE9F5),
+      onSurface: onDark,
+      surfaceContainerHighest: darkSurfaceHigh,
+      onSurfaceVariant: onDarkMuted,
+      outline: const Color(0xFF4A4360),
+      outlineVariant: const Color(0xFF352E4A),
+      error: darkError,
+      onError: const Color(0xFF3A0011),
     );
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: darkBg,
       fontFamily: _body,
-      textTheme: _textTheme(const Color(0xFFEDE9F5)),
+      textTheme: _textTheme(onDark),
       appBarTheme: const AppBarTheme(
         centerTitle: true,
         elevation: 0,
-        backgroundColor: darkSurface,
+        scrolledUnderElevation: 0,
+        backgroundColor: darkAppBar,
         foregroundColor: Colors.white,
         titleTextStyle: TextStyle(
-            fontFamily: _display,
-            fontWeight: FontWeight.w600,
-            fontSize: 22,
-            color: Colors.white),
+          fontFamily: _display,
+          fontWeight: FontWeight.w600,
+          fontSize: 22,
+          color: Colors.white,
+          letterSpacing: 0.2,
+        ),
       ),
       cardTheme: CardTheme(
         elevation: 0,
         color: darkSurface,
         surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.black.withOpacity(0.4),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         margin: EdgeInsets.zero,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: goldBright,
+          backgroundColor: violetLight,
           foregroundColor: violetDeep,
           elevation: 0,
+          shadowColor: Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           textStyle: const TextStyle(
-              fontFamily: _display, fontWeight: FontWeight.w600, fontSize: 16),
+              fontFamily: _display,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              letterSpacing: 0.3),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: violetLight,
+          side: BorderSide(color: violetLight.withOpacity(0.42), width: 1.5),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle: const TextStyle(
+              fontFamily: _display, fontWeight: FontWeight.w600, fontSize: 15),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: violetLight,
+          textStyle:
+              const TextStyle(fontFamily: _body, fontWeight: FontWeight.w700),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.05),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: violetLight, width: 2)),
+        labelStyle: const TextStyle(color: onDarkMuted, fontFamily: _body),
+        hintStyle: const TextStyle(color: onDarkMuted, fontFamily: _body),
+        prefixIconColor: violetLight,
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: darkSurfaceHigh,
+        labelStyle: const TextStyle(
+            fontFamily: _body, fontWeight: FontWeight.w600, color: onDark),
+        side: BorderSide.none,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        elevation: 4,
+        backgroundColor: violetLight,
+        foregroundColor: violetDeep,
+      ),
+      dialogTheme: DialogTheme(
+        backgroundColor: darkSurfaceHigh,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: darkSurfaceHigh,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: darkSurfaceHigh,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: darkSurfaceHigh,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        textStyle: const TextStyle(fontFamily: _body, color: onDark),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: darkSurfaceHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        contentTextStyle:
+            const TextStyle(fontFamily: _body, color: onDark),
+      ),
+      dividerColor: Colors.white.withOpacity(0.08),
     );
   }
 }

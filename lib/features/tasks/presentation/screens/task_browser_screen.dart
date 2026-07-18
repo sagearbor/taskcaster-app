@@ -324,7 +324,7 @@ class _TaskBrowserScreenState extends State<TaskBrowserScreen>
                         Icon(
                           Icons.search_off,
                           size: 64,
-                          color: Colors.grey[400],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(height: 16),
                         Text(

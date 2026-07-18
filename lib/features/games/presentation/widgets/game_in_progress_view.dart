@@ -66,7 +66,8 @@ class GameInProgressView extends StatelessWidget {
                   const SizedBox(height: 16),
                   LinearProgressIndicator(
                     value: game.tasks.isEmpty ? 0 : game.tasks.where((t) => t.allSubmissionsJudged).length / game.tasks.length,
-                    backgroundColor: Colors.grey[300],
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
                   ),
                   const SizedBox(height: 8),
@@ -106,7 +107,8 @@ class GameInProgressView extends StatelessWidget {
                               Icon(
                                 Icons.assignment,
                                 size: 48,
-                                color: Colors.grey[400],
+                                color:
+                                    Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                               const SizedBox(height: 16),
                               Text(
@@ -119,7 +121,8 @@ class GameInProgressView extends StatelessWidget {
                               Text(
                                 'The judge will add tasks soon!',
                                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.grey[500],
+                                  color:
+                                      Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],

@@ -107,14 +107,14 @@ class _SubmissionCardState extends State<SubmissionCard> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: _selectedScore == score 
+                      color: _selectedScore == score
                           ? Theme.of(context).colorScheme.primary
-                          : Colors.grey[200],
+                          : Theme.of(context).colorScheme.surfaceContainerHighest,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: _selectedScore == score 
+                        color: _selectedScore == score
                             ? Theme.of(context).colorScheme.primary
-                            : Colors.grey[400]!,
+                            : Theme.of(context).colorScheme.outline,
                         width: 2,
                       ),
                     ),
@@ -122,7 +122,9 @@ class _SubmissionCardState extends State<SubmissionCard> {
                       child: Text(
                         '$score',
                         style: TextStyle(
-                          color: _selectedScore == score ? Colors.white : Colors.black,
+                          color: _selectedScore == score
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : Theme.of(context).colorScheme.onSurface,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -254,9 +256,10 @@ class _SubmissionCardState extends State<SubmissionCard> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[300]!),
+                border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -321,9 +324,10 @@ class _SubmissionCardState extends State<SubmissionCard> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
+                        border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant),
                       ),
                       child: Text(
                         widget.submission.textAnswer!,
