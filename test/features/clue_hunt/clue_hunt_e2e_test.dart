@@ -109,6 +109,45 @@ void main() {
     });
   });
 
+  test('a seeker whose first join send is DROPPED still lands in the roster '
+      '(finding 4 — retry heals a lost join)', () {
+    fakeAsync((async) {
+      final (hostT, seekerT) =
+          LoopbackClueHuntTransport.pair(latency: _latency100);
+      // Fail the seeker's FIRST join send (simulate a dropped radio send); let
+      // everything after through so the retry succeeds.
+      var dropped = false;
+      seekerT.failSend = (msg) {
+        if (msg['k'] == 'join' && !dropped) {
+          dropped = true;
+          return true;
+        }
+        return false;
+      };
+
+      final host = ClueHuntRepository.host(
+        transport: hostT,
+        session: ClueHuntSession.createHost(hostId: 'h', hostName: 'Mom'),
+        now: () => 1000,
+      );
+      final seeker = ClueHuntRepository.seeker(
+        transport: seekerT,
+        selfId: 'seek',
+        selfName: 'Ava',
+      );
+
+      // Link-up + first (dropped) join + backoff + retry + delivery.
+      _settle(async, 1500);
+      expect(dropped, isTrue, reason: 'the first join send was dropped');
+      expect(host.current!.players.any((p) => p.id == 'seek'), isTrue,
+          reason: 'the retry heals the dropped first join');
+
+      host.dispose();
+      seeker.dispose();
+      _settle(async);
+    });
+  });
+
   test('a game with totalRounds=1 ends at game over after the first find', () {
     fakeAsync((async) {
       final (hostT, seekerT) =

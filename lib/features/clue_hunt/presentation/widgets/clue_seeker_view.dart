@@ -34,39 +34,33 @@ class ClueSeekerView extends StatefulWidget {
 
 class _ClueSeekerViewState extends State<ClueSeekerView> {
   StreamSubscription<double>? _heatSub;
-  Timer? _tickTimer;
+  late final GeigerTicker _ticker;
   double _heat = 0.0;
 
   @override
   void initState() {
     super.initState();
     _heat = widget.repository.heat;
+    _ticker = GeigerTicker(onTick: _onTick)..start(_heat);
     _heatSub = widget.repository.watchHeat().listen(_onHeat);
-    _scheduleTick();
   }
 
   @override
   void dispose() {
     _heatSub?.cancel();
-    _tickTimer?.cancel();
+    _ticker.dispose();
     super.dispose();
   }
 
   void _onHeat(double heat) {
     if (!mounted) return;
     setState(() => _heat = heat);
-    // Reschedule immediately so the cadence tracks the new heat right away.
-    _scheduleTick();
+    // Re-arm rather than reschedule from scratch: a stream of updates at steady
+    // heat keeps ticking instead of forever pushing the next tick out of reach.
+    _ticker.setHeat(heat);
   }
 
-  void _scheduleTick() {
-    _tickTimer?.cancel();
-    final interval = ClueHeat.tickIntervalMsForHeat(_heat);
-    if (interval == null) return; // silent when ice cold
-    _tickTimer = Timer(Duration(milliseconds: interval), _fireTick);
-  }
-
-  void _fireTick() {
+  void _onTick() {
     if (!mounted) return;
     widget.sfx.tick();
     switch (ClueHeat.bandForHeat(_heat)) {
@@ -82,7 +76,6 @@ class _ClueSeekerViewState extends State<ClueSeekerView> {
       case HeatBand.silent:
         break;
     }
-    _scheduleTick();
   }
 
   String get _heatLabel {

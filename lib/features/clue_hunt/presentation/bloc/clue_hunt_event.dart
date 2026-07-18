@@ -45,6 +45,12 @@ class ClueNextRound extends ClueHuntEvent {
   const ClueNextRound();
 }
 
+/// HOST: skip a stalled/departed hider during the hiding phase — hand the role
+/// to the next connected player without advancing the round.
+class ClueHiderSkipped extends ClueHuntEvent {
+  const ClueHiderSkipped();
+}
+
 /// HOST: start a whole new game from the winner ceremony.
 class CluePlayAgain extends ClueHuntEvent {
   const CluePlayAgain();

@@ -27,6 +27,7 @@ class ClueHuntBloc extends Bloc<ClueHuntEvent, ClueHuntState> {
     on<ClueFindConfirmed>((_, __) => repository.confirmFind());
     on<ClueFindRejected>((_, __) => repository.rejectFind());
     on<ClueNextRound>((_, __) => repository.nextRound());
+    on<ClueHiderSkipped>((_, __) => repository.skipHider());
     on<CluePlayAgain>((_, __) => repository.playAgain());
   }
 

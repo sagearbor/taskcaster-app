@@ -283,6 +283,236 @@ void main() {
     });
   });
 
+  group('Connectivity, liveness & the skip escape hatch (finding 1)', () {
+    test('a dropped seeker is flagged disconnected and re-broadcast', () {
+      final transport = FakeClueHuntTransport();
+      final host = _host(transport);
+      addTearDown(host.dispose);
+      transport.inject('e1', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      transport.simulateDisconnect('e1');
+      final p1 = host.current!.players.firstWhere((p) => p.id == 'p1');
+      expect(p1.connected, isFalse);
+      // Kept in the roster (scores/history survive) — just flagged.
+      expect(host.current!.players.length, 2);
+      expect(
+          transport
+              .lastSession()
+              .players
+              .firstWhere((p) => p.id == 'p1')
+              .connected,
+          isFalse);
+    });
+
+    test('a re-join after a drop clears the disconnected flag', () {
+      final transport = FakeClueHuntTransport();
+      final host = _host(transport);
+      addTearDown(host.dispose);
+      transport.inject('e1', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      transport.simulateDisconnect('e1');
+      transport.inject('e9', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      expect(host.current!.players.firstWhere((p) => p.id == 'p1').connected,
+          isTrue);
+    });
+
+    test('nextRound rotation skips a hider that dropped before their round', () {
+      final transport = FakeClueHuntTransport();
+      var clock = 1000;
+      final host = _host(transport, now: () => clock);
+      addTearDown(host.dispose);
+      transport.inject('e1', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      transport.inject('e2', {'k': 'join', 'id': 'p2', 'name': 'Ben'});
+      host.startGame();
+      host.beginSeeking();
+      transport.inject('e1', {'k': 'foundClaim', 'by': 'p1'});
+      host.confirmFind();
+      // p1 (the next hider in order) drops before the rotation reaches them.
+      transport.simulateDisconnect('e1');
+      host.nextRound();
+      expect(host.current!.hiderId, 'p2',
+          reason: 'the role skips the departed p1');
+    });
+
+    test('skipHider hands a stalled/departed hider role to the next connected '
+        'player without advancing the round, and re-broadcasts', () {
+      final transport = FakeClueHuntTransport();
+      var clock = 1000;
+      final host = _host(transport, now: () => clock);
+      addTearDown(host.dispose);
+      transport.inject('e1', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      transport.inject('e2', {'k': 'join', 'id': 'p2', 'name': 'Ben'});
+      host.startGame();
+      host.beginSeeking();
+      transport.inject('e1', {'k': 'foundClaim', 'by': 'p1'});
+      host.confirmFind();
+      host.nextRound(); // hiding, hider = p1
+      expect(host.current!.hiderId, 'p1');
+      final round = host.current!.roundNumber;
+      // p1's phone goes dark; the host taps "skip their turn".
+      transport.simulateDisconnect('e1');
+      transport.broadcasts.clear();
+      host.skipHider();
+      expect(host.current!.hiderId, 'p2');
+      expect(host.current!.roundNumber, round,
+          reason: 'skip does NOT advance the round');
+      expect(host.current!.phase, CluePhase.hiding);
+      expect(transport.lastSession().hiderId, 'p2',
+          reason: 'seekers are unstuck via the re-broadcast');
+    });
+
+    test('skipHider is ignored outside the hiding phase', () {
+      final transport = FakeClueHuntTransport();
+      final host = _host(transport);
+      addTearDown(host.dispose);
+      transport.inject('e1', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      host.startGame();
+      host.beginSeeking(); // now seeking
+      host.skipHider();
+      expect(host.current!.phase, CluePhase.seeking);
+      expect(host.current!.hiderId, 'h');
+    });
+
+    test('a disconnect is surfaced on the disconnections stream (finding 7)',
+        () async {
+      final transport = FakeClueHuntTransport();
+      final host = _host(transport);
+      addTearDown(host.dispose);
+      final lost = <String>[];
+      final sub = host.disconnections.listen(lost.add);
+      addTearDown(sub.cancel);
+      transport.inject('e1', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      transport.simulateDisconnect('e1');
+      await Future<void>.delayed(Duration.zero);
+      expect(lost, contains('e1'));
+    });
+  });
+
+  group('Stale confirm/reject carry the claimant id (finding 3)', () {
+    test('a stale confirm for an already-rejected claim never scores the wrong '
+        'seeker', () {
+      final transport = FakeClueHuntTransport();
+      var clock = 1000;
+      final host = _host(transport, now: () => clock);
+      addTearDown(host.dispose);
+      transport.inject('e1', {'k': 'join', 'id': 'p1', 'name': 'Ava'});
+      transport.inject('e2', {'k': 'join', 'id': 'p2', 'name': 'Ben'});
+      host.startGame();
+      host.beginSeeking();
+      transport.inject('e1', {'k': 'foundClaim', 'by': 'p1'});
+      host.confirmFind();
+      host.nextRound(); // p1 becomes the (peer) hider
+      expect(host.current!.hiderId, 'p1');
+      transport.inject('e1', {'k': 'beginSeeking'});
+      expect(host.current!.phase, CluePhase.seeking);
+
+      // A (the host, now a seeker) claims; the peer-hider rejects A.
+      host.claimFound();
+      expect(host.current!.pendingClaimBy, 'h');
+      transport.inject('e1', {'k': 'reject', 'claimId': 'h'});
+      expect(host.current!.pendingClaimBy, isNull);
+
+      // B (p2) claims.
+      transport.inject('e2', {'k': 'foundClaim', 'by': 'p2'});
+      expect(host.current!.pendingClaimBy, 'p2');
+
+      // A STALE confirm for h (in flight from before the reject) is IGNORED,
+      // because the pending claim has moved on to p2.
+      transport.inject('e1', {'k': 'confirm', 'claimId': 'h'});
+      expect(host.current!.phase, CluePhase.seeking,
+          reason: 'the stale confirm is dropped');
+      expect(host.current!.pendingClaimBy, 'p2');
+      expect(host.current!.players.firstWhere((p) => p.id == 'h').totalScore, 0,
+          reason: 'h was rejected and must not be awarded');
+
+      // The correct confirm for p2 scores p2.
+      transport.inject('e1', {'k': 'confirm', 'claimId': 'p2'});
+      expect(host.current!.phase, CluePhase.roundResult);
+      expect(host.current!.lastFinderId, 'p2');
+    });
+  });
+
+  group('Peer-hider heat is throttled on the peer→host path too (finding 2)',
+      () {
+    test('a burst of peer slider frames coalesces into immediate + trailing', () {
+      fakeAsync((async) {
+        final transport = FakeClueHuntTransport();
+        var t = 1000;
+        final peer = ClueHuntRepository.seeker(
+          transport: transport,
+          selfId: 'p1',
+          selfName: 'Ava',
+          now: () => t,
+        );
+        addTearDown(peer.dispose);
+        transport.simulateConnect('host'); // also announces join
+        transport.sent.clear(); // count only heat frames from here
+
+        // Rapid slider frames within one throttle window.
+        peer.setHeat(0.2);
+        peer.setHeat(0.5);
+        peer.setHeat(0.8);
+        var heat = transport.sent.where((s) => s.msg['k'] == 'heat').toList();
+        expect(heat.length, 1, reason: 'exactly one immediate send');
+        expect(heat.single.endpointId, 'host');
+
+        // The trailing timer fires with the LATEST value.
+        t = 1300;
+        async.elapse(const Duration(milliseconds: 300));
+        heat = transport.sent.where((s) => s.msg['k'] == 'heat').toList();
+        expect(heat.length, 2);
+        expect(heat.last.msg['v'], 0.8);
+        expect(heat.every((s) => s.endpointId == 'host'), isTrue);
+      });
+    });
+  });
+
+  group('Join is resilient (finding 4)', () {
+    test('a seeker re-announces its join when a snapshot arrives without it '
+        '(self-heal)', () {
+      final transport = FakeClueHuntTransport();
+      final peer = ClueHuntRepository.seeker(
+        transport: transport,
+        selfId: 'p1',
+        selfName: 'Ava',
+      );
+      addTearDown(peer.dispose);
+      peer.connect('host'); // announces the (lost) join, marks _joinAnnounced
+      transport.sent.clear();
+
+      // The host's snapshot does NOT contain us — our join must have been lost.
+      final hostSession =
+          ClueHuntSession.createHost(hostId: 'h', hostName: 'Mom');
+      transport.inject('host', {'k': 'session', 'session': hostSession.toMap()});
+
+      final joins = transport.sent.where((s) => s.msg['k'] == 'join').toList();
+      expect(joins, isNotEmpty, reason: 'the seeker re-sends its join');
+      expect(joins.last.msg['id'], 'p1');
+    });
+
+    test('a seeker does NOT re-announce when the snapshot already lists it', () {
+      final transport = FakeClueHuntTransport();
+      final peer = ClueHuntRepository.seeker(
+        transport: transport,
+        selfId: 'p1',
+        selfName: 'Ava',
+      );
+      addTearDown(peer.dispose);
+      peer.connect('host');
+      transport.sent.clear();
+
+      final withMe = ClueHuntSession.createHost(hostId: 'h', hostName: 'Mom')
+          .withPlayerJoined('p1', 'Ava');
+      transport.inject('host', {'k': 'session', 'session': withMe.toMap()});
+      expect(transport.sent.where((s) => s.msg['k'] == 'join'), isEmpty);
+    });
+
+    test('dispose is idempotent — safe to call twice (finding 5)', () async {
+      final transport = FakeClueHuntTransport();
+      final host = _host(transport);
+      await host.dispose();
+      await host.dispose(); // must not throw
+    });
+  });
+
   group('Seeker (peer) behaviour', () {
     test('a peer never broadcasts and forwards actions to the host', () async {
       final transport = FakeClueHuntTransport();

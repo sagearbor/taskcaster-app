@@ -161,16 +161,43 @@ class ClueHuntSession extends Equatable {
   // ---- Pure mutations -------------------------------------------------------
 
   /// Add a player to the lobby. Idempotent on [id]: re-joining with the same id
-  /// just refreshes the name and never creates a duplicate.
+  /// just refreshes the name (and marks them connected again, healing an earlier
+  /// drop) and never creates a duplicate.
   ClueHuntSession withPlayerJoined(String id, String name) {
     final next = [...players];
     final idx = next.indexWhere((p) => p.id == id);
     if (idx == -1) {
       next.add(CluePlayer(id: id, name: name));
     } else {
-      next[idx] = next[idx].copyWith(name: name);
+      next[idx] = next[idx].copyWith(name: name, connected: true);
     }
     return copyWith(players: next);
+  }
+
+  /// Flag a player's connectivity without removing them: a dropped phone stays
+  /// in the roster (so scores and history survive) but is skipped by the hider
+  /// rotation. No-op for an unknown id.
+  ClueHuntSession withPlayerConnection(String id, bool connected) {
+    final idx = players.indexWhere((p) => p.id == id);
+    if (idx == -1) return this;
+    final next = [...players];
+    next[idx] = next[idx].copyWith(connected: connected);
+    return copyWith(players: next);
+  }
+
+  /// The next player after the current hider (in join order, wrapping) whose
+  /// phone is still connected — so the role can never land on a departed player.
+  /// Falls back to the host (always connected to itself) if nobody else is.
+  String _nextConnectedHiderId() {
+    final n = players.length;
+    if (n == 0) return hiderId;
+    final idx = players.indexWhere((p) => p.id == hiderId);
+    final start = idx == -1 ? 0 : idx;
+    for (var step = 1; step <= n; step++) {
+      final cand = players[(start + step) % n];
+      if (cand.connected) return cand.id;
+    }
+    return hostId;
   }
 
   /// HOST leaves the lobby and starts round 1: the host hides first.
@@ -210,17 +237,28 @@ class ClueHuntSession extends Equatable {
 
   /// HIDER rejects the pending claim (they didn't really have it): clear the
   /// slot so someone else can claim. No-op when nothing is pending.
-  ClueHuntSession claimRejected() {
+  ///
+  /// [expectClaimant], when given, must equal the currently pending claimant for
+  /// the reject to apply — a stale reject that arrives after the pending slot has
+  /// moved on to someone else is ignored, so it can never drop the wrong claim.
+  ClueHuntSession claimRejected({String? expectClaimant}) {
     if (pendingClaimBy == null) return this;
+    if (expectClaimant != null && expectClaimant != pendingClaimBy) return this;
     return copyWith(clearPending: true);
   }
 
   /// HIDER confirms the pending claim: score the finder by how fast they were,
   /// freeze the round result and clear the pending slot. No-op when nothing is
   /// pending. [now] is injectable so scoring is deterministic in tests.
-  ClueHuntSession claimConfirmed({required int now}) {
+  ///
+  /// [expectClaimant], when given, must equal the currently pending claimant for
+  /// the confirm to apply — a stale confirm (e.g. the hider rejected A, then B
+  /// claimed, then A's late confirm arrives) is ignored, so points can never be
+  /// awarded to a DIFFERENT claim than the one the hider actually approved.
+  ClueHuntSession claimConfirmed({required int now, String? expectClaimant}) {
     final finderId = pendingClaimBy;
     if (finderId == null) return this;
+    if (expectClaimant != null && expectClaimant != finderId) return this;
     final elapsedMs = now - (roundStartEpochMs ?? now);
     final award = pointsForElapsedMs(elapsedMs < 0 ? 0 : elapsedMs);
     final next = [...players];
@@ -237,19 +275,32 @@ class ClueHuntSession extends Equatable {
     );
   }
 
-  /// HOST advances past a round result: rotate the hider to the next player and
-  /// begin their round, or end the game when the last round is done.
+  /// HOST advances past a round result: rotate the hider to the next CONNECTED
+  /// player and begin their round, or end the game when the last round is done.
+  /// Skipping departed players keeps the role off a phone that has left.
   ClueHuntSession advancedRound() {
     if (roundNumber >= totalRounds) {
       return copyWith(phase: CluePhase.gameOver);
     }
-    final idx = players.indexWhere((p) => p.id == hiderId);
-    final nextHider =
-        players[idx == -1 ? 0 : (idx + 1) % players.length];
     return copyWith(
       phase: CluePhase.hiding,
-      hiderId: nextHider.id,
+      hiderId: _nextConnectedHiderId(),
       roundNumber: roundNumber + 1,
+      clearPending: true,
+      clearRoundStart: true,
+      clearLast: true,
+    );
+  }
+
+  /// HOST escape hatch: the current hider went dark (or is stalling) during the
+  /// HIDING phase, so hand the role to the next CONNECTED player WITHOUT
+  /// advancing the round — the round hasn't really started yet. No-op outside
+  /// the hiding phase. This is what unsticks an "X is hiding…" soft-lock.
+  ClueHuntSession hiderSkipped() {
+    if (phase != CluePhase.hiding) return this;
+    return copyWith(
+      phase: CluePhase.hiding,
+      hiderId: _nextConnectedHiderId(),
       clearPending: true,
       clearRoundStart: true,
       clearLast: true,

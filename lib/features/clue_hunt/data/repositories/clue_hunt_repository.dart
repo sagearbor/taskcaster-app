@@ -102,8 +102,32 @@ class ClueHuntRepository {
 
   String? _hostEndpointId; // seeker: remembered at connect time
 
+  // HOST: which player id each connected endpoint belongs to, learned from that
+  // endpoint's `join`. Lets a disconnect flag the right player (see finding 1).
+  final Map<String, String> _endpointToPlayer = {};
+
+  // SEEKER: true once we've announced our join at least once. Gates the
+  // self-heal that re-sends the join if a snapshot arrives without us in it.
+  bool _joinAnnounced = false;
+
+  // Emits the endpoint id whenever a link drops, so UI (e.g. the join screen's
+  // "connecting" state) can react to a disconnect instead of hanging.
+  final _disconnectController = StreamController<String>.broadcast();
+
+  bool _disposed = false;
+
   bool get isHost => role == ClueRole.host;
   ClueHuntSession? get current => _current;
+
+  /// Fires with the dropped endpoint id every time a connection is lost.
+  Stream<String> get disconnections => _disconnectController.stream;
+
+  /// How many times a seeker retries its lobby `join` before giving up, and the
+  /// per-attempt backoff. Small so a transient send failure heals within a
+  /// second without a visible stall.
+  static const int _joinAttempts = 3;
+  static Duration _joinBackoff(int attempt) =>
+      Duration(milliseconds: 200 * (attempt + 1));
 
   /// True when THIS device is the current round's hider (drives the slider,
   /// confirms/rejects finds). Recomputed from the authoritative session.
@@ -163,6 +187,18 @@ class ClueHuntRepository {
     _apply(s.advancedRound());
   }
 
+  /// HOST escape hatch: the current hider has gone dark during HIDING (their
+  /// phone dropped, or they're stalling), leaving everyone stuck on
+  /// "X is hiding…". Hand the hider role to the next connected player and
+  /// re-broadcast, WITHOUT advancing the round. No-op off the hiding phase.
+  void skipHider() {
+    if (!isHost) return;
+    final s = _current;
+    if (s == null || s.phase != CluePhase.hiding) return;
+    _resetHeat();
+    _apply(s.hiderSkipped());
+  }
+
   /// HOST: start a whole new game from the winner ceremony (scores cleared).
   void playAgain() {
     if (!isHost) return;
@@ -183,18 +219,23 @@ class ClueHuntRepository {
   }
 
   /// HIDER: confirm the pending claim — score the finder and freeze the result.
+  /// The verdict names the exact claimant it applies to ([claimId]) so a stale
+  /// confirm can never award a claim the hider didn't actually approve.
   void confirmFind() {
+    final claimId = _current?.pendingClaimBy;
     _hiderAction(
-      apply: (s) => s.claimConfirmed(now: _now()),
-      message: const {'k': 'confirm'},
+      apply: (s) => s.claimConfirmed(now: _now(), expectClaimant: claimId),
+      message: {'k': 'confirm', 'claimId': claimId},
     );
   }
 
-  /// HIDER: reject the pending claim — clear the slot so seeking resumes.
+  /// HIDER: reject the pending claim — clear the slot so seeking resumes. Carries
+  /// the exact claimant ([claimId]) so a stale reject can't drop a newer claim.
   void rejectFind() {
+    final claimId = _current?.pendingClaimBy;
     _hiderAction(
-      apply: (s) => s.claimRejected(),
-      message: const {'k': 'reject'},
+      apply: (s) => s.claimRejected(expectClaimant: claimId),
+      message: {'k': 'reject', 'claimId': claimId},
     );
   }
 
@@ -210,12 +251,15 @@ class ClueHuntRepository {
         return;
       }
       _setLocalHeat(clamped);
-      _broadcastHeatThrottled(clamped);
+      _throttledHeatSend(clamped);
     } else {
       // Peer-hider: reflect locally for our own UI and forward to the host,
-      // which validates and relays to the seekers.
+      // which validates and relays to the seekers. The slider fires ~60+ frames
+      // a second, so the peer→host path is throttled with the SAME coalescing
+      // (immediate + trailing-latest, ≤4/sec) as the host→seeker relay — a burst
+      // of frames can never flood the link.
       _setLocalHeat(clamped);
-      _sendToHost({'k': 'heat', 'v': clamped});
+      _throttledHeatSend(clamped);
     }
   }
 
@@ -270,9 +314,11 @@ class ClueHuntRepository {
     }
   }
 
-  /// HOST: relay heat to all seekers, at most once per [_heatMinGapMs]. A burst
-  /// coalesces into a single trailing send carrying the latest value.
-  void _broadcastHeatThrottled(double value) {
+  /// Emit a heat value on the outbound path at most once per [_heatMinGapMs]. A
+  /// burst coalesces into a single trailing send carrying the latest value. Used
+  /// in BOTH directions: the host→seekers broadcast and the peer-hider→host
+  /// forward, so neither can flood the link with per-frame slider updates.
+  void _throttledHeatSend(double value) {
     final nowMs = _now();
     final since = nowMs - _lastHeatSendMs;
     if (since >= _heatMinGapMs) {
@@ -291,9 +337,16 @@ class ClueHuntRepository {
     });
   }
 
+  /// Deliver one heat frame the right way for this device's role: the host
+  /// broadcasts it to every seeker; a peer-hider forwards it to the host, which
+  /// validates and relays.
   void _sendHeat(double value) {
-    transport.broadcast({'k': 'heat', 'v': value}).catchError((Object e) =>
-        NearbyDiagnostics.instance.log('heat send failed: $e'));
+    if (isHost) {
+      transport.broadcast({'k': 'heat', 'v': value}).catchError((Object e) =>
+          NearbyDiagnostics.instance.log('heat send failed: $e'));
+    } else {
+      _sendToHost({'k': 'heat', 'v': value});
+    }
   }
 
   void _sendToHost(Map<String, dynamic> message) {
@@ -327,16 +380,56 @@ class ClueHuntRepository {
       }
     } else {
       _hostEndpointId = endpointId;
-      // We connected to the host — announce ourselves into the roster.
-      transport.sendToEndpoint(
-          endpointId, {'k': 'join', 'id': selfId, 'name': selfName});
+      // We connected to the host — announce ourselves into the roster, retrying
+      // on failure so a single dropped send can't leave us invisible.
+      unawaited(_announceJoin(endpointId));
     }
   }
 
+  /// SEEKER: send our `join` with bounded retries + backoff. A fire-and-forget
+  /// one-shot could silently fail (the host never learns we exist, and every
+  /// action we send is discarded); retrying heals that transient failure.
+  Future<void> _announceJoin(String endpointId) async {
+    _joinAnnounced = true;
+    final msg = {'k': 'join', 'id': selfId, 'name': selfName};
+    for (var attempt = 0; attempt < _joinAttempts; attempt++) {
+      if (_disposed) return;
+      try {
+        await transport.sendToEndpoint(endpointId, msg);
+        return; // sent — the self-heal covers the rare "sent but lost" case.
+      } catch (e) {
+        NearbyDiagnostics.instance
+            .log('clue join attempt ${attempt + 1} failed: $e');
+        await Future<void>.delayed(_joinBackoff(attempt));
+      }
+    }
+    NearbyDiagnostics.instance.log('clue join gave up after $_joinAttempts tries');
+  }
+
+  /// SEEKER: re-announce our join to whatever host endpoint we have. Used by the
+  /// self-heal when a snapshot arrives without us in the roster.
+  void _resendJoin() {
+    final host = _hostEndpoint();
+    if (host.isEmpty) return;
+    NearbyDiagnostics.instance.log('clue self-heal: re-announcing join');
+    unawaited(_announceJoin(host));
+  }
+
   void _onEndpointDisconnected(String endpointId) {
-    // A drop leaves the player in the roster: the pure model owns no removal
-    // rule and yanking someone mid-game would scramble scores and the rotation.
-    // Lobby drops are a known limitation, matching the other offline flows.
+    if (!_disconnectController.isClosed) _disconnectController.add(endpointId);
+    if (isHost) {
+      // Keep the player in the roster (scores + history survive) but FLAG them
+      // disconnected so the hider rotation skips them — a dropped phone can
+      // never be handed the hider role and soft-lock the game. Re-joining clears
+      // the flag (see withPlayerJoined).
+      final playerId = _endpointToPlayer.remove(endpointId);
+      final s = _current;
+      if (playerId != null && s != null) {
+        _apply(s.withPlayerConnection(playerId, false));
+      }
+    } else if (_hostEndpointId == endpointId) {
+      _hostEndpointId = null;
+    }
   }
 
   void _onMessage(String endpointId, Map<String, dynamic> message) {
@@ -348,7 +441,15 @@ class ClueHuntRepository {
         case 'join':
           final id = message['id'] as String?;
           final name = message['name'] as String? ?? 'Player';
-          if (id != null) _apply(s.withPlayerJoined(id, name));
+          if (id != null) {
+            // Remember which endpoint owns this player so a later drop flags the
+            // right one (and re-joining an existing player clears any stale
+            // mapping for the same id from a previous endpoint).
+            _endpointToPlayer
+                .removeWhere((_, playerId) => playerId == id);
+            _endpointToPlayer[endpointId] = id;
+            _apply(s.withPlayerJoined(id, name));
+          }
           break;
         case 'heat':
           // Only the current hider may drive heat, and only while seeking.
@@ -357,7 +458,7 @@ class ClueHuntRepository {
           if (s.phase != CluePhase.seeking) break;
           // Trust: the sender's UI only exposes the slider when it is the hider.
           _setLocalHeat(v.clamp(0.0, 1.0));
-          _broadcastHeatThrottled(v.clamp(0.0, 1.0));
+          _throttledHeatSend(v.clamp(0.0, 1.0));
           break;
         case 'beginSeeking':
           _apply(s.beganSeeking(now: _now()));
@@ -367,10 +468,14 @@ class ClueHuntRepository {
           if (by != null) _apply(s.withClaim(by));
           break;
         case 'confirm':
-          _apply(s.claimConfirmed(now: _now()));
+          // Apply ONLY if the verdict's claimant still matches the pending slot;
+          // a late confirm for an already-cleared claim is ignored (older peers
+          // that omit 'claimId' fall back to the unconditional behaviour).
+          _apply(s.claimConfirmed(
+              now: _now(), expectClaimant: message['claimId'] as String?));
           break;
         case 'reject':
-          _apply(s.claimRejected());
+          _apply(s.claimRejected(expectClaimant: message['claimId'] as String?));
           break;
       }
     } else {
@@ -381,6 +486,14 @@ class ClueHuntRepository {
             _current =
                 ClueHuntSession.fromMap(Map<String, dynamic>.from(raw));
             if (!_controller.isClosed) _controller.add(_current);
+            // Self-heal: if we've announced our join but the authoritative
+            // roster still doesn't list us, our join was lost — re-send it.
+            final s = _current;
+            if (_joinAnnounced &&
+                s != null &&
+                !s.players.any((p) => p.id == selfId)) {
+              _resendJoin();
+            }
           }
           break;
         case 'heat':
@@ -392,9 +505,15 @@ class ClueHuntRepository {
   }
 
   Future<void> dispose() async {
+    // Idempotent: a screen that backs out mid-`startHosting()`/`startDiscovery()`
+    // disposes the repo both from State.dispose and again after the await
+    // resolves unmounted (finding 5), so a double dispose must be safe.
+    if (_disposed) return;
+    _disposed = true;
     _heatTimer?.cancel();
     await transport.dispose();
     if (!_controller.isClosed) await _controller.close();
     if (!_heatController.isClosed) await _heatController.close();
+    if (!_disconnectController.isClosed) await _disconnectController.close();
   }
 }
