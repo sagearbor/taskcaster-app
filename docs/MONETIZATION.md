@@ -1,15 +1,11 @@
 # Monetization (Ads + In-App Purchases)
 
-## Current state: demo / mock only
+## Current state: none (removed)
 
-The store UI is fully built and runs against **no-op mock services**, so it
-demos end-to-end without any paid-SDK dependencies:
-
-- `lib/core/services/ad_service_simple.dart` — `MockAdService` (no real ads;
-  `AdBannerWidget` shows a placeholder).
-- `lib/core/services/purchase_service_simple.dart` — `MockPurchaseService`
-  returns a fixed catalog and always "succeeds".
-
+The app ships with **no ads and no in-app purchases**. The earlier placeholder
+services (`ad_service_simple.dart`, `purchase_service_simple.dart`) and the
+store screens were removed so a store build cannot accidentally show a fake
+purchase flow; the Play "Ads" declaration is therefore **No**.
 `google_mobile_ads` and `in_app_purchase` are **intentionally not** in
 `pubspec.yaml`.
 
@@ -33,23 +29,21 @@ It is deliberately deferred, not forgotten:
 ### Ads (google_mobile_ads)
 1. `flutter pub add google_mobile_ads` and create an AdMob account + ad units.
 2. Add the app id to `AndroidManifest.xml` and `Info.plist`.
-3. Implement `AdServiceImpl` (real banner/interstitial/rewarded) behind the
-   existing `AdService` interface; swap it in `service_locator.dart` for the
-   non-mock branch. Keep `MockAdService` for tests.
-4. Restore a real `AdBannerWidget` (the previous package-based version was
-   removed; it can be rebuilt from the `AdService.createBanner` pattern).
+3. Re-introduce an `AdService` interface with a real implementation and a
+   mock for tests, registered in `service_locator.dart` (the old files are in
+   git history before the "remove dead monetization services" commit).
+4. Build an `AdBannerWidget` on top of it.
 
 ### In-app purchases (in_app_purchase)
 1. `flutter pub add in_app_purchase` and define products (`taskmaster_pro`,
    `task_pack_basic|premium|ultimate`) in both stores.
-2. Implement `PurchaseServiceImpl` against the real `InAppPurchase.instance`
-   behind the existing `PurchaseService` interface; map store `ProductDetails`
-   to the app's lightweight `ProductDetails` (or adopt the package type).
+2. Implement a `PurchaseService` against the real `InAppPurchase.instance`
+   (interface + mock, as above).
 3. Add **server-side receipt verification** (a Cloud Function) before granting
    entitlements — never trust the client.
 4. Persist entitlements (e.g. a `pro` flag on the user doc) and gate features
    (remove ads, unlock packs) on it.
 
-The UI in `lib/features/store/` already renders the catalog and a purchase
-flow, so enabling real purchases is mostly implementing the two `*Impl`
-classes and store/console configuration.
+There is no store UI in the tree any more; when monetization returns, build it
+behind the services above and update the Play/App Store declarations in
+`docs/STORE_LISTING.md`.

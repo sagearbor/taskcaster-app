@@ -38,8 +38,6 @@ class AppConfig {
   }
   
   // Feature Flags
-  static bool get enableAds => !isDevelopment;
-  static bool get enablePurchases => !isDevelopment;
   static bool get enableAnalytics => isProduction;
   static bool get enableCrashReporting => !isDevelopment;
   static bool get enableDeepLinking => !isDevelopment;

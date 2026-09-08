@@ -19,9 +19,12 @@ Cross-platform Flutter app for TaskCaster-style party games. Firebase backend, t
 - Quick Play live; Firebase Auth + Firestore on web; 225+ prebuilt tasks.
 - Firestore rules hardened (no game hijacking / arbitrary community-task edits).
 - Public games gallery: mark a game public, discover others' games, clone as template.
-- **Known gaps:** no android/ios platforms yet (web-only); ads + IAP are
-  demo/mock only. See README "Known Gaps".
-- **Next:** mobile platform setup + store deployment; notifications (FCM).
+- Android runs on the emulator with real Firebase; iOS Firebase config still
+  missing. No ads/IAP (placeholders removed). Toolchain: Flutter 3.47 stable.
+- Store kit: `docs/STORE_LISTING.md` (data safety, listing copy, assets,
+  blockers: account deletion, support email, keystore).
+- **Next:** account deletion flow → Play internal testing; iOS Firebase
+  options + bundle id; notifications (FCM).
 
 ## How to Run
 ```bash

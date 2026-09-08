@@ -12,7 +12,6 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'core/di/service_locator.dart';
 import 'core/services/invite/pending_invite_service.dart';
-import 'core/services/notification_service.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
@@ -47,15 +46,10 @@ void main() async {
   // Load the persisted theme preference before first frame.
   await ThemeController.instance.load();
 
-  // Initialize push notifications (best-effort; never blocks startup). Only
-  // meaningful with real services.
-  if (!useMock) {
-    try {
-      await sl<NotificationService>().initialize();
-    } catch (_) {
-      // Messaging is optional; ignore failures (e.g. web without VAPID setup).
-    }
-  }
+  // Push-notification setup (and its OS permission prompt) is deliberately
+  // NOT done here: it runs once the player reaches the home screen, via
+  // NotificationPrompt.ensureRequestedOnce(), so the first thing a new player
+  // sees is onboarding rather than a permission dialog on a blank window.
 
   runApp(const TaskCasterApp());
 }

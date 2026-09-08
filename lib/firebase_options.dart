@@ -23,10 +23,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for macos - '
@@ -67,4 +64,16 @@ class DefaultFirebaseOptions {
     storageBucket: 'taskmaster-app-3d480.firebasestorage.app',
   );
 
+  /// Values copied from ios/Runner/GoogleService-Info.plist (the iOS app
+  /// registered in the taskmaster-app-3d480 project). Regenerate with
+  /// `flutterfire configure --platforms=ios` if the plist changes.
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyDSVW23CB3hS0VBUpPat27vlLiWbFEfVp8',
+    appId: '1:488967944620:ios:6a647d2b959716c69c2209',
+    messagingSenderId: '488967944620',
+    projectId: 'taskmaster-app-3d480',
+    storageBucket: 'taskmaster-app-3d480.firebasestorage.app',
+    iosClientId: '488967944620-lhugdf44nsemgruva1s0p8kkpo2cd6mc.apps.googleusercontent.com',
+    iosBundleId: 'com.sagearbor.taskcaster.app',
+  );
 }

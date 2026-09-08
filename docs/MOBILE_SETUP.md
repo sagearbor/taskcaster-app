@@ -1,9 +1,14 @@
 # Mobile Setup (Android / iOS)
 
-The `android/` and `ios/` platform directories now exist (scaffolded via
-`flutter create --platforms=android,ios --org com.taskmaster`). **Mobile will
-not run yet** — Firebase is only configured for web. Follow these steps to
-finish wiring it.
+**Android is done** — `android/app/google-services.json` and the Android
+`FirebaseOptions` are committed, and the app runs on the `pixel10_api35`
+emulator with real Firebase (verified 2026-09-07). Release steps are in
+`docs/PLAY_RELEASE.md`.
+
+**iOS is not** — `ios/Runner/GoogleService-Info.plist` exists (bundle id
+`com.sagearbor.taskcaster.app`), but `lib/firebase_options.dart` had no iOS
+block until it was filled from that plist; nothing has been built or run on
+an iOS device/simulator yet. The steps below are what remains.
 
 ## 1. Generate Firebase config for mobile
 

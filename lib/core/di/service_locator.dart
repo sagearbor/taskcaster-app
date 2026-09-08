@@ -38,8 +38,6 @@ import '../../features/friends/data/repositories/mock_friends_repository.dart';
 import '../../features/friends/data/repositories/mock_invites_repository.dart';
 
 import '../services/invite/pending_invite_service.dart';
-import '../services/ad_service_simple.dart';
-import '../services/purchase_service_simple.dart';
 import '../services/ai_task_service.dart';
 import '../services/notification_service.dart';
 import '../services/ar/ar_capability_service.dart';
@@ -169,14 +167,10 @@ class ServiceLocator {
 
     // Additional Services
     if (useMockServices) {
-      sl.registerLazySingleton<AdService>(() => MockAdService());
-      sl.registerLazySingleton<PurchaseService>(() => MockPurchaseService());
       sl.registerLazySingleton<AITaskService>(() => MockAITaskService());
       sl.registerLazySingleton<NotificationService>(
           () => MockNotificationService());
     } else {
-      sl.registerLazySingleton<AdService>(() => AdServiceImpl());
-      sl.registerLazySingleton<PurchaseService>(() => PurchaseServiceImpl());
       sl.registerLazySingleton<AITaskService>(() => AITaskServiceImpl());
       sl.registerLazySingleton<NotificationService>(
           () => FcmNotificationService());
