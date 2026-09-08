@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/game.dart';
+import '../../../../core/services/notification_prompt.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
@@ -22,6 +23,11 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Ask for push permission in context (once, after the first home frame)
+    // instead of at process start — see NotificationPrompt.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => NotificationPrompt.ensureRequestedOnce(),
+    );
     return BlocProvider(
       create: (context) => GamesBloc(
         gameRepository: sl<GameRepository>(),
