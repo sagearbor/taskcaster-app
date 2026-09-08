@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -14,6 +15,14 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
   final firebase_auth.FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
   final GoogleSignIn _googleSignIn;
+
+  /// On the web, Google sign-in goes through Firebase's own OAuth popup
+  /// instead of the google_sign_in plugin. The plugin's web implementation
+  /// needs a `google-signin-client_id` and its `signIn()` no longer yields the
+  /// tokens Firebase wants, so on the live site "Continue with Google" always
+  /// failed with "Something went wrong". Injectable so the popup branch can be
+  /// unit-tested off-web.
+  final bool _useWebPopup;
 
   /// Apple "Services ID" — the identifier you register under
   /// Certificates, Identifiers & Profiles → Identifiers → Services IDs in the
@@ -37,9 +46,11 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     firebase_auth.FirebaseAuth? firebaseAuth,
     FirebaseFirestore? firestore,
     GoogleSignIn? googleSignIn,
+    bool? useWebPopup,
   })  : _firebaseAuth = firebaseAuth ?? firebase_auth.FirebaseAuth.instance,
         _firestore = firestore ?? FirebaseFirestore.instance,
-        _googleSignIn = googleSignIn ?? GoogleSignIn();
+        _googleSignIn = googleSignIn ?? GoogleSignIn(),
+        _useWebPopup = useWebPopup ?? kIsWeb;
 
   static const String _usersCollection = 'users';
 
@@ -79,6 +90,20 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
 
   @override
   Future<String> signInWithGoogle() async {
+    if (_useWebPopup) {
+      // Web: Firebase-hosted OAuth popup. No google_sign_in plugin involved,
+      // so no web client id / GIS script configuration is needed beyond the
+      // Google provider being enabled in the Firebase console.
+      final provider = firebase_auth.GoogleAuthProvider()
+        ..addScope('email')
+        ..setCustomParameters({'prompt': 'select_account'});
+      final result = await _firebaseAuth.signInWithPopup(provider);
+      final user = result.user!;
+      _cachedAvatarEmoji = null;
+      await _upsertUserDoc(user);
+      return user.uid;
+    }
+
     // 1. Native account picker. Returns null if the user backs out.
     final googleUser = await _googleSignIn.signIn();
     if (googleUser == null) {
