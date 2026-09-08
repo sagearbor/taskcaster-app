@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taskcaster_app/core/config/legal_links.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/core/theme/app_theme.dart';
 import 'package:taskcaster_app/core/theme/theme_controller.dart';
@@ -108,5 +109,26 @@ void main() {
     expect(Theme.of(ctx).brightness, Brightness.dark);
     expect(Theme.of(ctx).bottomSheetTheme.backgroundColor,
         AppTheme.darkSurfaceHigh);
+  });
+
+  testWidgets('privacy and terms tiles open the hosted legal pages',
+      (tester) async {
+    final opened = <Uri>[];
+    await pumpDark(
+      tester,
+      SettingsScreen(openLink: (uri) async => opened.add(uri)),
+    );
+
+    await tester.ensureVisible(find.text('Privacy Policy'));
+    await tester.tap(find.text('Privacy Policy'));
+    await tester.pump();
+    await tester.ensureVisible(find.text('Terms of Service'));
+    await tester.tap(find.text('Terms of Service'));
+    await tester.pump();
+
+    expect(opened.map((u) => u.toString()).toList(),
+        [LegalLinks.privacyPolicy, LegalLinks.termsOfService]);
+    // The old placeholder must be gone — store reviewers tap these.
+    expect(find.text('Coming soon'), findsNothing);
   });
 }

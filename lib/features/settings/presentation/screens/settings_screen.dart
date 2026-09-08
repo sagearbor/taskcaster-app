@@ -2,14 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/config/legal_links.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/theme_controller.dart';
 import '../../../ar_lab/presentation/screens/ar_lab_screen.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.openLink});
+
+  /// Opens an external URL (privacy policy / terms). Defaults to
+  /// url_launcher; injectable so widget tests can assert which page a tile
+  /// opens without touching the platform channel.
+  final Future<void> Function(Uri uri)? openLink;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -28,6 +35,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadNotificationsPref();
     _loadVersion();
+  }
+
+  Future<void> _openLegalPage(String url) async {
+    final uri = Uri.parse(url);
+    final open = widget.openLink ??
+        (Uri u) => launchUrl(u, mode: LaunchMode.externalApplication);
+    try {
+      await open(uri);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open $url')),
+      );
+    }
   }
 
   Future<void> _loadVersion() async {
@@ -115,27 +136,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.privacy_tip_outlined,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  leading:
+                      const Icon(Icons.privacy_tip_outlined, color: AppTheme.violet),
                   title: const Text('Privacy Policy'),
-                  trailing: Text('Coming soon',
-                      style: TextStyle(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant)),
-                  enabled: false,
-                  onTap: null,
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLegalPage(LegalLinks.privacyPolicy),
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.description_outlined,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  leading:
+                      const Icon(Icons.description_outlined, color: AppTheme.violet),
                   title: const Text('Terms of Service'),
-                  trailing: Text('Coming soon',
-                      style: TextStyle(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant)),
-                  enabled: false,
-                  onTap: null,
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLegalPage(LegalLinks.termsOfService),
                 ),
               ],
             ),
