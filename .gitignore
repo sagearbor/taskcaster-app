@@ -52,3 +52,8 @@ tmp/
 .playwright-mcp/
 *.png
 console-errors.txt
+
+# The vendored AR plugin ships a real drawable that the blanket *.png rule
+# above would otherwise swallow (it did once: the Android build broke on
+# fresh clones with "drawable/sceneform_hand_phone not found").
+!third_party/**/res/**/*.png
