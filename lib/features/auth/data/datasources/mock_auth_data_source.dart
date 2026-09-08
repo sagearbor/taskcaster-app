@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
+
 import 'auth_remote_data_source.dart';
 
 class MockAuthDataSource implements AuthRemoteDataSource {
@@ -13,8 +15,14 @@ class MockAuthDataSource implements AuthRemoteDataSource {
   String? _email;
   String? _avatarEmoji;
   bool _isAnonymous = false;
+  List<String> _providerIds = const [];
 
-  MockAuthDataSource() {
+  // Test hook: when true, the NEXT deleteAccount() call throws
+  // requires-recent-login instead of succeeding, simulating a stale Firebase
+  // session. Cleared by a successful reauthenticate() call.
+  bool simulateReauthRequired;
+
+  MockAuthDataSource({this.simulateReauthRequired = false}) {
     // Simulate no user logged in initially
     _authStateController.add(null);
   }
@@ -42,6 +50,7 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _email = email;
     _displayName = email.split('@')[0];
     _isAnonymous = false;
+    _providerIds = const ['password'];
     _authStateController.add(_currentUserId);
 
     return _currentUserId!;
@@ -71,6 +80,7 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _email = email;
     _displayName = email.split('@')[0];
     _isAnonymous = false;
+    _providerIds = const ['password'];
     _authStateController.add(_currentUserId);
 
     return _currentUserId!;
@@ -87,6 +97,8 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _displayName = 'Guest';
     _avatarEmoji = null;
     _isAnonymous = true;
+    // Firebase records no providerData for anonymous accounts.
+    _providerIds = const [];
     _authStateController.add(_currentUserId);
 
     return _currentUserId!;
@@ -100,6 +112,7 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _displayName = 'Google User';
     _avatarEmoji = null;
     _isAnonymous = false;
+    _providerIds = const ['google.com'];
     _authStateController.add(_currentUserId);
     return _currentUserId!;
   }
@@ -112,6 +125,7 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _displayName = 'Apple User';
     _avatarEmoji = null;
     _isAnonymous = false;
+    _providerIds = const ['apple.com'];
     _authStateController.add(_currentUserId);
     return _currentUserId!;
   }
@@ -125,6 +139,7 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _email = null;
     _avatarEmoji = null;
     _isAnonymous = false;
+    _providerIds = const [];
     _authStateController.add(null);
   }
 
@@ -191,9 +206,50 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _displayName =
         displayName.trim().isNotEmpty ? displayName.trim() : email.split('@')[0];
     _isAnonymous = false;
+    _providerIds = const ['password'];
     // Re-emit the (unchanged) uid so listeners refresh.
     _authStateController.add(_currentUserId);
     return _currentUserId!;
+  }
+
+  @override
+  List<String> getCurrentUserProviderIds() =>
+      _currentUserId == null ? const [] : _providerIds;
+
+  @override
+  Future<void> deleteAccount() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (_currentUserId == null) {
+      throw Exception('No signed-in user to delete');
+    }
+    if (simulateReauthRequired) {
+      throw FirebaseAuthException(
+        code: 'requires-recent-login',
+        message: 'Please sign in again to confirm this change.',
+      );
+    }
+    _currentUserId = null;
+    _email = null;
+    _displayName = 'Mock User';
+    _avatarEmoji = null;
+    _isAnonymous = false;
+    _providerIds = const [];
+    _authStateController.add(null);
+  }
+
+  @override
+  Future<void> reauthenticate({String? password}) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (_currentUserId == null) {
+      throw Exception('No signed-in user to re-authenticate');
+    }
+    if (_providerIds.contains('password') &&
+        (password == null || password.isEmpty)) {
+      throw Exception('Password is required to confirm this change');
+    }
+    // A real Firebase session is now fresh again; the next deleteAccount()
+    // call succeeds.
+    simulateReauthRequired = false;
   }
 
   void dispose() {

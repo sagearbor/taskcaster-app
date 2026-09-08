@@ -10,36 +10,44 @@ Hosted pages (Firebase Hosting, same deploy as the web app):
 |---|---|---|
 | Privacy policy | https://taskmaster-app-3d480.web.app/privacy/ | `web/privacy/index.html` |
 | Terms of service | https://taskmaster-app-3d480.web.app/terms/ | `web/terms/index.html` |
+| Delete account | https://taskmaster-app-3d480.web.app/delete-account/ | `web/delete-account/index.html` |
 | Invite landing | https://taskmaster-app-3d480.web.app/join/ | `web/join/index.html` |
 
 Both policy pages carry a `TODO(owner)` comment where a support email must be
 added before submission — the consoles require a contact address on the
-privacy policy page.
+privacy policy page. The delete-account page has the same TODO as an
+alternative to its GitHub-issues deletion-request path.
 
 ## Blockers before first submission
 
-1. **Account deletion (Play policy, App Store guideline 5.1.1(v)).** The app
-   lets users create accounts, so it must offer in-app account deletion and a
-   public web URL describing how to delete. There is no deletion flow in the
-   current code (an old one exists only in
-   `firebase_auth_data_source.dart.bak`). Needed: a "Delete account" action in
-   Settings/Profile that deletes `users/{uid}`, removes the user's FCM tokens
-   and friend links, and calls `FirebaseAuth.currentUser.delete()` (handle
-   `requires-recent-login` by re-authenticating), plus a short
-   `web/delete-account/index.html` page. Until then, submission will be
-   rejected or the listing flagged.
-2. **Support email** on the privacy page (see above).
+1. ~~**Account deletion**~~ — **Done 2026-09-08.** Settings -> Account ->
+   "Delete Account" deletes `users/{uid}` (which carries `fcmTokens` as a
+   field) and the `users/{uid}/friends` subcollection, then calls
+   `FirebaseAuth.currentUser.delete()`; a `requires-recent-login` error is
+   caught and routed to a re-auth dialog (password field for email/password
+   accounts, a "Continue with Google/Apple" button otherwise) that retries
+   the deletion. `web/delete-account/index.html` describes the process,
+   including a no-app-installed path via GitHub issues. Proven against the
+   Firebase emulators (see `test/features/auth/data/delete_account_emulator_test.dart`)
+   and covered by bloc/widget tests.
+2. **Support email** on the privacy, terms and delete-account pages (see above).
 3. **Upload keystore** — `docs/PLAY_RELEASE.md` describes
    `~/taskmaster-upload-keystore.jks`; it is not present on this machine. If it
    is lost, generate a new one *before* the first upload (Play App Signing then
    owns the release key; the upload key can be reset later via support).
-4. **Target API level.** Google Play requires new apps and updates to target
-   the previous year's API level by 31 August each year: API 35 from Aug 2025,
-   API 36 from Aug 2026. `android/app/build.gradle` currently has
-   `targetSdk = 35`; bump to 36 (and `compileSdk = 36`) and re-test on an
-   API 36 emulator before uploading a build after the deadline. Apps targeting
-   API 35+ must also be 16 KB page-size compatible — ARCore/sceneview native
-   libraries need checking with the SDK's `check_elf_alignment.sh`.
+4. ~~**Target API level**~~ — **Done 2026-09-08.** `android/app/build.gradle`
+   now has `targetSdk = 36` / `compileSdk = 36` (AGP 8.5.2 / Gradle 8.7
+   accepted it as-is, no toolchain bump needed); a debug build installs and
+   launches cleanly on the `pixel10_api35` emulator. The required 16 KB
+   page-size check surfaced a real gap: ARCore core 1.43.0's own libs
+   (`libarcore_sdk_c.so`, `libarcore_sdk_jni.so`) are already 16 KB-aligned,
+   but **sceneview 2.2.1's transitive dependency on `filament-android`
+   1.52.0 is not** — `libfilament-jni.so`, `libfilament-utils-jni.so` and
+   `libgltfio-jni.so` all have 4 KB-aligned LOAD segments on the 64-bit ABIs
+   Play's requirement covers (arm64-v8a, x86_64). This affects the AR Lab /
+   AR mini-games only. Fixing it means bumping `io.github.sceneview` (and
+   therefore Filament) to a release with 16 KB-aligned native libs — not
+   done here; see `tmp/wrapups/` for the exact repro command.
 5. **Firebase for iOS.** `lib/firebase_options.dart` throws `UnsupportedError`
    for iOS; the values in `ios/Runner/GoogleService-Info.plist` need to be
    copied in (or re-run `flutterfire configure --platforms=ios`). Also align
@@ -53,7 +61,7 @@ Answer sheet for **Play Console → App content → Data safety**.
 
 **Does your app collect or share any of the required user data types?** Yes.
 **Is all of the user data collected by your app encrypted in transit?** Yes (TLS to Firebase).
-**Do you provide a way for users to request that their data is deleted?** Yes — via the contact on the privacy page (and in-app once blocker 1 is done).
+**Do you provide a way for users to request that their data is deleted?** Yes — in-app (Settings -> Delete Account) and via the delete-account page for anyone without the app installed.
 
 | Data type | Collected? | Shared? | Required or optional | Purpose | Notes |
 |---|---|---|---|---|---|
@@ -72,7 +80,7 @@ Answer sheet for **Play Console → App content → Data safety**.
 **Data handling practices:** data is not shared with third parties; not used for
 advertising; not sold. Processing occurs on Google Firebase (a processor).
 
-**Security practices:** encrypted in transit; deletion on request.
+**Security practices:** encrypted in transit; self-service in-app account and data deletion.
 
 ### Other Play "App content" answers
 
@@ -89,7 +97,7 @@ advertising; not sold. Processing occurs on Google Firebase (a processor).
 | Financial features | None |
 | Health | None |
 | Privacy policy URL | https://taskmaster-app-3d480.web.app/privacy/ |
-| Account deletion URL | https://taskmaster-app-3d480.web.app/delete-account/ (page still to be written — blocker 1) |
+| Account deletion URL | https://taskmaster-app-3d480.web.app/delete-account/ |
 
 ### Declared permissions that need a justification
 

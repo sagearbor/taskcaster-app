@@ -326,6 +326,122 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     }
   }
 
+  @override
+  List<String> getCurrentUserProviderIds() {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) return const [];
+    return user.providerData.map((p) => p.providerId).toList();
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) {
+      throw Exception('No signed-in user to delete');
+    }
+    // 1. Delete the Firestore data this user owns WHILE still authenticated
+    //    — security rules only allow a user to write their own users/{uid}
+    //    doc and its friends subcollection. Deleting the doc removes the
+    //    fcmTokens map too (it's a field on the doc, not a separate
+    //    collection). The reciprocal edge in another user's own friends
+    //    subcollection is theirs to keep or remove (self-write only, see
+    //    firestore.rules) — it is simply left pointing at a uid that no
+    //    longer resolves to an account.
+    await _deleteOwnedFirestoreData(user.uid);
+    // 2. Delete the Firebase Auth account itself. This throws
+    //    FirebaseAuthException(code: 'requires-recent-login') if the
+    //    session is stale; the caller should call reauthenticate() then
+    //    retry deleteAccount() (the Firestore delete above is idempotent —
+    //    a second run against already-deleted docs is a harmless no-op).
+    await user.delete();
+    _cachedAvatarEmoji = null;
+  }
+
+  Future<void> _deleteOwnedFirestoreData(String uid) async {
+    final userDoc = _firestore.collection(_usersCollection).doc(uid);
+    final friends = await userDoc.collection('friends').get();
+    if (friends.docs.isNotEmpty) {
+      final batch = _firestore.batch();
+      for (final doc in friends.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+    await userDoc.delete();
+  }
+
+  @override
+  Future<void> reauthenticate({String? password}) async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) {
+      throw Exception('No signed-in user to re-authenticate');
+    }
+    final providerIds = getCurrentUserProviderIds();
+
+    if (providerIds.contains('password')) {
+      if (password == null || password.isEmpty) {
+        throw Exception('Password is required to confirm this change');
+      }
+      final email = user.email;
+      if (email == null) {
+        throw Exception('No email on this account to re-authenticate with');
+      }
+      final credential = firebase_auth.EmailAuthProvider.credential(
+        email: email,
+        password: password,
+      );
+      await user.reauthenticateWithCredential(credential);
+      return;
+    }
+
+    if (providerIds.contains('google.com')) {
+      if (_useWebPopup) {
+        final provider = firebase_auth.GoogleAuthProvider()
+          ..setCustomParameters({'prompt': 'select_account'});
+        await user.reauthenticateWithPopup(provider);
+      } else {
+        final googleUser = await _googleSignIn.signIn();
+        if (googleUser == null) {
+          throw Exception('Google sign-in was cancelled');
+        }
+        final googleAuth = await googleUser.authentication;
+        final credential = firebase_auth.GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+        await user.reauthenticateWithCredential(credential);
+      }
+      return;
+    }
+
+    if (providerIds.contains('apple.com')) {
+      final rawNonce = _generateNonce();
+      final hashedNonce = _sha256(rawNonce);
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+        webAuthenticationOptions: WebAuthenticationOptions(
+          clientId: _appleServiceId,
+          redirectUri: Uri.parse(_appleRedirectUri),
+        ),
+      );
+      final oauthCredential = firebase_auth.OAuthProvider('apple.com').credential(
+        idToken: appleCredential.identityToken,
+        rawNonce: rawNonce,
+        accessToken: appleCredential.authorizationCode,
+      );
+      await user.reauthenticateWithCredential(oauthCredential);
+      return;
+    }
+
+    // No known provider (e.g. an anonymous/guest session) — nothing to
+    // re-authenticate with automatically.
+    throw Exception('Please sign out and sign back in, then try again.');
+  }
+
   /// Cryptographically-random nonce (Apple sign-in replay protection).
   static String _generateNonce([int length = 32]) {
     const charset =
