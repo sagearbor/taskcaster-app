@@ -6,17 +6,27 @@ An unofficial, fan-made mobile and web application for playing TaskCaster-style 
 **Current:** Web MVP — compiles clean, full test suite green (161 tests). Core
 game loop (create → join → start → submit → judge → scoreboard) implemented
 and integration-tested against mock services.
-**Next:** Mobile platform setup (android/ios dirs + `flutterfire configure`),
-then store deployment. See "Known Gaps" below.
+**Next:** Google Play internal testing, then App Store. Store-listing copy,
+Data-safety answers, asset checklist and the remaining submission blockers
+(account deletion, support email, keystore) live in `docs/STORE_LISTING.md`.
 
 ### Known Gaps
-- **Mobile partially wired:** `android/`/`ios/` directories now exist, but
-  Firebase is still configured for web only — `flutterfire configure` is
-  required before mobile will launch. See `docs/MOBILE_SETUP.md`.
-- **Monetization is demo-only:** ads and in-app purchases run as no-op/mock
-  services (the `*_simple` implementations); `google_mobile_ads` and
-  `in_app_purchase` are intentionally not in `pubspec.yaml`.
-- **Toolchain:** built against Flutter 3.22.2 / Dart 3.4.3.
+- **Android is wired** (`google-services.json`, real Android
+  `FirebaseOptions`, launcher icons, Play application id
+  `com.sagearbor.taskcaster.app`) and runs on an emulator. **iOS is not:**
+  `firebase_options.dart` still throws for iOS and the Xcode bundle id does
+  not match `GoogleService-Info.plist`. See `docs/MOBILE_SETUP.md`.
+- **No monetization.** The old placeholder ad / in-app-purchase services were
+  removed; nothing in the UI shows ads or a store. `docs/MONETIZATION.md`
+  keeps the integration plan for later.
+- **Account deletion** is not implemented yet — required by both stores for
+  apps with sign-up (see `docs/STORE_LISTING.md`).
+- **Toolchain:** Flutter 3.22.2 / Dart 3.4.3 (full suite green there).
+  Newer Flutter (3.47) needs three `CardThemeData`/`DialogThemeData` renames
+  in `app_theme.dart` plus Gradle 8.14 / AGP 8.11.1 / Kotlin 2.2.20 — see
+  `docs/PLAY_RELEASE.md`. Android builds need a JDK 17–24: run
+  `flutter config --jdk-dir=<path to JDK 17>` once if Android Studio's
+  bundled JDK is newer (Flutter prefers that JDK over `JAVA_HOME`).
 
 ### For Next Development Session
 Tell AI: *"Read DEVELOPMENT_CHECKLIST.md and implement the next incomplete section"*
@@ -43,11 +53,9 @@ Tell AI: *"Read DEVELOPMENT_CHECKLIST.md and implement the next incomplete secti
 - **AI Task Generation**: Smart task creation system
 - **Episode Creator**: Build custom task sequences with timestamps
 
-### Monetization (UI Ready) 💰
-- **Store Interface**: Complete with Pro version upgrade
-- **Ad Spaces**: Placeholder ads ready for AdMob
-- **Task Packs**: Premium content marketplace UI
-- **Mock Purchase Flow**: Test the full purchase experience
+### Monetization
+None — the app is free with no ads. See `docs/MONETIZATION.md` for the
+deferred plan.
 
 🛠️ Technology Stack
 Frontend & App Logic: Flutter - For a single codebase across all platforms.
@@ -104,20 +112,22 @@ flutter run -d linux -t lib/main_mock.dart
 - ✅ Team assignments with drag-and-drop
 - ✅ Community task submission and browsing
 - ✅ Task modifiers and secret missions
-- ✅ Store interface (mock purchases)
 - ✅ All advanced features functional
 
 ### Production Setup (When Ready)
 1. **Firebase Setup**: Configure Firebase project and run `flutterfire configure`
-2. **AdMob Integration**: Add real ad unit IDs in `ad_service.dart`
-3. **In-App Purchases**: Configure products in App Store/Play Store
-4. **Deploy**: Build for production with `flutter build web/ios/android`
+2. **Store listing**: follow `docs/STORE_LISTING.md` (privacy/terms pages are
+   hosted at `/privacy/` and `/terms/`)
+3. **Deploy**: `flutter build web` + `firebase deploy --only hosting`;
+   Android via `scripts/make-release.sh` (see `docs/PLAY_RELEASE.md`)
 
 ## 📱 Platform Support
 - **Web**: ✅ Fully functional, Firebase-configured, live (recommended)
 - **Linux Desktop**: ✅ Platform files present (Firebase not configured)
-- **Android / iOS**: ⚠️ Platform dirs scaffolded; needs `flutterfire configure`
-  to generate mobile Firebase config before it runs. See `docs/MOBILE_SETUP.md`.
+- **Android**: ✅ Firebase-configured; runs on the `pixel10_api35` emulator
+  (`flutter run -d emulator-5554`). Play release steps in `docs/PLAY_RELEASE.md`.
+- **iOS**: ⚠️ `GoogleService-Info.plist` present but `firebase_options.dart`
+  has no iOS block and the Xcode bundle id needs aligning. See `docs/MOBILE_SETUP.md`.
 - **Windows / macOS**: ⚠️ Requires additional setup
 
 This is an independent project created by a fan and is not affiliated with the official TaskCaster show or its creators.
