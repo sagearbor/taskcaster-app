@@ -188,4 +188,15 @@ class AuthRepositoryImpl implements AuthRepository {
       createdAt: DateTime.now(),
     );
   }
+
+  @override
+  List<String> getCurrentUserProviderIds() =>
+      remoteDataSource.getCurrentUserProviderIds();
+
+  @override
+  Future<void> deleteAccount() => remoteDataSource.deleteAccount();
+
+  @override
+  Future<void> reauthenticate({String? password}) =>
+      remoteDataSource.reauthenticate(password: password);
 }

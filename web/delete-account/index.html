@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delete Your Account — TaskCaster Party</title>
+  <meta name="description" content="How to delete your TaskCaster Party account and data (Android, iOS, web).">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f7f4ff;
+      color: #1a1033;
+      line-height: 1.55;
+    }
+    header {
+      background: linear-gradient(160deg, #1a1033 0%, #2d1b4e 45%, #4a2a7a 100%);
+      color: #f3edff;
+      padding: 40px 20px 32px;
+      text-align: center;
+    }
+    header h1 { font-size: 28px; margin-bottom: 6px; }
+    header p { color: #c9bbe8; font-size: 14px; }
+    main { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; }
+    h2 { font-size: 20px; margin: 28px 0 10px; color: #4a2a7a; }
+    h3 { font-size: 16px; margin: 18px 0 6px; }
+    p, li { font-size: 15px; margin-bottom: 8px; }
+    ol, ul { padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #ddd3f5; vertical-align: top; }
+    th { background: #ece5fb; }
+    a { color: #5b2bd6; }
+    .note { background: #ece5fb; border-left: 4px solid #5b2bd6; padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+    .warn { background: #ffe9e5; border-left: 4px solid #e0463b; padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+    footer { text-align: center; font-size: 13px; color: #6b5f8a; padding: 20px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #120c22; color: #efe9ff; }
+      h2 { color: #c9bbe8; }
+      th { background: #2d1b4e; }
+      th, td { border-color: #3b2a63; }
+      a { color: #b9a3ff; }
+      .note { background: #2d1b4e; border-color: #b9a3ff; }
+      .warn { background: #3a1a1a; border-color: #ff8a7a; }
+      footer { color: #a394c7; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Delete Your Account</h1>
+    <p>TaskCaster Party · Effective 7 September 2026</p>
+  </header>
+  <main>
+    <p>This page explains how to permanently delete your TaskCaster Party account
+    and the data attached to it, on Android, iOS and the web — whether or not you
+    still have the app installed.</p>
+
+    <h2>Option 1: Delete in the app (fastest)</h2>
+    <ol>
+      <li>Open TaskCaster Party and sign in.</li>
+      <li>Go to <strong>Settings</strong>.</li>
+      <li>Under <strong>Account</strong>, tap <strong>Delete Account</strong>.</li>
+      <li>Read the warning and tap <strong>Delete My Account</strong> to confirm.</li>
+      <li>If you signed in a while ago, we may ask you to confirm your identity
+        again first (re-enter your password, or continue with Google/Apple) —
+        this is a Firebase security requirement, not an extra step we added.</li>
+    </ol>
+    <p>Deletion happens immediately: your account is signed out and cannot be
+    signed back into once the process completes.</p>
+
+    <h2>Option 2: Request deletion without the app</h2>
+    <p>If you no longer have the app installed, open an issue at
+      <a href="https://github.com/sagearbor/taskcaster-app/issues">github.com/sagearbor/taskcaster-app/issues</a>
+      titled "Delete my account", including the email address or display name
+      on the account so we can find it.
+      <!-- TODO(owner): add a support email address here before store
+           submission, e.g. <a href="mailto:you@example.com">you@example.com</a>,
+           as an alternative to the GitHub issue tracker. -->
+    </p>
+    <p>Requests submitted this way are processed within 30 days.</p>
+
+    <h2>What gets deleted</h2>
+    <table>
+      <tr><th>Data</th><th>What happens</th></tr>
+      <tr><td>Your account (email/password, Google or Apple sign-in link, guest ID)</td><td>Permanently deleted from Firebase Authentication. You cannot sign back into it.</td></tr>
+      <tr><td>Profile (display name, avatar, account-creation date)</td><td>Deleted.</td></tr>
+      <tr><td>Friends list</td><td>Deleted. (A friend who added you keeps their own copy of that connection, pointing at an account that no longer exists.)</td></tr>
+      <tr><td>Push-notification device tokens</td><td>Deleted — no further notifications are sent to any of your devices.</td></tr>
+      <tr><td>Games you created or played</td><td><strong>Not deleted.</strong> They remain visible to the other players in those games so their history and scores stay intact, but your identity is disconnected from them going forward.</td></tr>
+      <tr><td>Community tasks you submitted</td><td>Remain visible (they were shared content), no longer linked to your account.</td></tr>
+    </table>
+
+    <div class="warn">
+      <strong>This cannot be undone.</strong> Once your account is deleted there
+      is no way for us to restore it or the data listed above.
+    </div>
+
+    <div class="note">
+      Guest (anonymous) accounts that were never turned into a full account can
+      also be deleted the same way — open the app while signed in as that
+      guest and use the same Settings flow.
+    </div>
+
+    <h2>Questions</h2>
+    <p>See our <a href="/privacy/">Privacy Policy</a> for what we collect and why,
+    or reach us at
+    <a href="https://github.com/sagearbor/taskcaster-app/issues">github.com/sagearbor/taskcaster-app/issues</a>.</p>
+  </main>
+  <footer>
+    <a href="/">Back to TaskCaster</a> · <a href="/privacy/">Privacy Policy</a> · <a href="/terms/">Terms of Service</a>
+  </footer>
+</body>
+</html>

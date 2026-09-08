@@ -99,6 +99,12 @@ dependency_overrides:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Device-driven tests (currently: proving deleteAccount() against the real
+  # Firebase emulators) — the real firebase_auth/cloud_firestore plugins need
+  # a live platform, which plain `flutter test` (the Dart-VM "tester" target)
+  # doesn't provide.
+  integration_test:
+    sdk: flutter
   flutter_lints: ^2.0.0
   # Controller tests drive timers with fake_async; declared (not just
   # transitive via flutter_test) to satisfy depend_on_referenced_packages.

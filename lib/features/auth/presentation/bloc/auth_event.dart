@@ -83,3 +83,18 @@ class PasswordResetRequested extends AuthEvent {
   @override
   List<Object> get props => [email];
 }
+
+/// Permanently delete the signed-in account and all data it owns.
+class DeleteAccountRequested extends AuthEvent {}
+
+/// Retry account deletion after re-authenticating in response to
+/// [AuthReauthenticationRequired]. [password] is required only when the
+/// account's sign-in provider is email/password.
+class AccountDeletionReauthenticated extends AuthEvent {
+  final String? password;
+
+  const AccountDeletionReauthenticated({this.password});
+
+  @override
+  List<Object> get props => [password ?? ''];
+}

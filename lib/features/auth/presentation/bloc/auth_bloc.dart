@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -23,6 +24,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<UpdateProfileRequested>(_onUpdateProfileRequested);
     on<UpgradeGuestRequested>(_onUpgradeGuestRequested);
     on<PasswordResetRequested>(_onPasswordResetRequested);
+    on<DeleteAccountRequested>(_onDeleteAccountRequested);
+    on<AccountDeletionReauthenticated>(_onAccountDeletionReauthenticated);
   }
 
   Future<void> _onAuthCheckRequested(AuthCheckRequested event, Emitter<AuthState> emit) async {
@@ -166,6 +169,69 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       // Restore the prior screen state (authenticated or unauthenticated)
       // after the one-shot notification so navigation is unaffected.
       emit(previous);
+    }
+  }
+
+  Future<void> _onDeleteAccountRequested(
+      DeleteAccountRequested event, Emitter<AuthState> emit) async {
+    final current = state;
+    if (current is! AuthAuthenticated) return;
+    emit(AuthLoading());
+    await _attemptDeleteAccount(current.user, emit);
+  }
+
+  Future<void> _onAccountDeletionReauthenticated(
+      AccountDeletionReauthenticated event, Emitter<AuthState> emit) async {
+    final current = state;
+    if (current is! AuthAuthenticated) return;
+    emit(AuthLoading());
+    try {
+      await authRepository.reauthenticate(password: event.password);
+    } catch (e) {
+      debugPrint('AuthBloc reauthenticate failed: $e');
+      emit(AuthAccountDeletionFailure(
+        user: current.user,
+        message: FriendlyErrors.action(
+          e,
+          fallback: 'Could not verify your identity. Please try again.',
+        ),
+      ));
+      return;
+    }
+    await _attemptDeleteAccount(current.user, emit);
+  }
+
+  /// Shared tail of both delete-account entry points: call
+  /// [AuthRepository.deleteAccount] and translate the outcome into a state.
+  Future<void> _attemptDeleteAccount(User user, Emitter<AuthState> emit) async {
+    try {
+      await authRepository.deleteAccount();
+      emit(AuthAccountDeleted());
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        emit(AuthReauthenticationRequired(
+          user: user,
+          providerIds: authRepository.getCurrentUserProviderIds(),
+        ));
+      } else {
+        debugPrint('AuthBloc delete account failed: $e');
+        emit(AuthAccountDeletionFailure(
+          user: user,
+          message: FriendlyErrors.action(
+            e,
+            fallback: 'Could not delete your account. Please try again.',
+          ),
+        ));
+      }
+    } catch (e) {
+      debugPrint('AuthBloc delete account failed: $e');
+      emit(AuthAccountDeletionFailure(
+        user: user,
+        message: FriendlyErrors.action(
+          e,
+          fallback: 'Could not delete your account. Please try again.',
+        ),
+      ));
     }
   }
 }

@@ -36,4 +36,24 @@ abstract class AuthRemoteDataSource {
   /// Returns the (unchanged) uid.
   Future<String> upgradeGuestAccount(
       String email, String password, String displayName);
+
+  /// The Firebase sign-in provider ids for the current user (e.g. 'password',
+  /// 'google.com', 'apple.com'). Empty for a signed-out or anonymous/guest
+  /// user (Firebase records no providerData for anonymous accounts). Used to
+  /// decide which re-authentication UI to show after [deleteAccount] throws
+  /// a requires-recent-login error.
+  List<String> getCurrentUserProviderIds();
+
+  /// Permanently delete the signed-in user's owned Firestore data (profile
+  /// doc — including its fcmTokens map — and friend links), then the
+  /// Firebase Auth account itself. Throws [FirebaseAuthException] with code
+  /// 'requires-recent-login' if the session is too old; call
+  /// [reauthenticate] and retry in that case.
+  Future<void> deleteAccount();
+
+  /// Re-establish a fresh session for the signed-in user, needed before a
+  /// sensitive operation (currently [deleteAccount]) that hit
+  /// requires-recent-login. [password] is required only when the account's
+  /// sign-in provider is email/password; ignored otherwise.
+  Future<void> reauthenticate({String? password});
 }

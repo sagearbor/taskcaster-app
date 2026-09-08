@@ -39,7 +39,40 @@ class AuthProfileUpdateFailure extends AuthAuthenticated {
   List<Object> get props => [user, message];
 }
 
+/// Emitted when deleteAccount() hit Firebase's requires-recent-login check.
+/// The UI should show a re-auth prompt matching [providerIds] (a password
+/// field for an email/password account; a "Continue with Google/Apple"
+/// button otherwise) and dispatch [AccountDeletionReauthenticated] once the
+/// user has confirmed their identity.
+class AuthReauthenticationRequired extends AuthAuthenticated {
+  final List<String> providerIds;
+
+  const AuthReauthenticationRequired({
+    required super.user,
+    required this.providerIds,
+  });
+
+  @override
+  List<Object> get props => [user, providerIds];
+}
+
+/// Emitted when a delete-account attempt (or its re-authentication) fails.
+/// Extends [AuthAuthenticated] so the app stays on the authenticated screens.
+class AuthAccountDeletionFailure extends AuthAuthenticated {
+  final String message;
+
+  const AuthAccountDeletionFailure({required super.user, required this.message});
+
+  @override
+  List<Object> get props => [user, message];
+}
+
 class AuthUnauthenticated extends AuthState {}
+
+/// Emitted once deleteAccount() has fully succeeded: the owned Firestore
+/// data and the Firebase Auth user are both gone. Extends
+/// [AuthUnauthenticated] so the auth wrapper naturally returns to sign-in.
+class AuthAccountDeleted extends AuthUnauthenticated {}
 
 /// Transient one-shot state: a password-reset email was sent.
 class AuthPasswordResetSent extends AuthState {

@@ -29,4 +29,19 @@ abstract class AuthRepository {
   /// upgraded [User].
   Future<User> upgradeGuestAccount(
       String email, String password, String displayName);
+
+  /// Sign-in provider ids for the signed-in user (e.g. 'password',
+  /// 'google.com', 'apple.com'); empty for a guest or signed-out user.
+  List<String> getCurrentUserProviderIds();
+
+  /// Permanently delete the signed-in user's account: their Firestore
+  /// profile doc (and the fcmTokens/friend-links data it and its
+  /// subcollections carry), then the Firebase Auth account itself. May throw
+  /// a requires-recent-login auth error — call [reauthenticate] and retry.
+  Future<void> deleteAccount();
+
+  /// Re-authenticate the signed-in user ahead of a sensitive action that hit
+  /// requires-recent-login. [password] is required only for email/password
+  /// accounts.
+  Future<void> reauthenticate({String? password});
 }

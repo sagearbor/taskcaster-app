@@ -40,7 +40,9 @@ if (hasReleaseKeystore) {
 
 android {
     namespace = "com.sagearbor.taskcaster.app"
-    compileSdk = 35
+    // Google Play requires new apps/updates to target the previous year's API
+    // level by 31 Aug each year: API 36 (Android 16) from Aug 2026.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -58,8 +60,9 @@ android {
         // requires minSdk 28, so this is bumped 23 -> 28. Drops support for
         // Android < 9 (Pie).
         minSdk = 28
-        // Google Play requires targetSdk >= 34/35 for new submissions.
-        targetSdk = 35
+        // Google Play requires targetSdk >= 34/35 for new submissions; bumped
+        // to 36 (Android 16) ahead of the Aug 2026 deadline.
+        targetSdk = 36
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
     }

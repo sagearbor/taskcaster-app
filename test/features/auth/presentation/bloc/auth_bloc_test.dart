@@ -260,5 +260,129 @@ void main() {
         ],
       );
     });
+
+    group('DeleteAccountRequested', () {
+      blocTest<AuthBloc, AuthState>(
+        'emits [AuthLoading, AuthAccountDeleted] when deletion succeeds',
+        build: () {
+          when(() => mockAuthRepository.deleteAccount())
+              .thenAnswer((_) async {});
+          return authBloc;
+        },
+        seed: () => AuthAuthenticated(user: testUser),
+        act: (bloc) => bloc.add(DeleteAccountRequested()),
+        expect: () => [
+          AuthLoading(),
+          AuthAccountDeleted(),
+        ],
+        verify: (_) {
+          verify(() => mockAuthRepository.deleteAccount()).called(1);
+        },
+      );
+
+      blocTest<AuthBloc, AuthState>(
+        'emits AuthReauthenticationRequired with the provider ids when '
+        'Firebase demands a fresh sign-in',
+        build: () {
+          when(() => mockAuthRepository.deleteAccount()).thenThrow(
+              FirebaseAuthException(code: 'requires-recent-login'));
+          when(() => mockAuthRepository.getCurrentUserProviderIds())
+              .thenReturn(const ['password']);
+          return authBloc;
+        },
+        seed: () => AuthAuthenticated(user: testUser),
+        act: (bloc) => bloc.add(DeleteAccountRequested()),
+        expect: () => [
+          AuthLoading(),
+          AuthReauthenticationRequired(
+            user: testUser,
+            providerIds: const ['password'],
+          ),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthState>(
+        'stays authenticated and surfaces a friendly message on other '
+        'delete failures',
+        build: () {
+          when(() => mockAuthRepository.deleteAccount())
+              .thenThrow(Exception('boom'));
+          return authBloc;
+        },
+        seed: () => AuthAuthenticated(user: testUser),
+        act: (bloc) => bloc.add(DeleteAccountRequested()),
+        expect: () => [
+          AuthLoading(),
+          AuthAccountDeletionFailure(
+            user: testUser,
+            message: 'Could not delete your account. Please try again.',
+          ),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthState>(
+        'does nothing when not authenticated',
+        build: () => authBloc,
+        act: (bloc) => bloc.add(DeleteAccountRequested()),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => mockAuthRepository.deleteAccount());
+        },
+      );
+    });
+
+    group('AccountDeletionReauthenticated', () {
+      blocTest<AuthBloc, AuthState>(
+        'reauthenticates then retries delete, emitting AuthAccountDeleted',
+        build: () {
+          when(() => mockAuthRepository.reauthenticate(password: 'secret'))
+              .thenAnswer((_) async {});
+          when(() => mockAuthRepository.deleteAccount())
+              .thenAnswer((_) async {});
+          return authBloc;
+        },
+        seed: () => AuthReauthenticationRequired(
+          user: testUser,
+          providerIds: const ['password'],
+        ),
+        act: (bloc) =>
+            bloc.add(const AccountDeletionReauthenticated(password: 'secret')),
+        expect: () => [
+          AuthLoading(),
+          AuthAccountDeleted(),
+        ],
+        verify: (_) {
+          verify(() => mockAuthRepository.reauthenticate(password: 'secret'))
+              .called(1);
+          verify(() => mockAuthRepository.deleteAccount()).called(1);
+        },
+      );
+
+      blocTest<AuthBloc, AuthState>(
+        'surfaces a friendly failure and never retries delete when '
+        'reauthenticate itself fails',
+        build: () {
+          when(() => mockAuthRepository.reauthenticate(password: any(named: 'password')))
+              .thenThrow(Exception('wrong password'));
+          return authBloc;
+        },
+        seed: () => AuthReauthenticationRequired(
+          user: testUser,
+          providerIds: const ['password'],
+        ),
+        act: (bloc) =>
+            bloc.add(const AccountDeletionReauthenticated(password: 'nope')),
+        expect: () => [
+          AuthLoading(),
+          AuthAccountDeletionFailure(
+            user: testUser,
+            message: 'Could not verify your identity. Please try again.',
+          ),
+        ],
+        verify: (_) {
+          verifyNever(() => mockAuthRepository.deleteAccount());
+        },
+      );
+    });
   });
 }

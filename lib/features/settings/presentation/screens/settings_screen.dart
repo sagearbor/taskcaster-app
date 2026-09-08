@@ -30,6 +30,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _appVersion = 'TaskCaster';
   bool _notificationsEnabled = true;
 
+  // True from the moment "Delete My Account" (or a re-auth confirm) is
+  // tapped until a terminal outcome (deleted / failed) arrives, so the tile
+  // shows a spinner and can't be tapped twice.
+  bool _deletingAccount = false;
+
   @override
   void initState() {
     super.initState();
@@ -85,6 +90,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return BlocListener<AuthBloc, AuthState>(
+      listenWhen: (prev, curr) =>
+          curr is AuthReauthenticationRequired ||
+          curr is AuthAccountDeletionFailure ||
+          curr is AuthAccountDeleted,
+      listener: (context, state) {
+        if (state is AuthReauthenticationRequired) {
+          setState(() => _deletingAccount = false);
+          _showReauthDialog(context, state.providerIds);
+        } else if (state is AuthAccountDeletionFailure) {
+          setState(() => _deletingAccount = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.message)),
+          );
+        } else if (state is AuthAccountDeleted) {
+          setState(() => _deletingAccount = false);
+          // The AuthWrapper above this route swaps to the sign-in screen on
+          // its own; just pop any routes pushed on top of it (this Settings
+          // screen included) so that screen is what's left showing.
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      },
+      child: _buildScaffold(context),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
@@ -150,17 +182,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => _openLegalPage(LegalLinks.termsOfService),
                 ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline,
+                      color: AppTheme.violet),
+                  title: const Text('How to delete your account'),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => _openLegalPage(LegalLinks.accountDeletion),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 20),
           _sectionHeader(context, 'Account'),
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.logout, color: AppTheme.coral),
-              title: const Text('Sign Out',
-                  style: TextStyle(color: AppTheme.coral)),
-              onTap: () => _confirmSignOut(context),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.logout, color: AppTheme.coral),
+                  title: const Text('Sign Out',
+                      style: TextStyle(color: AppTheme.coral)),
+                  onTap: () => _confirmSignOut(context),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: _deletingAccount
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_forever_outlined,
+                          color: AppTheme.coral),
+                  title: const Text('Delete Account',
+                      style: TextStyle(color: AppTheme.coral)),
+                  subtitle:
+                      const Text('Permanently delete your account and data'),
+                  onTap: _deletingAccount
+                      ? null
+                      : () => _confirmDeleteAccount(context),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -235,6 +297,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.of(context).popUntil((route) => route.isFirst);
             },
             child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAccount(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text(
+          'This permanently deletes your account, profile, avatar, friends '
+          'list and notification settings. Games you\'ve played stay in '
+          'other players\' history, but your identity is removed from '
+          'them. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.coral),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              setState(() => _deletingAccount = true);
+              context.read<AuthBloc>().add(DeleteAccountRequested());
+            },
+            child: const Text('Delete My Account'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shown when Firebase requires a fresh sign-in before it will let the
+  /// account be deleted. [providerIds] (from [AuthReauthenticationRequired])
+  /// says which credential type the account actually uses, so a
+  /// password-account user gets a password field while a Google/Apple user
+  /// gets a "Continue with ..." button instead.
+  void _showReauthDialog(BuildContext context, List<String> providerIds) {
+    if (providerIds.contains('password')) {
+      final controller = TextEditingController();
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Confirm it\'s you'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'For your security, please re-enter your password to finish '
+                'deleting your account.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                obscureText: true,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Password'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.coral),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                setState(() => _deletingAccount = true);
+                context.read<AuthBloc>().add(
+                      AccountDeletionReauthenticated(
+                          password: controller.text),
+                    );
+              },
+              child: const Text('Confirm & Delete'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final providerLabel = providerIds.contains('google.com')
+        ? 'Google'
+        : providerIds.contains('apple.com')
+            ? 'Apple'
+            : null;
+    if (providerLabel != null) {
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Confirm it\'s you'),
+          content: Text(
+            'For your security, please sign in with $providerLabel again '
+            'to finish deleting your account.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.coral),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                setState(() => _deletingAccount = true);
+                context
+                    .read<AuthBloc>()
+                    .add(const AccountDeletionReauthenticated());
+              },
+              child: Text('Continue with $providerLabel'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // No known re-auth path (e.g. a guest/anonymous session) — tell the
+    // player what to do instead of retrying automatically.
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Please sign in again'),
+        content: const Text(
+          'For your security, please sign out and sign back in, then try '
+          'deleting your account again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
           ),
         ],
       ),
