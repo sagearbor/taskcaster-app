@@ -118,10 +118,11 @@ dev_dependencies:
 # App launcher icon — regenerate with: dart run flutter_launcher_icons
 flutter_launcher_icons:
   android: true
-  ios: false
+  ios: true
   image_path: "assets/icons/app_icon.png"
   adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
   adaptive_icon_background: "#4A148C"
+  remove_alpha_ios: true
   min_sdk_android: 28
 
 flutter:
