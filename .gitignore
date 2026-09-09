@@ -57,3 +57,7 @@ console-errors.txt
 # above would otherwise swallow (it did once: the Android build broke on
 # fresh clones with "drawable/sceneform_hand_phone not found").
 !third_party/**/res/**/*.png
+
+# Store-listing screenshots are a real, committed deliverable (captured by
+# scripts/capture_store_screenshots.sh), not a build artifact.
+!docs/store/screenshots/*.png

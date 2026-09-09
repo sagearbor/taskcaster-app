@@ -1,5 +1,6 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '15.0'
+# ar_flutter_plugin_2's podspec requires iOS 13.0+; keep this in sync with
+# IPHONEOS_DEPLOYMENT_TARGET in Runner.xcodeproj/project.pbxproj.
+platform :ios, '13.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
