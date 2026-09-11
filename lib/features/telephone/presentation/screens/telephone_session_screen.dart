@@ -35,6 +35,13 @@ class TelephoneSessionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Any explicitly-passed repository is a transport override away from the
+    // app's shared online (Firestore) one — that's exactly the practice-bot
+    // and Nearby-offline paths (see the field doc above); the default
+    // (online) path never passes one. STORE_LISTING.md's own screenshot shot
+    // list assumes an "offline mode badge" is visible on this screen, so
+    // surface it here.
+    final isOffline = repository != null;
     return BlocProvider(
       create: (_) =>
           TelephoneBloc(repository: repository ?? sl<TelephoneRepository>())
@@ -42,6 +49,7 @@ class TelephoneSessionScreen extends StatelessWidget {
       child: _SessionView(
         sessionId: sessionId,
         playerId: playerId,
+        isOffline: isOffline,
       ),
     );
   }
@@ -50,8 +58,13 @@ class TelephoneSessionScreen extends StatelessWidget {
 class _SessionView extends StatelessWidget {
   final String sessionId;
   final String playerId;
+  final bool isOffline;
 
-  const _SessionView({required this.sessionId, required this.playerId});
+  const _SessionView({
+    required this.sessionId,
+    required this.playerId,
+    required this.isOffline,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -103,10 +116,53 @@ class _SessionView extends StatelessWidget {
         }
 
         return Scaffold(
-          appBar: AppBar(title: Text(title)),
+          appBar: AppBar(
+            title: Text(title),
+            actions: [
+              if (isOffline) const _OfflineModeBadge(),
+              const SizedBox(width: 8),
+            ],
+          ),
           body: SafeArea(child: body),
         );
       },
+    );
+  }
+}
+
+/// Small pill shown in the app bar whenever this session is running over a
+/// non-default transport — practice-vs-bots or Nearby (Bluetooth/Wi-Fi
+/// Direct) — i.e. no internet connection is involved.
+class _OfflineModeBadge extends StatelessWidget {
+  const _OfflineModeBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      label: 'Offline mode',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.wifi_off,
+                size: 14, color: theme.colorScheme.onSecondaryContainer),
+            const SizedBox(width: 4),
+            Text(
+              'Offline',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSecondaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

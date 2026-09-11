@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/core/models/session_mode.dart';
 import 'package:taskcaster_app/core/utils/friendly_errors.dart';
 import 'package:taskcaster_app/core/models/telephone_session.dart';
@@ -111,6 +112,48 @@ Widget _screen(TelephoneSession session, {String playerId = 'p1'}) {
 }
 
 void main() {
+  group('offline mode badge', () {
+    final soloSession = _session(
+      phase: TelephonePhase.playing,
+      step: 0,
+      players: const [
+        TelephonePlayer(uid: 'p1', displayName: 'Ana'),
+      ],
+      chains: const [],
+    );
+
+    testWidgets(
+        'shows an Offline badge when a repository override is passed '
+        '(practice / Nearby transports)', (tester) async {
+      await tester.pumpWidget(_screen(soloSession));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Offline'), findsOneWidget);
+      expect(find.byIcon(Icons.wifi_off), findsOneWidget);
+    });
+
+    testWidgets(
+        'shows no Offline badge on the default (online, Firestore) '
+        'transport', (tester) async {
+      await sl.reset();
+      await ServiceLocator.init(useMockServices: true);
+      addTearDown(sl.reset);
+
+      await tester.pumpWidget(MaterialApp(
+        home: TelephoneSessionScreen(
+          sessionId: soloSession.id,
+          playerId: 'p1',
+          displayName: 'Ana',
+          // No repository override -> the default online path.
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Offline'), findsNothing);
+      expect(find.byIcon(Icons.wifi_off), findsNothing);
+    });
+  });
+
   group('staged reveal', () {
     // 2 players → 2 chains × 2 entries (prompt, drawing).
     final revealSession = _session(

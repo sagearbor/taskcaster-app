@@ -163,7 +163,7 @@ advertising; not sold. Processing occurs on Google Firebase (a processor).
 | Privacy policy URL | https://taskmaster-app-3d480.web.app/privacy/ |
 | Sign in with Apple | Already implemented (required because Google sign-in is offered) |
 | App Privacy "nutrition label" | Contact Info (email, name), Identifiers (user ID), User Content (other), Usage Data: none, Diagnostics: none — all "linked to you", none "used to track you" |
-| Export compliance | Uses only standard HTTPS encryption → exempt (`ITSAppUsesNonExemptEncryption = NO` in Info.plist) |
+| Export compliance | Uses only standard HTTPS/TLS encryption (Firebase) → exempt. `ITSAppUsesNonExemptEncryption = NO` is set in `ios/Runner/Info.plist` (Nearby Connections' Bluetooth/Wi-Fi Direct offline transport is Android-only — see `NearbyPermissions.isSupportedPlatform` — so it never ships in the iOS build and doesn't affect this answer). |
 
 ## Assets checklist
 
@@ -178,14 +178,13 @@ Source icon: `assets/icons/app_icon.png` (1024×1024), adaptive foreground
 | Play phone screenshots | 2–8, 16:9 or 9:16, 320–3840 px each side | Done — `docs/store/screenshots/` (8, 1080×2424, `scripts/capture_store_screenshots.sh`) |
 | Play 7" / 10" tablet screenshots | optional but recommended, ≥ 1 each | Optional — not done |
 | iOS app icon | 1024×1024, no alpha | Done — `ios: true` + `remove_alpha_ios: true` in `flutter_launcher_icons`, regenerated (`ios/Runner/Assets.xcassets/AppIcon.appiconset/`) |
-| iOS 6.9" screenshots | 1320×2868 (portrait), 3–10 | To capture — the Android set above was captured on a real emulator; an iOS-simulator equivalent run of `scripts/capture_store_screenshots.sh` hasn't been built yet (script is Android/adb-only so far) |
-| iOS 6.5" screenshots | 1284×2778 or 1242×2688 | To capture (can be scaled from 6.9") |
-| iPad 13" screenshots | only if the app is not iPhone-only — mark iPhone-only in Xcode to skip | Decide |
+| iOS 6.9" screenshots | 1320×2868 (portrait), 3–10 | Done — `docs/store/screenshots/ios/6.9in/` (8, exactly 1320×2868, `scripts/capture_store_screenshots_ios.sh` on the iPhone 17 Pro Max simulator). Shot 07 (scoreboard) currently captures a fallback "Judge Submissions" screen instead of the intended animated reveal — see the script's own header comment and the newest `tmp/wrapups/*.yaml` for the suspected app-level cause; re-run the script once that's fixed. |
+| iOS 6.5" screenshots | 1284×2778 or 1242×2688 | To capture (can be scaled from the 6.9" set above) |
+| iPad 13" screenshots | only if the app is not iPhone-only — mark iPhone-only in Xcode to skip | Done — `docs/store/screenshots/ios/ipad-13in/` (8, 2064×2752, same script, iPad Pro 13-inch (M5) simulator). Same shot-07 caveat as above. |
 
 ### Screenshot shot list (same order on both stores)
 
-Capture on a Pixel-class emulator at 1080×2400 (Play) and an iPhone 16 Pro
-Max simulator (iOS), light theme, with a guest account:
+Capture on a Pixel-class emulator at 1080×2400 (Play, `scripts/capture_store_screenshots.sh`) and the iPhone 17 Pro Max + iPad Pro 13-inch (M5) simulators (iOS, `scripts/capture_store_screenshots_ios.sh`), light theme, with a guest account:
 
 1. Onboarding — "Party games for everyone"
 2. Home — invites section + Play
