@@ -61,114 +61,130 @@ class _PlaySheetBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-          child: Text(
-            'Play',
-            style: theme.textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
+    // The full list of rows (11+ entries) is taller than the available
+    // height on shorter screens (e.g. reproduces as "BOTTOM OVERFLOWED BY
+    // 142 PIXELS" on the pixel10_api35 emulator) — the sheet's Column used
+    // MainAxisSize.min with no scrolling, so it simply overflowed instead of
+    // shrinking or scrolling. Constrain to the available height (minus the
+    // top inset showModalBottomSheet reserves) and let the content scroll
+    // when it doesn't fit, instead of overflowing.
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text(
+                'Play',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            _PlayRow(
+              icon: Icons.flash_on,
+              color: AppTheme.coral,
+              name: 'Quick Play',
+              description: 'Jump into a game in seconds.',
+              onTap: () {
+                Navigator.of(context).pop();
+                gamesBloc.add(const QuickPlayGame());
+              },
+            ),
+            _PlayRow(
+              icon: Icons.brush,
+              color: AppTheme.violet,
+              name: 'Drawing Telephone',
+              description: 'Draw → guess → laugh across phones.',
+              onTap: () => _push(context, const TelephoneStartScreen()),
+            ),
+            _PlayRow(
+              icon: Icons.quiz,
+              color: AppTheme.violet,
+              name: 'Trivia Buzzer',
+              description:
+                  'Buzz in fast — fastest correct wins. Plays offline.',
+              onTap: () => _push(context, const TriviaStartScreen()),
+            ),
+            _PlayRow(
+              icon: Icons.celebration,
+              color: AppTheme.gold,
+              name: 'Balloon Pop',
+              description: 'Pop balloons in AR — solo or race a room.',
+              onTap: () => _openBalloonChooser(context),
+            ),
+            _PlayRow(
+              icon: Icons.map,
+              color: AppTheme.gold,
+              name: '🗺️ Treasure Hunt',
+              description: 'Hide treasures, pass the phone, hunt!',
+              onTap: () => _push(context, const TreasureHuntScreen()),
+            ),
+            _PlayRow(
+              icon: Icons.domain,
+              color: AppTheme.coral,
+              name: '🗼 Tower Trials',
+              description: "Stack blocks, don't topple!",
+              onTap: () => _push(context, const TowerTrialsScreen()),
+            ),
+            _PlayRow(
+              icon: Icons.diamond,
+              color: AppTheme.violet,
+              name: '💎 Gem Rush',
+              description: 'Tap gems fast — beat the clock, solo.',
+              onTap: () {
+                Navigator.of(context).pop();
+                gamesBloc.add(
+                  const QuickPlayGame(arGameId: ArGameIds.treasureHunt),
+                );
+              },
+            ),
+            _PlayRow(
+              icon: Icons.home_work_outlined,
+              color: AppTheme.coral,
+              name: '🏠 House Hunt',
+              description: 'Send a treasure hunt to a faraway friend.',
+              onTap: () => _push(context, const HouseHuntStartScreen()),
+            ),
+            _PlayRow(
+              icon: Icons.search,
+              color: AppTheme.gold,
+              name: '🔍 Clue Hunt',
+              description: 'Hide a real thing, drive the warmer-colder meter.',
+              onTap: () => _push(context, const ClueHuntStartScreen()),
+            ),
+            _PlayRow(
+              icon: Icons.add_circle_outline,
+              color: AppTheme.coral,
+              name: 'Create custom game',
+              description: 'Build your own set of tasks for your crew.',
+              onTap: () =>
+                  _push(context, const CreateGameScreen(), withAuth: true),
+            ),
+            _PlayRow(
+              icon: Icons.public,
+              color: AppTheme.violet,
+              name: 'Discover',
+              description: 'Browse community games and clone one.',
+              onTap: () => _push(context, const DiscoverGamesScreen()),
+            ),
+            const Divider(height: 24),
+            _PlayRow(
+              icon: Icons.keyboard,
+              color: AppTheme.inkSoft,
+              name: 'Join with a code',
+              description: 'Got a 6-character code? Enter it here.',
+              onTap: () =>
+                  _push(context, const JoinGameScreen(), withAuth: true),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
-        _PlayRow(
-          icon: Icons.flash_on,
-          color: AppTheme.coral,
-          name: 'Quick Play',
-          description: 'Jump into a game in seconds.',
-          onTap: () {
-            Navigator.of(context).pop();
-            gamesBloc.add(const QuickPlayGame());
-          },
-        ),
-        _PlayRow(
-          icon: Icons.brush,
-          color: AppTheme.violet,
-          name: 'Drawing Telephone',
-          description: 'Draw → guess → laugh across phones.',
-          onTap: () => _push(context, const TelephoneStartScreen()),
-        ),
-        _PlayRow(
-          icon: Icons.quiz,
-          color: AppTheme.violet,
-          name: 'Trivia Buzzer',
-          description: 'Buzz in fast — fastest correct wins. Plays offline.',
-          onTap: () => _push(context, const TriviaStartScreen()),
-        ),
-        _PlayRow(
-          icon: Icons.celebration,
-          color: AppTheme.gold,
-          name: 'Balloon Pop',
-          description: 'Pop balloons in AR — solo or race a room.',
-          onTap: () => _openBalloonChooser(context),
-        ),
-        _PlayRow(
-          icon: Icons.map,
-          color: AppTheme.gold,
-          name: '🗺️ Treasure Hunt',
-          description: 'Hide treasures, pass the phone, hunt!',
-          onTap: () => _push(context, const TreasureHuntScreen()),
-        ),
-        _PlayRow(
-          icon: Icons.domain,
-          color: AppTheme.coral,
-          name: '🗼 Tower Trials',
-          description: "Stack blocks, don't topple!",
-          onTap: () => _push(context, const TowerTrialsScreen()),
-        ),
-        _PlayRow(
-          icon: Icons.diamond,
-          color: AppTheme.violet,
-          name: '💎 Gem Rush',
-          description: 'Tap gems fast — beat the clock, solo.',
-          onTap: () {
-            Navigator.of(context).pop();
-            gamesBloc.add(
-              const QuickPlayGame(arGameId: ArGameIds.treasureHunt),
-            );
-          },
-        ),
-        _PlayRow(
-          icon: Icons.home_work_outlined,
-          color: AppTheme.coral,
-          name: '🏠 House Hunt',
-          description: 'Send a treasure hunt to a faraway friend.',
-          onTap: () => _push(context, const HouseHuntStartScreen()),
-        ),
-        _PlayRow(
-          icon: Icons.search,
-          color: AppTheme.gold,
-          name: '🔍 Clue Hunt',
-          description: 'Hide a real thing, drive the warmer-colder meter.',
-          onTap: () => _push(context, const ClueHuntStartScreen()),
-        ),
-        _PlayRow(
-          icon: Icons.add_circle_outline,
-          color: AppTheme.coral,
-          name: 'Create custom game',
-          description: 'Build your own set of tasks for your crew.',
-          onTap: () =>
-              _push(context, const CreateGameScreen(), withAuth: true),
-        ),
-        _PlayRow(
-          icon: Icons.public,
-          color: AppTheme.violet,
-          name: 'Discover',
-          description: 'Browse community games and clone one.',
-          onTap: () => _push(context, const DiscoverGamesScreen()),
-        ),
-        const Divider(height: 24),
-        _PlayRow(
-          icon: Icons.keyboard,
-          color: AppTheme.inkSoft,
-          name: 'Join with a code',
-          description: 'Got a 6-character code? Enter it here.',
-          onTap: () => _push(context, const JoinGameScreen(), withAuth: true),
-        ),
-        const SizedBox(height: 8),
-      ],
+      ),
     );
   }
 

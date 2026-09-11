@@ -59,5 +59,9 @@ console-errors.txt
 !third_party/**/res/**/*.png
 
 # Store-listing screenshots are a real, committed deliverable (captured by
-# scripts/capture_store_screenshots.sh), not a build artifact.
+# scripts/capture_store_screenshots.sh and
+# scripts/capture_store_screenshots_ios.sh), not a build artifact. The
+# blanket `!docs/store/screenshots/*.png` above only un-ignores that one
+# directory, not the nested per-device-size iOS ones added alongside it.
 !docs/store/screenshots/*.png
+!docs/store/screenshots/ios/**/*.png
