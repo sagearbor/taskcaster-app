@@ -57,9 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: IntrinsicHeight(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Hero header
+                      // Hero header (stays anchored to the top edge; the
+                      // Spacer below pushes the legal footer to the bottom
+                      // instead of centering the whole column, which would
+                      // float the gradient header below a blank band).
                       Container(
                         decoration: const BoxDecoration(
                           gradient: AppTheme.heroGradient,
@@ -105,119 +107,122 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Primary: one big Play button → guest (anonymous) sign-in.
-                            SizedBox(
-                              height: 64,
-                              child: FilledButton.icon(
-                                onPressed: () {
-                                  context
-                                      .read<AuthBloc>()
-                                      .add(AnonymousSignInRequested());
-                                },
-                                icon: const Icon(Icons.play_arrow_rounded,
-                                    size: 32),
-                                label: const Text(
-                                  'Play',
-                                  style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: AppTheme.coral,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(18),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Primary: one big Play button → guest (anonymous) sign-in.
+                              SizedBox(
+                                height: 64,
+                                child: FilledButton.icon(
+                                  onPressed: () {
+                                    context
+                                        .read<AuthBloc>()
+                                        .add(AnonymousSignInRequested());
+                                  },
+                                  icon: const Icon(Icons.play_arrow_rounded,
+                                      size: 32),
+                                  label: const Text(
+                                    'Play',
+                                    style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppTheme.coral,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 10),
-                            // Explains what the big Play button actually does — it's
-                            // a real (anonymous) sign-in with no prompt beforehand.
-                            Text(
-                              'Play as a guest — no account needed. You can sign in '
-                              'later to keep your progress.',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                            ),
-                            const SizedBox(height: 16),
-                            // Secondary: a single link that reveals the full account
-                            // options for returning / registered users.
-                            TextButton(
-                              onPressed: () =>
-                                  setState(() => _showSignIn = !_showSignIn),
-                              child: Text(
-                                _showSignIn
-                                    ? 'Hide sign-in options'
-                                    : 'Sign in or create account',
+                              const SizedBox(height: 10),
+                              // Explains what the big Play button actually does — it's
+                              // a real (anonymous) sign-in with no prompt beforehand.
+                              Text(
+                                'Play as a guest — no account needed. You can sign in '
+                                'later to keep your progress.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant),
                               ),
-                            ),
-                            if (_showSignIn) ...[
-                              const SizedBox(height: 8),
-                              AuthForm(
-                                title: 'Sign In',
-                                buttonText: 'Sign In',
-                                onSubmit: (email, password, displayName) {
-                                  context.read<AuthBloc>().add(
-                                        SignInRequested(
-                                            email: email, password: password),
-                                      );
-                                },
-                                showDisplayNameField: false,
-                              ),
-                              const SizedBox(height: 20),
-                              _OrDivider(),
-                              const SizedBox(height: 20),
-                              _GoogleSignInButton(
-                                onPressed: () {
-                                  context
-                                      .read<AuthBloc>()
-                                      .add(GoogleSignInRequested());
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              _AppleSignInButton(
-                                onPressed: () {
-                                  context
-                                      .read<AuthBloc>()
-                                      .add(AppleSignInRequested());
-                                },
-                              ),
+                              const SizedBox(height: 16),
+                              // Secondary: a single link that reveals the full account
+                              // options for returning / registered users.
                               TextButton(
                                 onPressed: () =>
-                                    _showForgotPasswordDialog(context),
-                                child: const Text('Forgot password?'),
+                                    setState(() => _showSignIn = !_showSignIn),
+                                child: Text(
+                                  _showSignIn
+                                      ? 'Hide sign-in options'
+                                      : 'Sign in or create account',
+                                ),
                               ),
-                              const SizedBox(height: 8),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => BlocProvider.value(
-                                        value: context.read<AuthBloc>(),
-                                        child: const RegisterScreen(),
+                              if (_showSignIn) ...[
+                                const SizedBox(height: 8),
+                                AuthForm(
+                                  title: 'Sign In',
+                                  buttonText: 'Sign In',
+                                  onSubmit: (email, password, displayName) {
+                                    context.read<AuthBloc>().add(
+                                          SignInRequested(
+                                              email: email, password: password),
+                                        );
+                                  },
+                                  showDisplayNameField: false,
+                                ),
+                                const SizedBox(height: 20),
+                                _OrDivider(),
+                                const SizedBox(height: 20),
+                                _GoogleSignInButton(
+                                  onPressed: () {
+                                    context
+                                        .read<AuthBloc>()
+                                        .add(GoogleSignInRequested());
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                _AppleSignInButton(
+                                  onPressed: () {
+                                    context
+                                        .read<AuthBloc>()
+                                        .add(AppleSignInRequested());
+                                  },
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      _showForgotPasswordDialog(context),
+                                  child: const Text('Forgot password?'),
+                                ),
+                                const SizedBox(height: 8),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => BlocProvider.value(
+                                          value: context.read<AuthBloc>(),
+                                          child: const RegisterScreen(),
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                                child: const Text(
-                                    'Don\'t have an account? Sign up'),
-                              ),
+                                    );
+                                  },
+                                  child: const Text(
+                                      'Don\'t have an account? Sign up'),
+                                ),
+                              ],
+                              const Spacer(),
+                              const SizedBox(height: 24),
+                              LegalLinksFooter(openLink: widget.openLink),
                             ],
-                            const SizedBox(height: 24),
-                            LegalLinksFooter(openLink: widget.openLink),
-                          ],
+                          ),
                         ),
                       ),
                     ],
