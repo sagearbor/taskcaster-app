@@ -4,9 +4,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../bloc/auth_bloc.dart';
 import '../widgets/auth_form.dart';
+import '../widgets/legal_links_footer.dart';
 
 class RegisterScreen extends StatelessWidget {
-  const RegisterScreen({super.key});
+  const RegisterScreen({super.key, this.openLink});
+
+  /// Overrides how a legal-page link is opened; defaults to url_launcher.
+  /// Injectable so widget tests can assert which page a link opens without
+  /// touching the platform channel.
+  final Future<void> Function(Uri uri)? openLink;
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +68,8 @@ class RegisterScreen extends StatelessWidget {
                   },
                   showDisplayNameField: true,
                 ),
+                const SizedBox(height: 20),
+                LegalConsentText(openLink: openLink),
               ],
             ),
           ),

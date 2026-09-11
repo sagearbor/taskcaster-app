@@ -143,16 +143,18 @@ void main() {
       final passwordEditable =
           tester.widget<EditableText>(find.byType(EditableText).last);
 
-      // Initially password should be obscured
+      // Initially password should be obscured, with the "eye" icon inviting
+      // a tap to reveal it (conventional semantics).
       expect(passwordEditable.obscureText, true);
+      expect(find.byIcon(Icons.visibility), findsOneWidget);
 
       // Tap visibility toggle
-      final visibilityToggle = find.byIcon(Icons.visibility_off);
+      final visibilityToggle = find.byIcon(Icons.visibility);
       await tester.tap(visibilityToggle);
       await tester.pump();
 
-      // Check that icon changed to visibility
-      expect(find.byIcon(Icons.visibility), findsOneWidget);
+      // Now visible: the icon flips to "eye off" (tap to hide again).
+      expect(find.byIcon(Icons.visibility_off), findsOneWidget);
     });
 
     testWidgets('should call onSubmit with correct parameters', (tester) async {
