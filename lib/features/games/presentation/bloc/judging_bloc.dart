@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/models/game.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/repositories/game_repository.dart';
 import 'judging_event.dart';
@@ -187,9 +188,30 @@ class JudgingBloc extends Bloc<JudgingEvent, JudgingState> {
         );
       }
 
+      // Re-read the game now that every score has been written, and ship it
+      // with the completion state. The scoreboard reveal is driven off THIS
+      // snapshot rather than GameDetailBloc's, whose stream re-emits on its
+      // own schedule: at this instant it may still hold the pre-judging game
+      // (a reveal of all +0) or be between emissions entirely (the screen
+      // used to silently pop back to the judging list).
+      Game? updatedGame;
+      try {
+        updatedGame = await gameRepository
+            .getGameStream(currentState.gameId)
+            .first
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        // Never fail a successful judging round over the reveal snapshot —
+        // the scores are already saved. The UI falls back to whatever game
+        // data it has.
+        debugPrint('JudgingBloc.FinishJudging post-write re-read failed: $e');
+      }
+
       emit(JudgingCompleted(
         gameId: currentState.gameId,
         taskIndex: currentState.taskIndex,
+        game: updatedGame,
+        awardedScores: Map<String, int>.unmodifiable(currentState.scores),
       ));
     } catch (e) {
       debugPrint('JudgingBloc.FinishJudging failed: $e');

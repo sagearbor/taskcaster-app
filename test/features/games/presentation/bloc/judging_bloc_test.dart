@@ -268,7 +268,15 @@ void main() {
           isA<JudgingLoaded>().having((s) => s.scoredCount, 'scoredCount', 1),
           isA<JudgingLoaded>().having((s) => s.scoredCount, 'scoredCount', 2),
           JudgingLoading(),
-          const JudgingCompleted(gameId: 'game1', taskIndex: 0),
+          // JudgingCompleted carries the post-write game snapshot and the
+          // scores just awarded, so the scoreboard reveal never has to ask
+          // GameDetailBloc (whose stream re-emits on its own schedule).
+          isA<JudgingCompleted>()
+              .having((s) => s.gameId, 'gameId', 'game1')
+              .having((s) => s.taskIndex, 'taskIndex', 0)
+              .having((s) => s.game?.id, 'game.id', 'game1')
+              .having((s) => s.awardedScores, 'awardedScores',
+                  {'user1': 5, 'user2': 3}),
         ],
         verify: (_) {
           verify(() => mockGameRepository.judgeSubmission('game1', 0, 'user1', 5)).called(1);
