@@ -45,6 +45,10 @@ class Game extends Equatable {
   /// Backward-compatible: older docs without this key parse as null.
   final String? gameKind;
 
+  /// [gameKind] of the Starter Pack game — every new player's first game, the
+  /// ten hand-written solo tasks from `StarterPackData`.
+  static const String kindStarter = 'starter';
+
   const Game({
     required this.id,
     required this.gameName,
@@ -172,6 +176,9 @@ class Game extends Equatable {
   /// [players] so it can never drift out of sync in memory; [fromMap] backfills
   /// it for older documents written before this field existed.
   List<String> get playerIds => players.map((p) => p.userId).toList();
+
+  /// True for the Starter Pack game (crowd-judged, solo, ten fixed tasks).
+  bool get isStarter => gameKind == kindStarter;
 
   bool get isInLobby => status == GameStatus.lobby;
   bool get isInProgress => status == GameStatus.inProgress;

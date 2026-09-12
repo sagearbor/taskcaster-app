@@ -13,6 +13,8 @@ import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../../../../core/services/ar/ar_games.dart';
+import '../../../../core/di/service_locator.dart';
+import '../../../arena/domain/repositories/feed_repository.dart';
 
 part 'games_event.dart';
 part 'games_state.dart';
@@ -21,15 +23,23 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
   final GameRepository gameRepository;
   final AuthRepository authRepository;
 
+  /// Optional Arena. Used only to seed the house entries when the Starter Pack
+  /// opens, so a brand-new player has something to grade. Nullable (and
+  /// resolved from the service locator when omitted) so existing bloc tests
+  /// construct unchanged.
+  final FeedRepository? feedRepository;
+
   GamesBloc({
     required this.gameRepository,
     required this.authRepository,
+    this.feedRepository,
   }) : super(GamesInitial()) {
     on<LoadGames>(_onLoadGames);
     on<CreateGame>(_onCreateGame);
     on<JoinGame>(_onJoinGame);
     on<DeleteGame>(_onDeleteGame);
     on<QuickPlayGame>(_onQuickPlayGame);
+    on<StartStarterPack>(_onStartStarterPack);
   }
 
   Future<void> _onLoadGames(LoadGames event, Emitter<GamesState> emit) async {
@@ -169,6 +179,82 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       emit(QuickPlaySuccess(gameId: gameId));
     } catch (e) {
       emit(_gamesError('quick play', e, 'Could not start a quick game.'));
+    }
+  }
+
+  /// Open the user's Starter Pack, creating it the first time.
+  ///
+  /// Idempotent by design: a user has exactly one `gameKind == 'starter'`
+  /// game, so tapping "Start" twice (or coming back a week later) always lands
+  /// in the same game, on the first task they haven't submitted.
+  Future<void> _onStartStarterPack(
+    StartStarterPack event,
+    Emitter<GamesState> emit,
+  ) async {
+    emit(GamesLoading());
+
+    try {
+      final user = await authRepository.getCurrentUser();
+      if (user == null) {
+        throw Exception('Not authenticated');
+      }
+
+      Game? starter;
+      try {
+        final games = await gameRepository.getGamesStream().first;
+        for (final g in games) {
+          if (g.isStarter && g.creatorId == user.id) {
+            starter = g;
+            break;
+          }
+        }
+      } catch (e) {
+        // A failed lookup must not block a brand-new player: fall through and
+        // create one.
+        debugPrint('GamesBloc could not look for an existing starter: $e');
+      }
+
+      final String gameId;
+      final int taskIndex;
+      if (starter != null) {
+        gameId = starter.id;
+        taskIndex = _firstUnsubmittedIndex(starter, user.id);
+      } else {
+        gameId = await gameRepository.createStarterGame(user);
+        taskIndex = 0;
+      }
+
+      // Best-effort: the Arena should never look empty to a first-time player.
+      await _ensureHouseEntries();
+
+      emit(StarterPackReady(gameId: gameId, taskIndex: taskIndex));
+    } catch (e) {
+      emit(_gamesError(
+          'start starter pack', e, 'Could not start your first game.'));
+    }
+  }
+
+  /// The first task [userId] has not submitted or had judged; the LAST task
+  /// once they are all done (there is nothing further to open).
+  static int _firstUnsubmittedIndex(Game game, String userId) {
+    if (game.tasks.isEmpty) return 0;
+    for (var i = 0; i < game.tasks.length; i++) {
+      final status = game.tasks[i].getPlayerStatus(userId);
+      final done = status != null &&
+          (status.state == TaskPlayerState.submitted ||
+              status.state == TaskPlayerState.judged);
+      if (!done) return i;
+    }
+    return game.tasks.length - 1;
+  }
+
+  Future<void> _ensureHouseEntries() async {
+    try {
+      final repo = feedRepository ??
+          (sl.isRegistered<FeedRepository>() ? sl<FeedRepository>() : null);
+      await repo?.ensureHouseEntries();
+    } catch (e) {
+      debugPrint('GamesBloc could not seed house entries: $e');
     }
   }
 

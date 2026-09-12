@@ -5,6 +5,16 @@ import 'player_task_status.dart';
 
 enum TaskType { video, puzzle, ar }
 
+/// What the player is expected to hand in for a task.
+///
+/// Orthogonal to [TaskType] (which selects the gameplay engine): a Starter
+/// Pack task is still a `TaskType.video` task as far as the game engine is
+/// concerned, but its [Task.submissionType] tells the task screen to offer
+/// "Snap it" or "Write it" instead of the paste-a-link flow.
+/// [SubmissionType.any] (the default, and what every pre-existing task
+/// deserializes to) means "whatever the player has" — link, photo or text.
+enum SubmissionType { photo, text, video, any }
+
 enum TaskStatus {
   waiting_for_submissions,
   ready_to_judge,
@@ -40,6 +50,19 @@ class Task extends Equatable {
   final int? durationSeconds; // Time limit to DO the task (e.g., 60s countdown)
   final Map<String, PlayerTaskStatus> playerStatuses; // Track each player's status
 
+  /// What the player hands in. Defaults to [SubmissionType.any] so every task
+  /// serialized before this field existed keeps its old, unrestricted
+  /// behaviour.
+  final SubmissionType submissionType;
+
+  /// The single line a crowd grader sees ("Emotional truth of the vegetable").
+  /// Null for tasks that are judged by a person rather than the crowd.
+  final String? rubric;
+
+  /// The extra constraint revealed only AFTER the player taps Start, and the
+  /// first half of the auto-generated caption. Null when a task has no twist.
+  final String? twist;
+
   const Task({
     required this.id,
     required this.title,
@@ -55,6 +78,9 @@ class Task extends Equatable {
     this.deadline,
     this.durationSeconds,
     this.playerStatuses = const {},
+    this.submissionType = SubmissionType.any,
+    this.rubric,
+    this.twist,
   });
 
   factory Task.fromMap(Map<String, dynamic> map) {
@@ -91,6 +117,14 @@ class Task extends Equatable {
             ),
           ) ??
           {},
+      // Backward-compatible: docs written before submissionType existed (and
+      // anything with an unknown value) fall back to "any".
+      submissionType: SubmissionType.values.firstWhere(
+        (e) => e.name == map['submissionType'],
+        orElse: () => SubmissionType.any,
+      ),
+      rubric: map['rubric'] as String?,
+      twist: map['twist'] as String?,
     );
   }
 
@@ -112,6 +146,9 @@ class Task extends Equatable {
       'playerStatuses': playerStatuses.map(
         (key, value) => MapEntry(key, value.toMap()),
       ),
+      'submissionType': submissionType.name,
+      'rubric': rubric,
+      'twist': twist,
     };
   }
 
@@ -130,6 +167,9 @@ class Task extends Equatable {
     DateTime? deadline,
     int? durationSeconds,
     Map<String, PlayerTaskStatus>? playerStatuses,
+    SubmissionType? submissionType,
+    String? rubric,
+    String? twist,
   }) {
     return Task(
       id: id ?? this.id,
@@ -146,6 +186,9 @@ class Task extends Equatable {
       deadline: deadline ?? this.deadline,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       playerStatuses: playerStatuses ?? this.playerStatuses,
+      submissionType: submissionType ?? this.submissionType,
+      rubric: rubric ?? this.rubric,
+      twist: twist ?? this.twist,
     );
   }
 
@@ -240,5 +283,8 @@ class Task extends Equatable {
         deadline,
         durationSeconds,
         playerStatuses,
+        submissionType,
+        rubric,
+        twist,
       ];
 }

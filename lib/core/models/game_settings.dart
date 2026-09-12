@@ -11,12 +11,24 @@ class GameSettings extends Equatable {
   // judge will never make. Absent in older game docs -> true (judge plays).
   final bool judgePlays;
 
+  /// The crowd in the Arena scores this game's submissions (task points =
+  /// `round(mean grade x 2)`), instead of a human judge. The Starter Pack sets
+  /// this true; absent in older game docs -> false (human judge).
+  final bool crowdJudged;
+
+  /// Submissions from this game are posted to the Arena. Friend games show a
+  /// "Share to the Arena" toggle backed by this; absent in older game docs ->
+  /// true, which matches the product default ("default on").
+  final bool shareToArena;
+
   const GameSettings({
     this.taskDeadline,
     this.autoAdvanceTasks = true,
     this.allowSkips = false,
     this.maxPlayers,
     this.judgePlays = true,
+    this.crowdJudged = false,
+    this.shareToArena = true,
   });
 
   // Default settings for quick play
@@ -48,6 +60,9 @@ class GameSettings extends Equatable {
       allowSkips: map['allowSkips'] as bool? ?? false,
       maxPlayers: map['maxPlayers'] as int?,
       judgePlays: map['judgePlays'] as bool? ?? true,
+      // Backward-compatible: older docs have neither key.
+      crowdJudged: map['crowdJudged'] as bool? ?? false,
+      shareToArena: map['shareToArena'] as bool? ?? true,
     );
   }
 
@@ -58,6 +73,8 @@ class GameSettings extends Equatable {
       'allowSkips': allowSkips,
       'maxPlayers': maxPlayers,
       'judgePlays': judgePlays,
+      'crowdJudged': crowdJudged,
+      'shareToArena': shareToArena,
     };
   }
 
@@ -67,6 +84,8 @@ class GameSettings extends Equatable {
     bool? allowSkips,
     int? maxPlayers,
     bool? judgePlays,
+    bool? crowdJudged,
+    bool? shareToArena,
   }) {
     return GameSettings(
       taskDeadline: taskDeadline ?? this.taskDeadline,
@@ -74,6 +93,8 @@ class GameSettings extends Equatable {
       allowSkips: allowSkips ?? this.allowSkips,
       maxPlayers: maxPlayers ?? this.maxPlayers,
       judgePlays: judgePlays ?? this.judgePlays,
+      crowdJudged: crowdJudged ?? this.crowdJudged,
+      shareToArena: shareToArena ?? this.shareToArena,
     );
   }
 
@@ -84,5 +105,7 @@ class GameSettings extends Equatable {
         allowSkips,
         maxPlayers,
         judgePlays,
+        crowdJudged,
+        shareToArena,
       ];
 }

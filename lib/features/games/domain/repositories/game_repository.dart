@@ -1,6 +1,7 @@
 import '../../../../core/models/game.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/models/user.dart';
 
 abstract class GameRepository {
   Stream<List<Game>> getGamesStream();
@@ -28,6 +29,14 @@ abstract class GameRepository {
   Future<String> rematchGame(Game source);
 
   Future<String> createGame(String gameName, String creatorId, String judgeId);
+
+  /// Create [user]'s Starter Pack game: the ten hand-written solo tasks from
+  /// `StarterPackData`, already in progress, crowd-judged, shared to the
+  /// Arena, with [user] as the only player. Returns the new game id.
+  ///
+  /// Not idempotent on its own — `GamesBloc.StartStarterPack` is what reuses
+  /// an existing `gameKind == 'starter'` game rather than making a second one.
+  Future<String> createStarterGame(User user);
   Future<void> updateGame(String gameId, Game game);
   Future<void> deleteGame(String gameId);
   Stream<Game?> getGameStream(String gameId);
