@@ -7,11 +7,13 @@ import '../../../../core/services/notification_prompt.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../arena/presentation/screens/arena_screen_placeholder.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../games/domain/repositories/game_repository.dart';
 import '../../../games/presentation/bloc/games_bloc.dart';
 import '../../../games/presentation/screens/game_detail_screen.dart';
 import '../../../telephone/presentation/widgets/nearby_auto_cast_banner.dart';
+import '../widgets/arena_entry_button.dart';
 import '../widgets/game_card.dart';
 import '../widgets/home_app_bar.dart';
 import '../../../friends/presentation/widgets/invite_inbox_card.dart';
@@ -77,14 +79,23 @@ class HomeView extends StatelessWidget {
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                     children: [
-                      // Zone 1: invites from friends — the first thing an
-                      // invited player sees. Two sources, both one-tap join:
-                      // friend-graph invites (invites collection) and legacy
-                      // email-matched invites. Each self-hides when empty.
+                      // Invites from friends — the first thing an invited
+                      // player sees, above the starter-pack hero. Two
+                      // sources, both one-tap join: friend-graph invites
+                      // (invites collection) and legacy email-matched
+                      // invites. Each self-hides when empty — no empty shame
+                      // box (see docs/PRODUCT_DIRECTION.md §1 #3).
                       const InviteInboxCard(),
                       const HomeInvitesSection(),
+                      // TODO(round7-merge): Zone 1 — "Your next task" hero
+                      // for the starter-pack game (NextTaskHeroCard). Needs
+                      // Game.isStarter / GamesBloc.StartStarterPack from
+                      // feat/arena-mechanics; wire once merged.
+                      const SizedBox(height: 8),
+                      // Zone 2: the Arena — grade the crowd.
+                      ArenaEntryButton(onTap: () => _openArena(context)),
                       const SizedBox(height: 24),
-                      // Zone 2: jump back into active games, if any.
+                      // Jump back into active friend games, if any.
                       ..._buildJumpBackIn(context, state),
                       // Zone 3: the one big Play button.
                       _buildPlayButton(context, state),
@@ -187,6 +198,14 @@ class HomeView extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  void _openArena(BuildContext context) {
+    // TODO(round7-merge): swap for the real ArenaScreen() once feat/arena-ui
+    // lands on main — see arena_screen_placeholder.dart.
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ArenaScreenPlaceholder()),
     );
   }
 

@@ -6,7 +6,6 @@ import '../../../../core/models/game.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../games/domain/repositories/game_repository.dart';
 import '../../../games/presentation/screens/game_detail_screen.dart';
-import '../../../games/presentation/screens/join_game_screen.dart';
 
 /// Zone 1 of the home screen: "Invites from friends".
 ///
@@ -84,17 +83,6 @@ class _HomeInvitesSectionState extends State<HomeInvitesSection> {
     return 'Couldn\'t join the game. Please try again.';
   }
 
-  void _openCodeEntry() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => BlocProvider.value(
-          value: context.read<AuthBloc>(),
-          child: const JoinGameScreen(),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final authState = context.watch<AuthBloc>().state;
@@ -115,73 +103,40 @@ class _HomeInvitesSectionState extends State<HomeInvitesSection> {
       ],
     );
 
-    // Guests (no email) can't receive email invites — show the calm empty
-    // state with the "Enter a code" escape hatch.
+    // Guests (no email) can't receive email invites, and the section must
+    // never show an empty shame box (see docs/PRODUCT_DIRECTION.md §1 #3) —
+    // self-hide entirely rather than rendering a "no invites yet" card.
     if (email == null || email.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [header, const SizedBox(height: 12), _emptyState(context)],
-      );
+      return const SizedBox.shrink();
     }
 
     return StreamBuilder<List<Game>>(
       stream: sl<GameRepository>().getInvitedGamesStream(email),
       builder: (context, snapshot) {
         final games = snapshot.data ?? const <Game>[];
+        final loading = snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData;
+
+        // Self-hide when there is nothing to show — no empty shame box.
+        if (!loading && games.isEmpty) return const SizedBox.shrink();
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             header,
             const SizedBox(height: 12),
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData)
+            if (loading)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.all(16),
                   child: CircularProgressIndicator(),
                 ),
               )
-            else if (games.isEmpty)
-              _emptyState(context)
             else
               ...games.map((game) => _buildInviteCard(context, game)),
           ],
         );
       },
-    );
-  }
-
-  /// Calm empty state: no red-flag messaging, just a gentle nudge and a
-  /// low-key "Enter a code" path for kids who were handed a code verbally.
-  Widget _emptyState(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.inbox_outlined,
-              size: 36, color: theme.colorScheme.primary),
-          const SizedBox(height: 8),
-          Text(
-            'No invites yet — ask a friend to invite you.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 4),
-          TextButton.icon(
-            onPressed: _openCodeEntry,
-            icon: const Icon(Icons.keyboard, size: 18),
-            label: const Text('Enter a code'),
-          ),
-        ],
-      ),
     );
   }
 
