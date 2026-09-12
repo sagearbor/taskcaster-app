@@ -49,13 +49,23 @@ class TaskExecutionSubmitted extends TaskExecutionState {
   final String gameId;
   final int taskIndex;
 
+  /// The Arena post this attempt created, when it was shared. Null for a
+  /// submission that stayed private (or a skip).
+  final String? feedPostId;
+
+  /// True when the player went past `durationSeconds + 30 s` of grace — the
+  /// red LATE badge everyone sees.
+  final bool isLate;
+
   const TaskExecutionSubmitted({
     required this.gameId,
     required this.taskIndex,
+    this.feedPostId,
+    this.isLate = false,
   });
 
   @override
-  List<Object> get props => [gameId, taskIndex];
+  List<Object?> get props => [gameId, taskIndex, feedPostId, isLate];
 }
 
 class TaskExecutionError extends TaskExecutionState {

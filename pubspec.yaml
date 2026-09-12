@@ -76,6 +76,11 @@ dependencies:
   app_links: ^6.1.1
   android_play_install_referrer: ^0.4.0
 
+  # In-app photo submissions (Arena posts). Only
+  # lib/core/services/photo/photo_capture.dart imports this, so the web build
+  # keeps a single, well-understood entry point.
+  image_picker: ^1.1.2
+
   # AI Integration
   http: ^1.1.0
   

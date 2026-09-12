@@ -7,7 +7,10 @@ import '../../../../core/models/player.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/models/game_settings.dart';
+import '../../../../core/models/user.dart';
 import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
+import '../../../tasks/data/datasources/starter_pack_data.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../datasources/game_remote_data_source.dart';
 
@@ -256,6 +259,57 @@ class GameRepositoryImpl implements GameRepository {
     };
 
     return await remoteDataSource.createGame(gameData);
+  }
+
+  @override
+  Future<String> createStarterGame(User user) async {
+    final gameId = _uuid.v4();
+
+    final tasks = StarterPackData.tasks()
+        .map((task) => task.copyWith(
+              status: TaskStatus.waiting_for_submissions,
+              playerStatuses: {
+                user.id: PlayerTaskStatus(
+                  playerId: user.id,
+                  state: TaskPlayerState.not_started,
+                ),
+              },
+            ))
+        .toList();
+
+    final game = Game(
+      id: gameId,
+      gameName: StarterPackData.gameName,
+      creatorId: user.id,
+      // Nominally the creator, but the real judge is the crowd — see
+      // GameSettings.crowdJudged and CrowdScoreApplier.
+      judgeId: user.id,
+      status: GameStatus.inProgress,
+      inviteCode: _generateInviteCode(),
+      createdAt: DateTime.now(),
+      players: [
+        Player(
+          userId: user.id,
+          displayName: user.displayName,
+          totalScore: 0,
+        ),
+      ],
+      tasks: tasks,
+      currentTaskIndex: 0,
+      mode: GameMode.async,
+      // No per-task deadline: the clock is per player, from the moment they
+      // tap Start.
+      settings: const GameSettings(
+        taskDeadline: null,
+        autoAdvanceTasks: true,
+        allowSkips: true,
+        crowdJudged: true,
+        shareToArena: true,
+      ),
+      gameKind: Game.kindStarter,
+    );
+
+    return await remoteDataSource.createGame(game.toMap());
   }
 
   @override

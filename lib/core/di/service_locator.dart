@@ -30,6 +30,11 @@ import '../../features/trivia/domain/repositories/trivia_repository.dart';
 import '../../features/trivia/data/datasources/trivia_remote_data_source.dart';
 import '../../features/trivia/data/datasources/mock_trivia_data_source.dart';
 
+import '../../features/arena/data/datasources/feed_remote_data_source.dart';
+import '../../features/arena/data/datasources/mock_feed_data_source.dart';
+import '../../features/arena/data/repositories/feed_repository_impl.dart';
+import '../../features/arena/domain/repositories/feed_repository.dart';
+
 import '../../features/friends/domain/repositories/friends_repository.dart';
 import '../../features/friends/domain/repositories/invites_repository.dart';
 import '../../features/friends/data/repositories/firebase_friends_repository.dart';
@@ -44,6 +49,7 @@ import '../services/ar/ar_capability_service.dart';
 import '../services/ar/ar_engine.dart';
 import '../services/ar/ar_flutter_engine.dart';
 import '../services/sfx/game_sfx.dart';
+import '../services/photo/photo_capture.dart';
 
 final GetIt sl = GetIt.instance;
 
@@ -63,6 +69,9 @@ class ServiceLocator {
       sl.registerLazySingleton<TelephoneRemoteDataSource>(
         () => MockTelephoneDataSource(),
       );
+      sl.registerLazySingleton<FeedRemoteDataSource>(
+        () => MockFeedDataSource(),
+      );
     } else {
       // Firebase implementations
       sl.registerLazySingleton<AuthRemoteDataSource>(
@@ -77,11 +86,20 @@ class ServiceLocator {
       sl.registerLazySingleton<TelephoneRemoteDataSource>(
         () => FirestoreTelephoneDataSource(),
       );
+      // TODO(step 1): swap for FirestoreFeedDataSource.
+      sl.registerLazySingleton<FeedRemoteDataSource>(
+        () => MockFeedDataSource(),
+      );
     }
 
     // Repositories
     sl.registerLazySingleton<GameRepository>(
       () => GameRepositoryImpl(sl()),
+    );
+
+    // The Arena: watch-and-grade feed of everyone's attempts.
+    sl.registerLazySingleton<FeedRepository>(
+      () => FeedRepositoryImpl(sl()),
     );
 
     // Friend graph + one-tap invites (Phase 1b). Mock builds keep an in-memory
@@ -155,6 +173,14 @@ class ServiceLocator {
       sl.registerLazySingleton<GameSfx>(() => const SilentGameSfx());
     } else {
       sl.registerLazySingleton<GameSfx>(() => AudioGameSfx());
+    }
+
+    // In-app photo submissions. Mock builds (widget tests, web previews) get a
+    // fake that never touches the camera; real builds use image_picker.
+    if (useMockServices) {
+      sl.registerLazySingleton<PhotoCapture>(() => FakePhotoCapture());
+    } else {
+      sl.registerLazySingleton<PhotoCapture>(() => ImagePickerPhotoCapture());
     }
 
     // Friend-invite loop: captures invite codes arriving via deep link or
