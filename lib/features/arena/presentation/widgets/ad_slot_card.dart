@@ -45,7 +45,7 @@ class AdSlotCard extends StatelessWidget {
               height: 140,
               width: double.infinity,
               child: CustomPaint(
-                painter: _DashedBorderPainter(color: AppTheme.inkSoft),
+                painter: const _DashedBorderPainter(color: AppTheme.inkSoft),
                 child: Center(
                   child: Text(
                     'Ad',
