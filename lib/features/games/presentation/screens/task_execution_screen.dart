@@ -8,6 +8,7 @@ import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../arena/domain/repositories/feed_repository.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/task_execution_bloc.dart';
@@ -36,6 +37,7 @@ class TaskExecutionScreen extends StatelessWidget {
     return BlocProvider(
       create: (context) => TaskExecutionBloc(
         gameRepository: sl<GameRepository>(),
+        feedRepository: sl<FeedRepository>(),
       )..add(LoadTask(
           gameId: gameId,
           taskIndex: taskIndex,
