@@ -41,18 +41,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  testWidgets('invites section sits at the top of home', (tester) async {
+  testWidgets(
+      'the invites section self-hides when there are no invites (no empty '
+      'shame box)', (tester) async {
     await pumpHome(tester);
 
-    expect(find.byType(HomeInvitesSection), findsOneWidget);
-    expect(find.text('Invites from friends'), findsOneWidget);
-
-    // The invites section must be above the "Jump back in" / games list — it's
-    // the first thing an invited player sees.
-    final invitesY =
-        tester.getTopLeft(find.byType(HomeInvitesSection)).dy;
-    final playY = tester.getTopLeft(find.text('Play').first).dy;
-    expect(invitesY, lessThan(playY));
+    // The widget is mounted (it still needs to watch the invites stream so
+    // it can appear the moment an invite arrives) but renders nothing (a
+    // zero-size SizedBox.shrink(), hence skipOffstage: false below) — no
+    // "Invites from friends" header, no "No invites yet" shame box.
+    expect(
+      find.byType(HomeInvitesSection, skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(find.text('Invites from friends'), findsNothing);
+    expect(find.textContaining('No invites yet'), findsNothing);
   });
 
   testWidgets('the one big Play button opens a sheet listing all six '
@@ -94,6 +97,29 @@ void main() {
     // cards under Zone 2.
     expect(find.text('Jump back in'), findsOneWidget);
     expect(find.text('Saturday Night Shenanigans'), findsOneWidget);
+  });
+
+  testWidgets(
+      'zone 1 shows the starter-pack hero when the user has no starter game '
+      'yet', (tester) async {
+    await pumpHome(tester);
+
+    // MockGameDataSource seeds ordinary games but no gameKind == 'starter'
+    // one, so the hero should invite the (pre-round-7) user to start theirs.
+    expect(
+      find.textContaining('first ten tasks are waiting'),
+      findsOneWidget,
+    );
+    expect(find.text('Start'), findsOneWidget);
+  });
+
+  testWidgets('the Arena button opens the Arena screen', (tester) async {
+    await pumpHome(tester);
+
+    await tester.tap(find.text('Arena — grade the crowd'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The Arena'), findsOneWidget);
   });
 
   testWidgets('the app bar no longer shows a Join button', (tester) async {
