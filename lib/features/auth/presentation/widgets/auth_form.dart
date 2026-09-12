@@ -124,7 +124,12 @@ class _AuthFormState extends State<AuthForm> {
                   prefixIcon: const Icon(Icons.lock),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                      // Conventional eye-icon semantics: show the "eye" (tap
+                      // to reveal) while the password is obscured, and the
+                      // "eye off" once it's actually visible.
+                      _isPasswordVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                     ),
                     onPressed: () {
                       setState(() {
