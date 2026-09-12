@@ -41,6 +41,13 @@ class AppConfig {
   static bool get enableAnalytics => isProduction;
   static bool get enableCrashReporting => !isDevelopment;
   static bool get enableDeepLinking => !isDevelopment;
+
+  /// Real ads SDK is deliberately not wired up (no ad account/payment setup
+  /// tonight — see docs/PRODUCT_DIRECTION.md §2.6/§7). The Arena's ad-slot
+  /// cadence logic stays real and unit-tested; only the visible placeholder
+  /// card is gated on this flag (and on [AdSlotCard.debugAlwaysShow] in
+  /// tests/screenshots).
+  static const bool adsEnabled = false;
   
   // Logging
   static bool get enableVerboseLogging => isDevelopment;
