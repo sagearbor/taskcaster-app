@@ -684,11 +684,23 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
       );
     }
 
+    final theme = Theme.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Keep the task itself readable while the clock runs — the player
+          // is mid-attempt and must be able to re-read what they're doing.
+          Text(
+            task.title,
+            key: const Key('starter-task-title'),
+            style: theme.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(task.description, style: theme.textTheme.bodyMedium),
+          const SizedBox(height: 16),
           Center(
             child: TaskCountdown(
               startedAt: state.userStatus!.startedAt!,

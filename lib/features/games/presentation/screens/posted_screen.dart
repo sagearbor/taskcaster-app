@@ -75,7 +75,11 @@ class _PostedScreenState extends State<PostedScreen> {
     return Scaffold(
       backgroundColor: AppTheme.violetDeep,
       body: Container(
+        // Fill the whole body so the gradient covers the screen instead of
+        // stopping at the content's height (flat scaffold colour showed
+        // beneath it on tall phones).
         width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(gradient: AppTheme.heroGradient),
         child: SafeArea(
           child: SingleChildScrollView(
