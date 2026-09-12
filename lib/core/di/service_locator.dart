@@ -31,6 +31,7 @@ import '../../features/trivia/data/datasources/trivia_remote_data_source.dart';
 import '../../features/trivia/data/datasources/mock_trivia_data_source.dart';
 
 import '../../features/arena/data/datasources/feed_remote_data_source.dart';
+import '../../features/arena/data/datasources/firestore_feed_data_source.dart';
 import '../../features/arena/data/datasources/mock_feed_data_source.dart';
 import '../../features/arena/data/repositories/feed_repository_impl.dart';
 import '../../features/arena/domain/repositories/feed_repository.dart';
@@ -86,9 +87,8 @@ class ServiceLocator {
       sl.registerLazySingleton<TelephoneRemoteDataSource>(
         () => FirestoreTelephoneDataSource(),
       );
-      // TODO(step 1): swap for FirestoreFeedDataSource.
       sl.registerLazySingleton<FeedRemoteDataSource>(
-        () => MockFeedDataSource(),
+        () => FirestoreFeedDataSource(),
       );
     }
 

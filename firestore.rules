@@ -98,6 +98,83 @@ service cloud.firestore {
                        resource.data.inviterUid == request.auth.uid;
     }
 
+    // ---- Arena feed ----
+    // Every submission becomes a post here, and posting is what unlocks other
+    // people's attempts. Read is open to any signed-in user (incl. anonymous
+    // guests — grading is explicitly a guest-friendly action); the reveal gate
+    // itself is a product rule applied client-side, not a privacy boundary.
+    match /feed_posts/{postId} {
+      // Only these keys may be touched by someone who doesn't own the post.
+      function crowdKeysOnly() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['gradeCount', 'gradeSum', 'graderIds', 'boosted',
+                           'tapCount']);
+      }
+
+      // A grade: exactly one more grade, worth 1..5 points.
+      function gradeBump() {
+        return request.resource.data.gradeCount == resource.data.gradeCount + 1 &&
+               request.resource.data.gradeSum >= resource.data.gradeSum + 1 &&
+               request.resource.data.gradeSum <= resource.data.gradeSum + 5 &&
+               request.resource.data.tapCount == resource.data.tapCount &&
+               request.resource.data.boosted == resource.data.boosted;
+      }
+
+      // Viewer "that's funny" taps — a sane burst, never a counter rewrite.
+      function tapBump() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['tapCount']) &&
+               request.resource.data.tapCount >= resource.data.tapCount + 1 &&
+               request.resource.data.tapCount <= resource.data.tapCount + 50;
+      }
+
+      // Grade-to-get-graded boost.
+      function boostOnly() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['boosted']);
+      }
+
+      allow read: if isSignedIn();
+
+      // You may post as yourself. The seeded "house" entries are the one
+      // exception: any signed-in user may write them, but only as the 'house'
+      // author and only as text (never with an inline photo).
+      allow create: if isSignedIn() && (
+        request.resource.data.userId == request.auth.uid ||
+        (request.resource.data.isHouse == true &&
+         request.resource.data.userId == 'house' &&
+         request.resource.data.photoData == null)
+      );
+
+      // The owner may rewrite their own post. Everyone else may only move the
+      // crowd counters, and only by a plausible amount.
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.userId ||
+        // Re-seeding a house entry (idempotent, same deterministic doc id).
+        (resource.data.userId == 'house' &&
+         request.resource.data.userId == 'house') ||
+        (crowdKeysOnly() && (gradeBump() || tapBump() || boostOnly()))
+      );
+
+      // Only the author can delete their post.
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.userId;
+
+      // One grade per user per post, written under the grader's own uid, never
+      // on your own post, and never edited or withdrawn afterwards.
+      match /grades/{graderUid} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+                         request.auth.uid == graderUid &&
+                         request.auth.uid !=
+                           get(/databases/$(database)/documents/feed_posts/$(postId))
+                             .data.userId &&
+                         request.resource.data.score is int &&
+                         request.resource.data.score >= 1 &&
+                         request.resource.data.score <= 5;
+        allow update, delete: if false;
+      }
+    }
+
     // ---- Community tasks ----
     match /community_tasks/{taskId} {
       allow read: if isSignedIn();
