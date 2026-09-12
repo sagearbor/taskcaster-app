@@ -85,6 +85,94 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
     }
   }
 
+  /// The shared GameDetailBloc, or null when this screen was opened without
+  /// one above it in the tree. Every in-app route to here forwards it via
+  /// `BlocProvider.value`, but reading it must never be what decides whether
+  /// the judge gets their scoreboard.
+  GameDetailBloc? _gameDetailBlocOrNull(BuildContext context) {
+    try {
+      return context.read<GameDetailBloc>();
+    } catch (_) {
+      // ProviderNotFoundException (not exported by flutter_bloc) — no bloc.
+      return null;
+    }
+  }
+
+  /// Finishing judging always ends on the animated reveal.
+  ///
+  /// The game snapshot comes from [JudgingCompleted.game] — re-read by
+  /// JudgingBloc right after the scores were written — precisely so this does
+  /// not depend on GameDetailBloc being in [GameDetailLoaded] at this exact
+  /// instant. That bloc mirrors a Firestore stream that re-emits on its own
+  /// schedule, so consulting it here used to silently pop twice (dumping the
+  /// judge back on the pre-judging list, never showing the reveal) whenever
+  /// it happened to be mid-reload, and to reveal all-zero deltas whenever it
+  /// was still holding the pre-judging game.
+  void _revealScoreboard(BuildContext context, JudgingCompleted state) {
+    final gameDetailBloc = _gameDetailBlocOrNull(context);
+    final gameDetailState = gameDetailBloc?.state;
+    final fallbackGame =
+        gameDetailState is GameDetailLoaded ? gameDetailState.game : null;
+
+    // Prefer the post-judging snapshot; fall back to whatever the shared bloc
+    // last loaded (possibly pre-judging — handled per player below).
+    final game = state.game ?? fallbackGame;
+
+    if (gameDetailBloc == null ||
+        game == null ||
+        state.taskIndex < 0 ||
+        state.taskIndex >= game.tasks.length) {
+      // No game data to reveal at all. The scores ARE saved, so say so
+      // instead of vanishing, and step back exactly one screen.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Scores saved — but the scoreboard couldn't be loaded right now.",
+          ),
+        ),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final task = game.tasks[state.taskIndex];
+
+    // Task scores come from the per-player task statuses, which
+    // judgeSubmission always populates with the awarded score. (The
+    // submissions list can be empty when players submit through the
+    // task-execution flow, so reading from it risked a crash and zeroed-out
+    // scoreboards.)
+    final Map<String, int> taskScores = {};
+    final Map<String, int> previousTotals = {};
+
+    for (final player in game.players) {
+      final recordedScore = task.getPlayerStatus(player.userId)?.score;
+      // If this snapshot predates the write (only possible on the fallback
+      // path), the score we just awarded is still the truth for the reveal.
+      final taskScore = recordedScore ?? state.awardedScores[player.userId] ?? 0;
+      taskScores[player.userId] = taskScore;
+      // player.totalScore includes this task's score only in a snapshot that
+      // also recorded it; otherwise the total is still the pre-task one.
+      previousTotals[player.userId] =
+          recordedScore != null ? player.totalScore - taskScore : player.totalScore;
+    }
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: gameDetailBloc,
+          child: TaskScoreboardScreen(
+            game: game,
+            completedTask: task,
+            taskIndex: state.taskIndex,
+            taskScores: taskScores,
+            previousTotals: previousTotals,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,49 +191,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
           }
 
           if (state is JudgingCompleted) {
-            // Get the game from GameDetailBloc to navigate to scoreboard
-            final gameDetailState = context.read<GameDetailBloc>().state;
-            if (gameDetailState is GameDetailLoaded) {
-              final game = gameDetailState.game;
-              final task = game.tasks[state.taskIndex];
-
-              // Calculate task scores from the per-player task statuses, which
-              // judgeSubmission always populates with the awarded score. (The
-              // submissions list can be empty when players submit through the
-              // task-execution flow, so reading from it risked a crash and
-              // zeroed-out scoreboards.)
-              final Map<String, int> taskScores = {};
-              final Map<String, int> previousTotals = {};
-
-              for (final player in game.players) {
-                final status = task.getPlayerStatus(player.userId);
-                final taskScore = status?.score ?? 0;
-                taskScores[player.userId] = taskScore;
-                // player.totalScore already includes this task's score, so
-                // subtract it to recover the pre-task total for the reveal.
-                previousTotals[player.userId] = player.totalScore - taskScore;
-              }
-
-              // Navigate to task scoreboard
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) => BlocProvider.value(
-                    value: context.read<GameDetailBloc>(),
-                    child: TaskScoreboardScreen(
-                      game: game,
-                      completedTask: task,
-                      taskIndex: state.taskIndex,
-                      taskScores: taskScores,
-                      previousTotals: previousTotals,
-                    ),
-                  ),
-                ),
-              );
-            } else {
-              // Fallback to original behavior
-              Navigator.of(context).pop();
-              Navigator.of(context).pop();
-            }
+            _revealScoreboard(context, state);
           }
         },
         builder: (context, state) {
