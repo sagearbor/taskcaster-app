@@ -14,10 +14,14 @@ import 'core/di/service_locator.dart';
 import 'core/services/invite/pending_invite_service.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
-import 'features/auth/presentation/screens/login_screen.dart';
+import 'features/games/domain/repositories/game_repository.dart';
+import 'features/games/presentation/bloc/games_bloc.dart';
+import 'features/games/presentation/screens/task_execution_screen.dart';
 import 'features/games/presentation/widgets/pending_invite_gate.dart';
 import 'features/home/presentation/screens/home_screen.dart';
+import 'features/onboarding/presentation/screens/cold_open_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'features/tasks/data/datasources/starter_pack_data.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,13 +47,20 @@ void main() async {
   // platform errors internally).
   unawaited(sl<PendingInviteService>().init());
 
+  // The cold-open screen (see ColdOpenScreen / AuthScreen below) replaces the
+  // old OnboardingGate -> OnboardingScreen -> LoginScreen chain for new
+  // players, so there is no separate intro to show. Mark it seen so nothing
+  // in the app ever falls back to showing OnboardingScreen. Fire-and-forget:
+  // best-effort, like every other use of this flag.
+  unawaited(OnboardingScreen.markSeen());
+
   // Load the persisted theme preference before first frame.
   await ThemeController.instance.load();
 
   // Push-notification setup (and its OS permission prompt) is deliberately
   // NOT done here: it runs once the player reaches the home screen, via
   // NotificationPrompt.ensureRequestedOnce(), so the first thing a new player
-  // sees is onboarding rather than a permission dialog on a blank window.
+  // sees is the first task rather than a permission dialog on a blank window.
 
   runApp(const TaskCasterApp());
 }
@@ -71,19 +82,41 @@ class TaskCasterApp extends StatelessWidget {
           darkTheme: AppTheme.darkTheme,
           themeMode: ThemeController.instance.themeMode,
           debugShowCheckedModeBanner: false,
-          home: const OnboardingGate(child: AuthScreen()),
+          home: const AuthScreen(),
         ),
       ),
     );
   }
 }
 
-class AuthScreen extends StatelessWidget {
+/// Tap 1: a NOT-authenticated user sees the cold open (the first starter
+/// task itself, see ColdOpenScreen) instead of onboarding + a login gate.
+/// Tapping Start signs them in as a guest, and the moment auth completes this
+/// widget opens their Starter Pack game and pushes the first task on top of
+/// Home — see docs/PRODUCT_DIRECTION.md §4. A returning authenticated user
+/// goes straight to Home, unchanged.
+class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
   @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  // Set the instant Start is tapped on the cold open; consumed the moment
+  // AuthAuthenticated arrives so a returning user's ordinary sign-in never
+  // triggers the starter-pack launch.
+  bool _launchStarterPackOnAuth = false;
+
+  @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AuthBloc, AuthState>(
+    return BlocConsumer<AuthBloc, AuthState>(
+      listener: (context, state) {
+        if (state is AuthAuthenticated && _launchStarterPackOnAuth) {
+          _launchStarterPackOnAuth = false;
+          _openStarterPack();
+        }
+      },
       builder: (context, state) {
         if (state is AuthLoading) {
           return const Scaffold(
@@ -100,9 +133,48 @@ class AuthScreen extends StatelessWidget {
           return const PendingInviteGate(child: HomeScreen());
         }
 
-        // Default to login screen
-        return const LoginScreen();
+        final firstTask = StarterPackData.tasks().first;
+        return ColdOpenScreen(
+          taskTitle: firstTask.title,
+          taskDescription: firstTask.description,
+          timerSeconds: firstTask.durationSeconds ?? 90,
+          onStart: () {
+            _launchStarterPackOnAuth = true;
+            context.read<AuthBloc>().add(AnonymousSignInRequested());
+          },
+        );
       },
     );
+  }
+
+  /// Opens (or resumes) the user's Starter Pack game and pushes the next
+  /// task on top of Home, with the timer already running (`autoStart: true`)
+  /// — "Tap 1" of docs/PRODUCT_DIRECTION.md §4. Uses its own short-lived
+  /// GamesBloc rather than reaching into Home's, since Home may not have
+  /// finished building this GamesBloc yet.
+  Future<void> _openStarterPack() async {
+    final bloc = GamesBloc(
+      gameRepository: sl<GameRepository>(),
+      authRepository: sl<AuthRepository>(),
+    )..add(const StartStarterPack());
+
+    await for (final state in bloc.stream) {
+      if (state is StarterPackReady) {
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => TaskExecutionScreen(
+                gameId: state.gameId,
+                taskIndex: state.taskIndex,
+                autoStart: true,
+              ),
+            ),
+          );
+        }
+        break;
+      }
+      if (state is GamesError) break;
+    }
+    await bloc.close();
   }
 }
