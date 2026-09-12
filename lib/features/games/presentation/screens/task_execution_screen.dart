@@ -14,7 +14,8 @@ import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../arena/domain/models/feed_post.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
-import '../../../arena/presentation/screens/arena_screen_placeholder.dart';
+import '../../../arena/presentation/screens/arena_screen.dart';
+import '../../../arena/presentation/widgets/watch_together_button.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/task_execution_bloc.dart';
@@ -893,6 +894,14 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
               child: const Text('See what everyone else did'),
             ),
           ),
+          const SizedBox(height: 12),
+          // Same-room case: play every entry for this task back to back from
+          // one phone (see docs/PRODUCT_DIRECTION.md §2.4).
+          WatchTogetherButton(
+            gameId: widget.gameId,
+            taskId: state.task.id,
+            taskTitle: state.task.title,
+          ),
           if (hasNextTask) ...[
             const SizedBox(height: 12),
             SizedBox(
@@ -913,10 +922,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   }
 
   void _openArenaFromTask(BuildContext context) {
-    // TODO(round7-merge): swap for the real ArenaScreen() once feat/arena-ui
-    // lands on main — see arena_screen_placeholder.dart.
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ArenaScreenPlaceholder()),
+      MaterialPageRoute(builder: (_) => const ArenaScreen()),
     );
   }
 

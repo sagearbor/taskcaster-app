@@ -7,17 +7,20 @@ import '../../../../core/services/notification_prompt.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
-import '../../../arena/presentation/screens/arena_screen_placeholder.dart';
+import '../../../arena/presentation/screens/arena_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../games/domain/repositories/game_repository.dart';
 import '../../../games/presentation/bloc/games_bloc.dart';
 import '../../../games/presentation/screens/game_detail_screen.dart';
+import '../../../games/presentation/screens/task_execution_screen.dart';
 import '../../../telephone/presentation/widgets/nearby_auto_cast_banner.dart';
 import '../widgets/arena_entry_button.dart';
 import '../widgets/game_card.dart';
 import '../widgets/home_app_bar.dart';
 import '../../../friends/presentation/widgets/invite_inbox_card.dart';
 import '../widgets/home_invites_section.dart';
+import '../widgets/next_task_hero_card.dart';
 import '../widgets/play_sheet.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -61,6 +64,24 @@ class HomeView extends StatelessWidget {
               )
               .then((_) => gamesBloc.add(LoadGames()));
         }
+
+        if (state is StarterPackReady) {
+          // A returning user with no starter game yet tapped Start on the
+          // "Your first ten tasks are waiting" hero — open the first task
+          // with its timer already running, same as the cold open.
+          final gamesBloc = context.read<GamesBloc>();
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (context) => TaskExecutionScreen(
+                    gameId: state.gameId,
+                    taskIndex: state.taskIndex,
+                    autoStart: true,
+                  ),
+                ),
+              )
+              .then((_) => gamesBloc.add(LoadGames()));
+        }
       },
       child: Scaffold(
         appBar: const HomeAppBar(),
@@ -87,11 +108,9 @@ class HomeView extends StatelessWidget {
                       // box (see docs/PRODUCT_DIRECTION.md §1 #3).
                       const InviteInboxCard(),
                       const HomeInvitesSection(),
-                      // TODO(round7-merge): Zone 1 — "Your next task" hero
-                      // for the starter-pack game (NextTaskHeroCard). Needs
-                      // Game.isStarter / GamesBloc.StartStarterPack from
-                      // feat/arena-mechanics; wire once merged.
-                      const SizedBox(height: 8),
+                      // Zone 1: "Your next task" — the starter-pack hero.
+                      _buildNextTaskHero(context, state),
+                      const SizedBox(height: 16),
                       // Zone 2: the Arena — grade the crowd.
                       ArenaEntryButton(onTap: () => _openArena(context)),
                       const SizedBox(height: 24),
@@ -107,6 +126,70 @@ class HomeView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// Zone 1 — "Your next task": the starter-pack hero (see
+  /// docs/PRODUCT_DIRECTION.md §4 step 5). Three shapes, all driven by plain
+  /// values through [NextTaskHeroCard]:
+  ///  - no starter game yet (an account from before this round) -> offer to
+  ///    start one;
+  ///  - a starter game with a task left -> that task, timer and Start;
+  ///  - all ten done -> offer to play with friends.
+  Widget _buildNextTaskHero(BuildContext context, GamesState state) {
+    if (state is! GamesLoaded) return const SizedBox.shrink();
+
+    Game? starterGame;
+    for (final g in state.games) {
+      if (g.isStarter) {
+        starterGame = g;
+        break;
+      }
+    }
+
+    if (starterGame == null) {
+      return NextTaskHeroCard(
+        mode: NextTaskHeroMode.noStarterGame,
+        onPrimary: () =>
+            context.read<GamesBloc>().add(const StartStarterPack()),
+      );
+    }
+
+    final authState = context.read<AuthBloc>().state;
+    final userId = authState is AuthAuthenticated ? authState.user.id : '';
+
+    var nextIndex = -1;
+    for (var i = 0; i < starterGame.tasks.length; i++) {
+      if (!starterGame.tasks[i].hasUserSubmitted(userId)) {
+        nextIndex = i;
+        break;
+      }
+    }
+
+    if (nextIndex == -1) {
+      return NextTaskHeroCard(
+        mode: NextTaskHeroMode.allDone,
+        onPrimary: () => showPlaySheet(context),
+      );
+    }
+
+    final gameId = starterGame.id;
+    final task = starterGame.tasks[nextIndex];
+    return NextTaskHeroCard(
+      mode: NextTaskHeroMode.hasTask,
+      taskTitle: task.title,
+      timerSeconds: task.durationSeconds,
+      onPrimary: () => Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => TaskExecutionScreen(
+                gameId: gameId,
+                taskIndex: nextIndex,
+                autoStart: true,
+              ),
+            ),
+          )
+          .then((_) => context.read<GamesBloc>().add(LoadGames())),
     );
   }
 
@@ -202,10 +285,8 @@ class HomeView extends StatelessWidget {
   }
 
   void _openArena(BuildContext context) {
-    // TODO(round7-merge): swap for the real ArenaScreen() once feat/arena-ui
-    // lands on main — see arena_screen_placeholder.dart.
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ArenaScreenPlaceholder()),
+      MaterialPageRoute(builder: (_) => const ArenaScreen()),
     );
   }
 

@@ -5,7 +5,7 @@ import '../../../../core/models/game.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../arena/domain/models/feed_post.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
-import '../../../arena/presentation/screens/arena_screen_placeholder.dart';
+import '../../../arena/presentation/screens/arena_screen.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../widgets/late_badge.dart';
 import '../widgets/stamp_sticker.dart';
@@ -51,10 +51,8 @@ class _PostedScreenState extends State<PostedScreen> {
   }
 
   void _openArena() {
-    // TODO(round7-merge): swap for the real ArenaScreen() once feat/arena-ui
-    // lands on main — see arena_screen_placeholder.dart.
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ArenaScreenPlaceholder()),
+      MaterialPageRoute(builder: (_) => const ArenaScreen()),
     );
   }
 

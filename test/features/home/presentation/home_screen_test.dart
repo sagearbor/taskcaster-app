@@ -99,13 +99,27 @@ void main() {
     expect(find.text('Saturday Night Shenanigans'), findsOneWidget);
   });
 
+  testWidgets(
+      'zone 1 shows the starter-pack hero when the user has no starter game '
+      'yet', (tester) async {
+    await pumpHome(tester);
+
+    // MockGameDataSource seeds ordinary games but no gameKind == 'starter'
+    // one, so the hero should invite the (pre-round-7) user to start theirs.
+    expect(
+      find.textContaining('first ten tasks are waiting'),
+      findsOneWidget,
+    );
+    expect(find.text('Start'), findsOneWidget);
+  });
+
   testWidgets('the Arena button opens the Arena screen', (tester) async {
     await pumpHome(tester);
 
     await tester.tap(find.text('Arena — grade the crowd'));
     await tester.pumpAndSettle();
 
-    expect(find.text('The Arena is on its way'), findsOneWidget);
+    expect(find.text('The Arena'), findsOneWidget);
   });
 
   testWidgets('the app bar no longer shows a Join button', (tester) async {
