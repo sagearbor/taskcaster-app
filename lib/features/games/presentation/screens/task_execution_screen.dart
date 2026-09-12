@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -5,16 +7,28 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/models/player_task_status.dart';
+import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/services/photo/photo_capture.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../arena/domain/models/feed_post.dart';
+import '../../../arena/domain/repositories/feed_repository.dart';
+import '../../../arena/presentation/screens/arena_screen_placeholder.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/task_execution_bloc.dart';
 import '../bloc/task_execution_event.dart';
 import '../bloc/task_execution_state.dart';
+import '../widgets/crowd_score_badge.dart';
+import '../widgets/late_badge.dart';
+import '../widgets/stamp_sticker.dart';
 import '../widgets/submission_progress_widget.dart';
+import '../widgets/task_countdown.dart';
+import '../widgets/task_reveal_card.dart';
 import '../widgets/task_timer_widget.dart';
+import '../widgets/twist_banner.dart';
+import 'posted_screen.dart';
 import 'video_viewing_screen.dart';
 import '../../../../core/utils/link_utils.dart';
 
@@ -22,10 +36,17 @@ class TaskExecutionScreen extends StatelessWidget {
   final String gameId;
   final int taskIndex;
 
+  /// Dispatch `StartTask` automatically once the task loads, when the
+  /// player's status is `not_started`. Used by the cold open, the Home
+  /// "next task" hero, and the Posted screen's "Next task" so a returning
+  /// player never has to tap Start twice.
+  final bool autoStart;
+
   const TaskExecutionScreen({
     super.key,
     required this.gameId,
     required this.taskIndex,
+    this.autoStart = false,
   });
 
   @override
@@ -36,6 +57,7 @@ class TaskExecutionScreen extends StatelessWidget {
     return BlocProvider(
       create: (context) => TaskExecutionBloc(
         gameRepository: sl<GameRepository>(),
+        feedRepository: sl<FeedRepository>(),
       )..add(LoadTask(
           gameId: gameId,
           taskIndex: taskIndex,
@@ -45,6 +67,7 @@ class TaskExecutionScreen extends StatelessWidget {
         gameId: gameId,
         taskIndex: taskIndex,
         userId: userId,
+        autoStart: autoStart,
       ),
     );
   }
@@ -54,12 +77,14 @@ class TaskExecutionView extends StatefulWidget {
   final String gameId;
   final int taskIndex;
   final String userId;
+  final bool autoStart;
 
   const TaskExecutionView({
     super.key,
     required this.gameId,
     required this.taskIndex,
     required this.userId,
+    this.autoStart = false,
   });
 
   @override
@@ -68,15 +93,26 @@ class TaskExecutionView extends StatefulWidget {
 
 class _TaskExecutionViewState extends State<TaskExecutionView> {
   final _videoUrlController = TextEditingController();
+  final _textEntryController = TextEditingController();
   bool _isUrlValid = false;
   String? _urlError;
   // When true, show the submission form even though the user already submitted,
   // so they can change/replace their video.
   bool _editing = false;
 
+  // --- Starter-pack (photo/text submissionType) flow state ---
+  // Guards against dispatching StartTask more than once per screen instance.
+  bool _autoStartDispatched = false;
+  // The most recently seen Task, tracked from TaskExecutionLoaded so the
+  // TaskExecutionSubmitted listener (which only carries ids) can tell whether
+  // this was a photo/text submission that should land on PostedScreen.
+  Task? _lastLoadedTask;
+  Uint8List? _capturedPhotoBytes;
+
   @override
   void dispose() {
     _videoUrlController.dispose();
+    _textEntryController.dispose();
     super.dispose();
   }
 
@@ -160,15 +196,38 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
           }
 
           if (state is TaskExecutionSubmitted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Submission successful! ✅')),
-            );
-            // Return to the game. (The old code pushed a named route
-            // '/video-viewing' that was never registered, which left the
-            // screen stuck blank after a successful submit.)
-            Future.delayed(const Duration(milliseconds: 600), () {
-              if (context.mounted) Navigator.of(context).pop();
-            });
+            final task = _lastLoadedTask;
+            final isStarterMedium = task != null &&
+                (task.submissionType == SubmissionType.photo ||
+                    task.submissionType == SubmissionType.text);
+
+            if (isStarterMedium) {
+              // Snap-and-post / write-and-post: replace this screen with the
+              // "Posted." reveal (see docs/PRODUCT_DIRECTION.md §4 step 4) so
+              // the back button returns to Home, not to the task screen.
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => PostedScreen(
+                    gameId: state.gameId,
+                    taskIndex: state.taskIndex,
+                    taskTitle: task.title,
+                    feedPostId: state.feedPostId,
+                    isLate: state.isLate,
+                  ),
+                ),
+              );
+            } else {
+              // Legacy video-link path: unchanged.
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Submission successful! ✅')),
+              );
+              // Return to the game. (The old code pushed a named route
+              // '/video-viewing' that was never registered, which left the
+              // screen stuck blank after a successful submit.)
+              Future.delayed(const Duration(milliseconds: 600), () {
+                if (context.mounted) Navigator.of(context).pop();
+              });
+            }
           }
         },
         builder: (context, state) {
@@ -191,6 +250,37 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
           }
 
           if (state is TaskExecutionLoaded) {
+            _lastLoadedTask = state.task;
+
+            final isStarterMedium =
+                state.task.submissionType == SubmissionType.photo ||
+                    state.task.submissionType == SubmissionType.text;
+
+            // Auto-dispatch Start for the cold open / Home "next task" /
+            // Posted "Next task" flows so the player never has to tap Start
+            // twice — only when they genuinely haven't started yet.
+            if (widget.autoStart &&
+                !_autoStartDispatched &&
+                !state.hasUserSubmitted &&
+                (state.userStatus == null ||
+                    state.userStatus!.state == TaskPlayerState.not_started)) {
+              _autoStartDispatched = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                context.read<TaskExecutionBloc>().add(StartTask(
+                      gameId: widget.gameId,
+                      taskIndex: widget.taskIndex,
+                      userId: widget.userId,
+                    ));
+              });
+            }
+
+            if (isStarterMedium) {
+              return state.hasUserSubmitted
+                  ? _buildStarterAlreadySubmittedView(context, state)
+                  : _buildStarterTaskFlow(context, state);
+            }
+
             // Check if user already submitted (unless they tapped "Change
             // my video" to edit, in which case fall through to the form).
             if (state.hasUserSubmitted && !_editing) {
@@ -546,6 +636,302 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     );
   }
 
+  // ===========================================================================
+  // Starter-pack (submissionType photo/text) flow — snap it or write it, then
+  // post. No caption box, no stamp picker, no trimming: see
+  // docs/PRODUCT_DIRECTION.md §2.2 and tmp/round7/CONTRACTS.md's AutoEdit.
+  // ===========================================================================
+
+  Widget _buildStarterTaskFlow(BuildContext context, TaskExecutionLoaded state) {
+    final task = state.task;
+    final started = state.userStatus != null &&
+        state.userStatus!.state == TaskPlayerState.in_progress &&
+        state.userStatus!.startedAt != null;
+
+    if (!started) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TaskRevealCard(
+              title: task.title,
+              description: task.description,
+              timerSeconds: task.durationSeconds,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 60,
+              child: FilledButton(
+                onPressed: () => _startStarterTask(context),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.coral,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(
+                  'Start — ${task.durationSeconds ?? 0} s',
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: TaskCountdown(
+              startedAt: state.userStatus!.startedAt!,
+              durationSeconds: task.durationSeconds ?? 90,
+            ),
+          ),
+          const SizedBox(height: 20),
+          TwistBanner(twist: task.twist),
+          const SizedBox(height: 28),
+          if (task.submissionType == SubmissionType.photo)
+            _buildSnapSection(context)
+          else if (task.submissionType == SubmissionType.text)
+            _buildWriteSection(context),
+        ],
+      ),
+    );
+  }
+
+  void _startStarterTask(BuildContext context) {
+    context.read<TaskExecutionBloc>().add(StartTask(
+          gameId: widget.gameId,
+          taskIndex: widget.taskIndex,
+          userId: widget.userId,
+        ));
+  }
+
+  String _currentDisplayName(BuildContext context) {
+    final authState = context.read<AuthBloc>().state;
+    return authState is AuthAuthenticated ? authState.user.displayName : 'Player';
+  }
+
+  Widget _buildSnapSection(BuildContext context) {
+    if (_capturedPhotoBytes != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.memory(
+              _capturedPhotoBytes!,
+              height: 240,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _capturedPhotoBytes = null),
+                  child: const Text('Retake'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => _postSubmission(context, photo: true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.coral,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Post it'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return SizedBox(
+      height: 64,
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: () => _snapIt(context),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppTheme.coral,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        child: const Text(
+          '📷 Snap it',
+          style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _snapIt(BuildContext context) async {
+    final bytes = await sl<PhotoCapture>().pick(fromCamera: true);
+    if (!mounted || bytes == null) return;
+    setState(() => _capturedPhotoBytes = bytes);
+  }
+
+  Widget _buildWriteSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '✍️ Write it',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _textEntryController,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Type your entry…',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 56,
+          child: FilledButton(
+            onPressed: () => _postSubmission(context, photo: false),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.coral,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text(
+              'Post it',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _postSubmission(BuildContext context, {required bool photo}) {
+    if (!photo) {
+      final text = _textEntryController.text.trim();
+      if (text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Write something first')),
+        );
+        return;
+      }
+      context.read<TaskExecutionBloc>().add(SubmitTask(
+            gameId: widget.gameId,
+            taskIndex: widget.taskIndex,
+            userId: widget.userId,
+            text: text,
+            shareToArena: true,
+            displayName: _currentDisplayName(context),
+          ));
+      return;
+    }
+
+    context.read<TaskExecutionBloc>().add(SubmitTask(
+          gameId: widget.gameId,
+          taskIndex: widget.taskIndex,
+          userId: widget.userId,
+          photoBytes: _capturedPhotoBytes,
+          shareToArena: true,
+          displayName: _currentDisplayName(context),
+        ));
+  }
+
+  /// A player revisiting a photo/text task they already posted: their entry,
+  /// the auto stamp/caption, a LATE badge if it applies, the crowd score (or
+  /// "waiting"), and the way onward. See CONTRACTS.md's Submission fields —
+  /// the stamp/caption/feedPostId here were all computed by AutoEdit, never
+  /// typed by the player.
+  Widget _buildStarterAlreadySubmittedView(
+      BuildContext context, TaskExecutionLoaded state) {
+    final submission = state.task.getSubmissionByUser(widget.userId);
+    final hasNextTask = state.taskNumber < state.totalTasks;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Your entry',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 20),
+          if (submission?.feedPostId != null)
+            StreamBuilder<FeedPost?>(
+              stream: sl<FeedRepository>().watchPost(submission!.feedPostId!),
+              builder: (context, snapshot) {
+                final post = snapshot.data;
+                return _SubmittedEntryCard(post: post, submission: submission);
+              },
+            )
+          else if (submission != null)
+            _SubmittedEntryCard(post: null, submission: submission),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 52,
+            child: OutlinedButton(
+              onPressed: () => _openArenaFromTask(context),
+              child: const Text('See what everyone else did'),
+            ),
+          ),
+          if (hasNextTask) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 52,
+              child: FilledButton(
+                onPressed: () => _goToNextTask(context),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.coral,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Next task'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _openArenaFromTask(BuildContext context) {
+    // TODO(round7-merge): swap for the real ArenaScreen() once feat/arena-ui
+    // lands on main — see arena_screen_placeholder.dart.
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ArenaScreenPlaceholder()),
+    );
+  }
+
+  void _goToNextTask(BuildContext context) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => TaskExecutionScreen(
+          gameId: widget.gameId,
+          taskIndex: widget.taskIndex + 1,
+          autoStart: true,
+        ),
+      ),
+    );
+  }
+
   Widget _buildHowItWorksChecklist(BuildContext context) {
     const steps = [
       (Icons.videocam_outlined, 'Film it with your camera app'),
@@ -681,6 +1067,78 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     }
 
     return 'Less than a minute';
+  }
+}
+
+/// A player's own already-posted photo/text entry: the photo or text itself,
+/// the auto stamp as a rotated sticker, the auto caption, a LATE badge if it
+/// applies, and the crowd score (or "waiting for the crowd"). [post] is the
+/// Arena FeedPost when this entry was shared (preferred, since it is what the
+/// crowd actually sees); falls back to the raw [submission] fields when there
+/// is no post yet (e.g. the stream hasn't delivered its first snapshot).
+class _SubmittedEntryCard extends StatelessWidget {
+  final FeedPost? post;
+  final Submission submission;
+
+  const _SubmittedEntryCard({required this.post, required this.submission});
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaType = post?.mediaType ?? submission.mediaType;
+    final text = post?.text ?? submission.text;
+    final photoData = post?.photoData;
+    final stamp = post?.stamp ?? submission.stamp;
+    final caption = post?.caption ?? submission.caption;
+    final isLate = post?.isLate ?? submission.isLate;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (mediaType == SubmissionMediaType.photo && photoData != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.memory(
+              base64Decode(photoData),
+              height: 260,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+          )
+        else if (text != null && text.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppTheme.violetSoft,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        const SizedBox(height: 16),
+        if (stamp != null) Center(child: StampSticker(stamp: stamp)),
+        if (caption != null && caption.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            caption,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontStyle: FontStyle.italic,
+                  color: AppTheme.inkSoft,
+                ),
+          ),
+        ],
+        if (isLate) ...[
+          const SizedBox(height: 12),
+          const Center(child: LateBadge()),
+        ],
+        const SizedBox(height: 16),
+        Center(child: CrowdScoreBadge(crowdPoints: post?.crowdPoints)),
+      ],
+    );
   }
 }
 

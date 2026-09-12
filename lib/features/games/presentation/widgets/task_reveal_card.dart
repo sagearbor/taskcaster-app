@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import 'timer_pill.dart';
+import 'twist_banner.dart';
 
 /// The envelope-opening moment: task title, description and timer pill. The
 /// [twist] line only ever appears once the player has hit Start (pass null
@@ -65,29 +66,7 @@ class TaskRevealCard extends StatelessWidget {
             ],
             if (twist != null && twist!.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.coral.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.bolt, color: AppTheme.coral, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        twist!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppTheme.coral,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              TwistBanner(twist: twist),
             ],
           ],
         ),
