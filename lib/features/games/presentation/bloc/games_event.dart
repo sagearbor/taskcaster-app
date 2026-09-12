@@ -48,6 +48,14 @@ class DeleteGame extends GamesEvent {
   List<Object> get props => [gameId];
 }
 
+/// Open (or create) the current user's Starter Pack game — "Your First Ten".
+///
+/// Idempotent: a user only ever has one starter game. Emits
+/// [StarterPackReady] with the game id and the task they should be on.
+class StartStarterPack extends GamesEvent {
+  const StartStarterPack();
+}
+
 class QuickPlayGame extends GamesEvent {
   /// When set, seed the solo game with a single AR mini-game task (e.g.
   /// [ArGameIds.balloonPop] or [ArGameIds.treasureHunt]) instead of 5 random

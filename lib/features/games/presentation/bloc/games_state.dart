@@ -37,3 +37,17 @@ class QuickPlaySuccess extends GamesState {
   @override
   List<Object> get props => [gameId];
 }
+
+/// The Starter Pack game is ready to play.
+///
+/// [taskIndex] is the first task the user has NOT submitted, or the last task
+/// when they have finished all ten — i.e. exactly the task to open.
+class StarterPackReady extends GamesState {
+  final String gameId;
+  final int taskIndex;
+
+  const StarterPackReady({required this.gameId, required this.taskIndex});
+
+  @override
+  List<Object> get props => [gameId, taskIndex];
+}

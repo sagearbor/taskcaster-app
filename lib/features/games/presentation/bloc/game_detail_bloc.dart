@@ -5,8 +5,10 @@ import 'package:equatable/equatable.dart';
 import '../../../../core/models/game.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/utils/friendly_errors.dart';
+import '../../../arena/domain/crowd_score_applier.dart';
 import '../../../friends/domain/repositories/friends_repository.dart';
 import '../../domain/repositories/game_repository.dart';
+import '../../../../core/models/player_task_status.dart';
 
 part 'game_detail_event.dart';
 part 'game_detail_state.dart';
@@ -19,7 +21,20 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
   /// existing bloc tests can construct without it.
   final FriendsRepository? friendsRepository;
 
+  /// Carries settled crowd grades into the scoreboard when the owner of a
+  /// crowd-judged game opens it. Nullable so existing bloc tests construct
+  /// unchanged; [currentUserId] gates it to the game's own owner, since only
+  /// they are allowed to write its scores.
+  final CrowdScoreApplier? crowdScoreApplier;
+  final String? currentUserId;
+
   String? _currentGameId;
+
+  /// Which tasks were last seen waiting on a crowd score. applyPending only
+  /// re-runs when that set changes, so the write it performs (which re-emits
+  /// the game stream) can't drive a loop.
+  String? _lastCrowdSignature;
+  bool _crowdApplyInFlight = false;
 
   /// The last co-player roster we synced to the friend graph (sorted uids
   /// joined), so identical snapshots don't trigger redundant writes.
@@ -30,6 +45,8 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
   GameDetailBloc({
     required this.gameRepository,
     this.friendsRepository,
+    this.crowdScoreApplier,
+    this.currentUserId,
   }) : super(GameDetailInitial()) {
     on<LoadGameDetail>(_onLoadGameDetail);
     on<StartGame>(_onStartGame);
@@ -44,6 +61,7 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
   Future<void> _onLoadGameDetail(
       LoadGameDetail event, Emitter<GameDetailState> emit) async {
     _currentGameId = event.gameId;
+    _lastCrowdSignature = null;
     emit(GameDetailLoading());
 
     // emit.forEach keeps the emitter valid for the whole life of the stream,
@@ -54,6 +72,7 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
       onData: (game) {
         if (game != null) {
           _maybeSyncFriends(game);
+          _maybeApplyCrowdScores(game);
           return GameDetailLoaded(game: game);
         }
         return const GameDetailError(message: 'Game not found');
@@ -90,6 +109,53 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     repo.addFriendsFromGame(game).catchError((Object e) {
       debugPrint('GameDetailBloc friend sync failed: $e');
     });
+  }
+
+  /// Pull in any crowd scores that have settled since last time.
+  ///
+  /// Only for the owner of a crowd-judged game, only when at least one task is
+  /// actually waiting (submitted, not judged, with an Arena post), and only
+  /// once per distinct set of waiting tasks. Best-effort throughout: a failure
+  /// here must never stop the game screen from rendering.
+  void _maybeApplyCrowdScores(Game game) {
+    final applier = crowdScoreApplier;
+    final viewer = currentUserId;
+    if (applier == null || viewer == null) return;
+    if (!game.settings.crowdJudged || game.creatorId != viewer) return;
+    if (_crowdApplyInFlight) return;
+
+    final pending = <String>[];
+    for (var i = 0; i < game.tasks.length; i++) {
+      final task = game.tasks[i];
+      final status = task.getPlayerStatus(game.creatorId);
+      if (status == null || status.state != TaskPlayerState.submitted) continue;
+      final hasPost = task.submissions
+          .any((s) => s.userId == game.creatorId && s.feedPostId != null);
+      if (hasPost) pending.add('$i');
+    }
+    if (pending.isEmpty) {
+      _lastCrowdSignature = '';
+      return;
+    }
+
+    final signature = pending.join(',');
+    if (signature == _lastCrowdSignature) return;
+    _lastCrowdSignature = signature;
+    _crowdApplyInFlight = true;
+
+    try {
+      // ignore: discarded_futures
+      applier.applyPending(game).catchError((Object e) {
+        debugPrint('GameDetailBloc crowd score apply failed: $e');
+        return 0;
+      }).whenComplete(() {
+        _crowdApplyInFlight = false;
+      });
+    } catch (e) {
+      // A synchronous throw is just as survivable as a rejected future.
+      debugPrint('GameDetailBloc crowd score apply failed: $e');
+      _crowdApplyInFlight = false;
+    }
   }
 
   Future<void> _onStartGame(StartGame event, Emitter<GameDetailState> emit) async {

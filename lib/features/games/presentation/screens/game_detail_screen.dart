@@ -12,6 +12,8 @@ import '../../../../core/models/task.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../arena/domain/crowd_score_applier.dart';
+import '../../../arena/domain/repositories/feed_repository.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../friends/domain/repositories/friends_repository.dart';
 import '../../../house_hunt/domain/house_hunt_service.dart';
@@ -40,12 +42,26 @@ class GameDetailScreen extends StatelessWidget {
     this.promptShareOnLoad = false,
   });
 
+  /// The signed-in player, or null for a guest-less/unauthenticated build.
+  /// Gates the crowd-score applier to the owner of the game.
+  static String? _currentUserId(BuildContext context) {
+    final authState = context.read<AuthBloc>().state;
+    return authState is AuthAuthenticated ? authState.user.id : null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (context) => GameDetailBloc(
         gameRepository: sl<GameRepository>(),
         friendsRepository: sl<FriendsRepository>(),
+        // Crowd-judged games score themselves: when the owner opens one, any
+        // Arena post whose grades have settled is judged into the scoreboard.
+        crowdScoreApplier: CrowdScoreApplier(
+          gameRepository: sl<GameRepository>(),
+          feedRepository: sl<FeedRepository>(),
+        ),
+        currentUserId: _currentUserId(context),
       )..add(LoadGameDetail(gameId: gameId)),
       child: GameDetailView(promptShareOnLoad: promptShareOnLoad),
     );
