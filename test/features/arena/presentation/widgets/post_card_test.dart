@@ -145,7 +145,7 @@ void main() {
     var tapped = false;
     await _pump(
       tester,
-      PostCard(post: _post(), onTap: () => tapped = true),
+      PostCard(post: _post(), onTap: (_) => tapped = true),
     );
 
     await tester.tap(find.byType(PostCard));

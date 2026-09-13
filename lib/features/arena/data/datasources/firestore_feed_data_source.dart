@@ -116,9 +116,14 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
   }
 
   @override
-  Future<void> tapPost(String postId, {int taps = 1}) async {
+  Future<void> tapPost(String postId, {int taps = 1, int? atSecond}) async {
     await _posts.doc(postId).update({
       'tapCount': FieldValue.increment(taps),
+      // A dotted key is a nested field path, so this bumps one bucket of the
+      // tapSeconds map without reading or rewriting the rest of it — and it
+      // lands in the same update as tapCount, which is what the Firestore
+      // rules require of a non-owner write.
+      if (atSecond != null) 'tapSeconds.$atSecond': FieldValue.increment(taps),
     });
   }
 
@@ -171,6 +176,7 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
         'gradeSum',
         'graderIds',
         'tapCount',
+        'tapSeconds',
         'boosted',
         'createdAt',
       ]) {

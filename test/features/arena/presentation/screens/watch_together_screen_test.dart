@@ -6,7 +6,9 @@ import 'package:mocktail/mocktail.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/core/models/submission.dart';
 import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
+import 'package:taskcaster_app/features/arena/data/repositories/mock_montage_repository.dart';
 import 'package:taskcaster_app/features/arena/domain/repositories/feed_repository.dart';
+import 'package:taskcaster_app/features/arena/domain/repositories/montage_repository.dart';
 import 'package:taskcaster_app/features/arena/presentation/screens/watch_together_screen.dart';
 import 'package:taskcaster_app/features/arena/presentation/widgets/post_card.dart';
 
@@ -34,19 +36,26 @@ FeedPost _post(String id, String name, {int? gradeCount, int gradeSum = 0}) {
 
 void main() {
   late MockFeedRepository mockFeedRepository;
+  late MockMontageRepository mockMontageRepository;
   late StreamController<List<FeedPost>> postsController;
 
   setUp(() async {
     await sl.reset();
     mockFeedRepository = MockFeedRepository();
     sl.registerLazySingleton<FeedRepository>(() => mockFeedRepository);
+    mockMontageRepository = MockMontageRepository();
+    sl.registerLazySingleton<MontageRepository>(() => mockMontageRepository);
 
     postsController = StreamController<List<FeedPost>>.broadcast();
     when(() => mockFeedRepository.watchPostsForTask(
           gameId: any(named: 'gameId'),
           taskId: any(named: 'taskId'),
         )).thenAnswer((_) => postsController.stream);
-    when(() => mockFeedRepository.tapPost(any())).thenAnswer((_) async {});
+    when(() => mockFeedRepository.tapPost(
+          any(),
+          taps: any(named: 'taps'),
+          atSecond: any(named: 'atSecond'),
+        )).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -169,7 +178,7 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pump();
 
-    verify(() => mockFeedRepository.tapPost('p1')).called(1);
+    verify(() => mockFeedRepository.tapPost('p1', atSecond: null)).called(1);
     expect(find.text('\u{1F525}'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 500));

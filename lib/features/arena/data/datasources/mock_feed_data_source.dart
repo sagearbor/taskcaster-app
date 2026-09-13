@@ -123,10 +123,20 @@ class MockFeedDataSource implements FeedRemoteDataSource {
   }
 
   @override
-  Future<void> tapPost(String postId, {int taps = 1}) async {
+  Future<void> tapPost(String postId, {int taps = 1, int? atSecond}) async {
     final post = _find(postId);
     if (post == null) return;
     post['tapCount'] = (post['tapCount'] as int? ?? 0) + taps;
+    if (atSecond != null) {
+      final buckets = Map<String, int>.from(
+        (post['tapSeconds'] as Map?)?.map(
+              (k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0),
+            ) ??
+            const <String, int>{},
+      );
+      buckets['$atSecond'] = (buckets['$atSecond'] ?? 0) + taps;
+      post['tapSeconds'] = buckets;
+    }
     _notify();
   }
 
@@ -168,6 +178,7 @@ class MockFeedDataSource implements FeedRemoteDataSource {
           ..['gradeCount'] = existing['gradeCount'] ?? 0
           ..['gradeSum'] = existing['gradeSum'] ?? 0
           ..['tapCount'] = existing['tapCount'] ?? 0
+          ..['tapSeconds'] = existing['tapSeconds'] ?? const <String, int>{}
           ..['boosted'] = existing['boosted'] ?? false
           ..['graderIds'] = existing['graderIds'] ?? const <String>[]
           ..['createdAt'] = existing['createdAt'] ?? incoming['createdAt'];

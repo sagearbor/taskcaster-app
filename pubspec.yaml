@@ -81,6 +81,16 @@ dependencies:
   # keeps a single, well-understood entry point.
   image_picker: ^1.1.2
 
+  # In-app video submissions (Arena clips). Only
+  # lib/core/services/video/video_uploader.dart imports firebase_storage, and
+  # only lib/core/services/video/video_capture.dart calls pickVideo — the same
+  # single-entry-point rule the photo path follows. 12.x is the line that pairs
+  # with firebase_core ^3.8.1.
+  firebase_storage: ^12.3.7
+  # Clip playback (Arena, Watch together) and the pre-post preview. Only
+  # lib/features/arena/presentation/widgets/arena_video.dart imports this.
+  video_player: ^2.9.2
+
   # AI Integration
   http: ^1.1.0
   
@@ -117,6 +127,10 @@ dev_dependencies:
   bloc_test: ^9.1.4
   mocktail: ^1.0.0
   fake_cloud_firestore: ^3.0.3
+  # Widget tests swap VideoPlayerPlatform.instance for a fake (the pattern
+  # video_player's own suite uses) — see test/helpers/. Declared (not just
+  # transitive via video_player) to satisfy depend_on_referenced_packages.
+  video_player_platform_interface: ^6.3.0
   firebase_auth_mocks: ^0.14.1
   flutter_launcher_icons: ^0.13.1
 

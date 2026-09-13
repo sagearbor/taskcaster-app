@@ -9,7 +9,9 @@ import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/core/models/submission.dart';
 import 'package:taskcaster_app/core/models/user.dart';
 import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
+import 'package:taskcaster_app/features/arena/data/repositories/mock_montage_repository.dart';
 import 'package:taskcaster_app/features/arena/domain/repositories/feed_repository.dart';
+import 'package:taskcaster_app/features/arena/domain/repositories/montage_repository.dart';
 import 'package:taskcaster_app/features/arena/presentation/screens/arena_screen.dart';
 import 'package:taskcaster_app/features/arena/presentation/widgets/ad_slot_card.dart';
 import 'package:taskcaster_app/features/arena/presentation/widgets/grade_bar.dart';
@@ -51,6 +53,10 @@ void main() {
     await sl.reset();
     mockFeedRepository = MockFeedRepository();
     sl.registerLazySingleton<FeedRepository>(() => mockFeedRepository);
+    // Empty by default: no montage exists, so no finale card is ever drawn.
+    sl.registerLazySingleton<MontageRepository>(
+      () => MockMontageRepository(),
+    );
 
     mockAuthRepository = MockAuthRepository();
     testUser = User(
@@ -80,8 +86,11 @@ void main() {
         )).thenAnswer((_) async {});
     when(() => mockFeedRepository.boostPostsOf(any()))
         .thenAnswer((_) async {});
-    when(() => mockFeedRepository.tapPost(any()))
-        .thenAnswer((_) async {});
+    when(() => mockFeedRepository.tapPost(
+          any(),
+          taps: any(named: 'taps'),
+          atSecond: any(named: 'atSecond'),
+        )).thenAnswer((_) async {});
   });
 
   tearDown(() async {

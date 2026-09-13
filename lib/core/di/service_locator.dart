@@ -34,7 +34,10 @@ import '../../features/arena/data/datasources/feed_remote_data_source.dart';
 import '../../features/arena/data/datasources/firestore_feed_data_source.dart';
 import '../../features/arena/data/datasources/mock_feed_data_source.dart';
 import '../../features/arena/data/repositories/feed_repository_impl.dart';
+import '../../features/arena/data/repositories/firestore_montage_repository.dart';
+import '../../features/arena/data/repositories/mock_montage_repository.dart';
 import '../../features/arena/domain/repositories/feed_repository.dart';
+import '../../features/arena/domain/repositories/montage_repository.dart';
 
 import '../../features/friends/domain/repositories/friends_repository.dart';
 import '../../features/friends/domain/repositories/invites_repository.dart';
@@ -51,6 +54,8 @@ import '../services/ar/ar_engine.dart';
 import '../services/ar/ar_flutter_engine.dart';
 import '../services/sfx/game_sfx.dart';
 import '../services/photo/photo_capture.dart';
+import '../services/video/video_capture.dart';
+import '../services/video/video_uploader.dart';
 
 final GetIt sl = GetIt.instance;
 
@@ -101,6 +106,20 @@ class ServiceLocator {
     sl.registerLazySingleton<FeedRepository>(
       () => FeedRepositoryImpl(sl()),
     );
+
+    // Server-rendered montages (the automatic "finale" cut of a whole task).
+    // READ-ONLY from the app; the render pass lives server-side. Mock builds
+    // get an empty repository, so no finale card ever appears without a real
+    // render behind it.
+    if (useMockServices) {
+      sl.registerLazySingleton<MontageRepository>(
+        () => MockMontageRepository(),
+      );
+    } else {
+      sl.registerLazySingleton<MontageRepository>(
+        () => FirestoreMontageRepository(),
+      );
+    }
 
     // Friend graph + one-tap invites (Phase 1b). Mock builds keep an in-memory
     // graph so the UI is fully exercisable offline / in widget tests.
@@ -181,6 +200,18 @@ class ServiceLocator {
       sl.registerLazySingleton<PhotoCapture>(() => FakePhotoCapture());
     } else {
       sl.registerLazySingleton<PhotoCapture>(() => ImagePickerPhotoCapture());
+    }
+
+    // In-app video submissions. Same shape as the photo path: mock builds get
+    // fakes that never touch the camera or Firebase Storage; real builds
+    // record with image_picker and upload to the bucket, where the create-only
+    // `submissions/{uid}/{yyyyMMdd}/{slot}` rules are the daily cap.
+    if (useMockServices) {
+      sl.registerLazySingleton<VideoCapture>(() => FakeVideoCapture());
+      sl.registerLazySingleton<VideoUploader>(() => FakeVideoUploader());
+    } else {
+      sl.registerLazySingleton<VideoCapture>(() => ImagePickerVideoCapture());
+      sl.registerLazySingleton<VideoUploader>(() => FirebaseVideoUploader());
     }
 
     // Friend-invite loop: captures invite codes arriving via deep link or

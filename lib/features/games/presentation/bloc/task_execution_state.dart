@@ -45,6 +45,30 @@ class TaskExecutionLoaded extends TaskExecutionState {
       ];
 }
 
+/// A clip is on its way to the bucket. The only state with a progress value —
+/// photo and text submissions are inline and never reach it.
+///
+/// [progress] runs 0..1 and is emitted in ~5 % steps so the bar moves without
+/// flooding the bloc with states.
+class TaskExecutionUploading extends TaskExecutionState {
+  final double progress;
+
+  /// The task being submitted, so the screen can keep the title/twist on
+  /// screen while the bar fills instead of flashing a bare spinner.
+  final Task task;
+
+  const TaskExecutionUploading({
+    required this.progress,
+    required this.task,
+  });
+
+  /// Whole percent, for the "Uploading… 42%" label.
+  int get percent => (progress.clamp(0.0, 1.0) * 100).round();
+
+  @override
+  List<Object?> get props => [progress, task];
+}
+
 class TaskExecutionSubmitted extends TaskExecutionState {
   final String gameId;
   final int taskIndex;

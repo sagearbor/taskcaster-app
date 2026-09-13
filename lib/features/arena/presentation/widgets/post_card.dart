@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/submission.dart';
+import '../../../../core/services/video/video_policy.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/link_utils.dart';
 import '../../domain/models/feed_post.dart';
+import 'arena_video.dart';
 import 'post_badge.dart';
 import 'stamp_sticker.dart';
 
@@ -17,11 +19,36 @@ import 'stamp_sticker.dart';
 /// blocking. PostCard itself owns the tiny 🔥 burst feedback; the caller
 /// decides what a tap means (TapCurrent in the Arena, a direct
 /// `feedRepository.tapPost` in Watch together).
+///
+/// The `atSecond` handed to [onTap] is the second of the clip the viewer was
+/// watching (`VideoPolicy.tapBucket`), and null for photo/text/link posts,
+/// which have no timeline. That histogram is the raw signal automatic editing
+/// will later trim on — which is why the tap carries a timestamp even though
+/// nothing reads it yet.
 class PostCard extends StatefulWidget {
   final FeedPost post;
-  final VoidCallback? onTap;
+  final void Function(int? atSecond)? onTap;
 
-  const PostCard({super.key, required this.post, this.onTap});
+  /// Start the clip as soon as the card is built. Off for cards in a long
+  /// list that are not the one being graded.
+  final bool autoPlay;
+
+  /// Loop the clip at its cap. Watch together turns this off so it can advance
+  /// to the next entry when the clip ends instead.
+  final bool loopVideo;
+
+  /// Fired when a clip reaches its cap — or fails to load, so a broken clip
+  /// never stalls a playlist.
+  final VoidCallback? onVideoEnded;
+
+  const PostCard({
+    super.key,
+    required this.post,
+    this.onTap,
+    this.autoPlay = true,
+    this.loopVideo = true,
+    this.onVideoEnded,
+  });
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -36,12 +63,29 @@ class _Burst {
 class _PostCardState extends State<PostCard> {
   final List<_Burst> _bursts = [];
 
+  /// Lets the tap handler ask the player where it is, without the card
+  /// rebuilding on every frame of playback.
+  final GlobalKey<ArenaVideoState> _videoKey = GlobalKey<ArenaVideoState>();
+
+  /// The second of the clip the viewer is on, bucketed, or null for a post
+  /// with no timeline.
+  int? _tapSecond() {
+    if (widget.post.mediaType != SubmissionMediaType.video) return null;
+    final player = _videoKey.currentState;
+    if (player == null) return null;
+    return VideoPolicy.tapBucket(
+      player.currentPositionSeconds,
+      player.capSeconds.ceil(),
+    );
+  }
+
   void _handleTapUp(TapUpDetails details) {
     final key = UniqueKey();
+    final atSecond = _tapSecond();
     setState(() {
       _bursts.add(_Burst(key, details.localPosition));
     });
-    widget.onTap?.call();
+    widget.onTap?.call(atSecond);
   }
 
   void _removeBurst(Object key) {
@@ -69,7 +113,13 @@ class _PostCardState extends State<PostCard> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _Media(post: post),
+                  _Media(
+                    post: post,
+                    videoKey: _videoKey,
+                    autoPlay: widget.autoPlay,
+                    loopVideo: widget.loopVideo,
+                    onVideoEnded: widget.onVideoEnded,
+                  ),
                   Positioned(
                     top: 12,
                     left: 12,
@@ -150,12 +200,36 @@ class _PostCardState extends State<PostCard> {
 
 class _Media extends StatelessWidget {
   final FeedPost post;
+  final GlobalKey<ArenaVideoState> videoKey;
+  final bool autoPlay;
+  final bool loopVideo;
+  final VoidCallback? onVideoEnded;
 
-  const _Media({required this.post});
+  const _Media({
+    required this.post,
+    required this.videoKey,
+    required this.autoPlay,
+    required this.loopVideo,
+    this.onVideoEnded,
+  });
 
   @override
   Widget build(BuildContext context) {
     switch (post.mediaType) {
+      case SubmissionMediaType.video:
+        return ArenaVideo(
+          key: videoKey,
+          url: post.videoUrl,
+          durationSeconds: post.videoDurationSeconds,
+          timerSeconds: post.timerSeconds,
+          clockOffsetSeconds: post.clockOffsetSeconds,
+          isLate: post.isLate,
+          // House clips ship with the countdown already in the pixels.
+          burnedIn: post.isHouse,
+          autoPlay: autoPlay,
+          loop: loopVideo,
+          onEnded: onVideoEnded,
+        );
       case SubmissionMediaType.photo:
         if (post.photoData != null && post.photoData!.isNotEmpty) {
           try {

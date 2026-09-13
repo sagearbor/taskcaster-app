@@ -203,7 +203,7 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
     if (post == null) return;
     // Fire-and-forget: a tap must never block or fail visibly.
     try {
-      await feedRepository.tapPost(post.id);
+      await feedRepository.tapPost(post.id, atSecond: event.atSecond);
     } catch (e) {
       debugPrint('ArenaBloc tap failed for ${post.id}: $e');
     }

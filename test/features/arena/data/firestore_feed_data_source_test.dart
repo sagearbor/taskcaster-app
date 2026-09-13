@@ -101,6 +101,30 @@ void main() {
     expect((await repo.watchPost(id).first)!.tapCount, 3);
   });
 
+  test('tapPost with a second bumps tapCount and that bucket together',
+      () async {
+    final id = await repo.createPost(makePost(userId: 'other'));
+
+    await repo.tapPost(id, atSecond: 4);
+    await repo.tapPost(id, taps: 2, atSecond: 4);
+    await repo.tapPost(id, atSecond: 11);
+
+    final post = (await repo.watchPost(id).first)!;
+    expect(post.tapCount, 4);
+    // The dotted field path writes into the nested map without rewriting it.
+    expect(post.tapSeconds, {'4': 3, '11': 1});
+  });
+
+  test('tapPost without a second leaves the histogram alone', () async {
+    final id = await repo.createPost(makePost(userId: 'other'));
+    await repo.tapPost(id, atSecond: 2);
+    await repo.tapPost(id);
+
+    final post = (await repo.watchPost(id).first)!;
+    expect(post.tapCount, 2);
+    expect(post.tapSeconds, {'2': 1});
+  });
+
   test('gradedCountBy counts via the graderIds array', () async {
     final a = await repo.createPost(makePost(id: 'a', userId: 'other'));
     await repo.createPost(makePost(id: 'b', userId: 'other'));

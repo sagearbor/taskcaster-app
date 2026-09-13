@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskcaster_app/core/models/submission.dart';
+import 'package:taskcaster_app/core/models/task.dart';
 import 'package:taskcaster_app/features/arena/data/datasources/mock_feed_data_source.dart';
 import 'package:taskcaster_app/features/arena/data/repositories/feed_repository_impl.dart';
 import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
@@ -350,8 +351,7 @@ void main() {
   });
 
   group('ensureHouseEntries', () {
-    test('seeds one text entry per starter task, posted by the house',
-        () async {
+    test('seeds one entry per starter task, posted by the house', () async {
       await repo.ensureHouseEntries();
 
       final seeded = source.posts;
@@ -360,11 +360,64 @@ void main() {
         expect(row['isHouse'], isTrue);
         expect(row['userId'], FeedRepositoryImpl.houseUserId);
         expect(row['displayName'], StarterPackData.housePosterName);
-        expect(row['mediaType'], SubmissionMediaType.text.name);
         expect(row['photoData'], isNull);
+        // Text is kept on every entry: it is the caption/fallback a video
+        // house entry shows if its clip cannot be played.
         expect(row['text'], isNotEmpty);
         expect(row['id'], 'house-${row['taskId']}');
       }
+    });
+
+    test('video starter tasks get VIDEO house entries at house/<taskId>.mp4',
+        () async {
+      await repo.ensureHouseEntries();
+
+      final byTask = {for (final row in source.posts) row['taskId']: row};
+      final videoTasks = StarterPackData.tasks()
+          .where((t) => t.submissionType == SubmissionType.video);
+      expect(videoTasks, isNotEmpty);
+
+      for (final task in videoTasks) {
+        final row = byTask[task.id]!;
+        expect(row['mediaType'], SubmissionMediaType.video.name, reason: task.id);
+        expect(row['videoStoragePath'], 'house/${task.id}.mp4');
+        expect(row['videoUrl'], StarterPackData.houseVideoUrl(task.id));
+      }
+    });
+
+    test('photo and text starter tasks keep TEXT house entries', () async {
+      await repo.ensureHouseEntries();
+
+      final byTask = {for (final row in source.posts) row['taskId']: row};
+      for (final task in StarterPackData.tasks()) {
+        if (task.submissionType == SubmissionType.video) continue;
+        final row = byTask[task.id]!;
+        expect(row['mediaType'], SubmissionMediaType.text.name, reason: task.id);
+        expect(row['videoUrl'], isNull, reason: task.id);
+        expect(row['videoStoragePath'], isNull, reason: task.id);
+      }
+    });
+
+    test('re-seeding updates a house entry whose medium changed', () async {
+      // A doc seeded by an older build: text, no clip.
+      await source.ensureHouseEntries([
+        {
+          'id': 'house-starter-01',
+          'taskId': 'starter-01',
+          'mediaType': SubmissionMediaType.text.name,
+          'text': 'old copy',
+          'isHouse': true,
+          'userId': FeedRepositoryImpl.houseUserId,
+        }
+      ]);
+
+      await repo.ensureHouseEntries();
+
+      final row =
+          source.posts.firstWhere((p) => p['id'] == 'house-starter-01');
+      expect(row['mediaType'], SubmissionMediaType.video.name);
+      expect(row['videoUrl'], StarterPackData.houseVideoUrl('starter-01'));
+      expect(row['text'], isNot('old copy'));
     });
 
     test('is idempotent — running it twice does not duplicate anything',

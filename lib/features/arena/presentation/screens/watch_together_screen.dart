@@ -3,9 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/models/submission.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/models/feed_post.dart';
+import '../../domain/models/montage.dart';
 import '../../domain/repositories/feed_repository.dart';
+import '../../domain/repositories/montage_repository.dart';
+import '../widgets/arena_video.dart';
 import '../widgets/post_card.dart';
 
 /// Same-room playback: every entry for one task, back to back, from one
@@ -33,9 +37,15 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
 
   late final AnimationController _progress;
   StreamSubscription<List<FeedPost>>? _subscription;
+  StreamSubscription<Montage?>? _montageSubscription;
   List<FeedPost>? _posts;
+  Montage? _montage;
   int _index = 0;
   final List<_ScreenBurst> _bursts = [];
+
+  /// Keyed so a tap anywhere on a finale slide can still ask the player where
+  /// it is (the finale is not a PostCard).
+  final GlobalKey<ArenaVideoState> _finaleKey = GlobalKey<ArenaVideoState>();
 
   @override
   void initState() {
@@ -49,7 +59,25 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
     _subscription = sl<FeedRepository>()
         .watchPostsForTask(gameId: widget.gameId, taskId: widget.taskId)
         .listen(_onPosts);
+    // The automatic finale, when the server has rendered one. Never blocks:
+    // an absent or still-rendering montage simply means the run ends on the
+    // results card exactly as it did before.
+    _montageSubscription = sl<MontageRepository>()
+        .watchMontage(widget.gameId, widget.taskId)
+        .listen(
+          (montage) {
+            if (mounted) setState(() => _montage = montage);
+          },
+          onError: (Object e) => debugPrint('Watch together montage: $e'),
+        );
   }
+
+  /// Video entries run on the clip's own length, not the slideshow timer:
+  /// `_advance` is driven by `onVideoEnded`.
+  bool _isVideo(FeedPost post) => post.mediaType == SubmissionMediaType.video;
+
+  /// True when the run should show the finale after the last entry.
+  bool get _hasFinale => _montage?.isReady ?? false;
 
   void _onPosts(List<FeedPost> posts) {
     final wasNull = _posts == null;
@@ -57,37 +85,47 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
       _posts = posts;
       if (_index > posts.length) _index = posts.length;
     });
-    if (wasNull && posts.isNotEmpty) {
-      _progress
-        ..reset()
-        ..forward();
+    if (wasNull && posts.isNotEmpty) _restartSlideTimer(posts[0]);
+  }
+
+  /// Photo and text entries get the fixed slideshow beat; a clip gets as long
+  /// as the clip is (capped by VideoPolicy), so the timer stays stopped and
+  /// ArenaVideo's `onEnded` advances instead.
+  void _restartSlideTimer(FeedPost post) {
+    if (_isVideo(post)) {
+      _progress.stop();
+      _progress.value = 0;
+      return;
     }
+    _progress
+      ..reset()
+      ..forward();
   }
 
   void _advance() {
     final posts = _posts;
     if (posts == null) return;
-    if (_index < posts.length) {
+    final lastIndex = _hasFinale ? posts.length : posts.length - 1;
+    if (_index <= lastIndex) {
       setState(() => _index += 1);
     }
     if (_index < posts.length) {
-      _progress
-        ..reset()
-        ..forward();
+      _restartSlideTimer(posts[_index]);
     } else {
+      // The finale (when there is one) runs on its own length, like a clip.
       _progress.stop();
     }
   }
 
-  void _tapPost(FeedPost post) {
+  void _tapPost(FeedPost post, {int? atSecond}) {
     // Fire-and-forget viewer "funny" tap — never required, never blocking.
-    unawaited(sl<FeedRepository>().tapPost(post.id));
+    unawaited(sl<FeedRepository>().tapPost(post.id, atSecond: atSecond));
   }
 
   void _handleScreenTapUp(TapUpDetails details, FeedPost post) {
     final key = UniqueKey();
     setState(() => _bursts.add(_ScreenBurst(key, details.localPosition)));
-    _tapPost(post);
+    _tapPost(post, atSecond: null);
   }
 
   void _removeBurst(Object key) {
@@ -99,6 +137,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
   void dispose() {
     _progress.dispose();
     _subscription?.cancel();
+    _montageSubscription?.cancel();
     super.dispose();
   }
 
@@ -115,12 +154,14 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
               )
             : posts.isEmpty
                 ? _EmptyState(onDone: () => Navigator.of(context).pop())
-                : _index >= posts.length
-                    ? _ResultsList(
-                        posts: posts,
-                        onDone: () => Navigator.of(context).pop(),
-                      )
-                    : _buildSlide(context, posts[_index], posts.length),
+                : _index < posts.length
+                    ? _buildSlide(context, posts[_index], posts.length)
+                    : (_index == posts.length && _hasFinale)
+                        ? _buildFinaleSlide(context)
+                        : _ResultsList(
+                            posts: posts,
+                            onDone: () => Navigator.of(context).pop(),
+                          ),
       ),
     );
   }
@@ -144,7 +185,9 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
                   builder: (context, _) => ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: _progress.value,
+                      // A clip has no fixed beat to count down, so the bar
+                      // runs indeterminate until it ends.
+                      value: _isVideo(post) ? null : _progress.value,
                       minHeight: 3,
                       backgroundColor: Colors.white24,
                       valueColor:
@@ -165,7 +208,15 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: PostCard(post: post),
+                    child: PostCard(
+                      post: post,
+                      // In a playlist a clip plays once and hands over; it
+                      // does not loop. A clip that fails to load also fires
+                      // onEnded, so a broken entry can never stall the run.
+                      loopVideo: false,
+                      onVideoEnded: _isVideo(post) ? _advance : null,
+                      onTap: (atSecond) => _tapPost(post, atSecond: atSecond),
+                    ),
                   ),
                 ),
               ),
@@ -185,6 +236,63 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
               top: burst.position.dy - 20,
               child: _BurstEmoji(onDone: () => _removeBurst(burst.key)),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// The automatic finale: every entry's last two seconds, spliced server-side.
+  /// The countdown is already burned into those pixels, so ArenaVideo does not
+  /// draw another one.
+  Widget _buildFinaleSlide(BuildContext context) {
+    final montage = _montage;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) < 0) _advance();
+      },
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'The finale',
+              key: Key('watch-together-finale'),
+              style: TextStyle(
+                color: Colors.white,
+                fontFamily: 'Fredoka',
+                fontWeight: FontWeight.w600,
+                fontSize: 24,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: AspectRatio(
+                aspectRatio: 4 / 5,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: ArenaVideo(
+                    key: _finaleKey,
+                    url: montage?.finaleUrl,
+                    burnedIn: true,
+                    loop: false,
+                    onEnded: _advance,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: TextButton.icon(
+              onPressed: _advance,
+              icon: const Icon(Icons.arrow_forward, color: Colors.white),
+              label:
+                  const Text('Results', style: TextStyle(color: Colors.white)),
+            ),
+          ),
         ],
       ),
     );
@@ -287,6 +395,7 @@ class _ResultsList extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               'Results',
+              key: Key('watch-together-results'),
               style: TextStyle(
                 color: Colors.white,
                 fontFamily: 'Fredoka',
