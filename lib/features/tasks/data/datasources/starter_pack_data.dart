@@ -10,8 +10,10 @@ import '../../../../core/models/task.dart';
 /// reveal* — that is the slice the automatic finale montage splices together.
 /// Two stay [SubmissionType.text] (wordplay), and two stay
 /// [SubmissionType.photo] on purpose, because for those the still IS the joke.
-/// The ids are unchanged (`starter-01` … `starter-10`) so the deterministic
-/// house-entry ids stay stable across the change.
+/// The six rewritten VIDEO tasks carry `-v2` ids (`starter-01-v2` …) because
+/// the task itself changed: posts made against the old photo copy stay
+/// attached to the old id and never surface under the new task. The four
+/// unchanged photo/text tasks keep their original ids (and house entries).
 ///
 /// Every task carries the three things the loop needs: a
 /// [Task.submissionType] (so the task screen leads with "Film it", "Snap it"
@@ -66,7 +68,7 @@ class StarterPackData {
   /// The ten tasks, in play order.
   static List<Task> tasks() => [
         _t(
-          id: 'starter-01',
+          id: 'starter-01-v2',
           title: 'Egg on a spoon, to the far wall and back',
           description:
               'Put an egg (or the roundest thing in your kitchen) on a spoon. '
@@ -79,7 +81,7 @@ class StarterPackData {
           durationSeconds: 30,
         ),
         _t(
-          id: 'starter-02',
+          id: 'starter-02-v2',
           title:
               'The tallest tower of things that were never meant to be stacked',
           description:
@@ -119,7 +121,7 @@ class StarterPackData {
           durationSeconds: 120,
         ),
         _t(
-          id: 'starter-05',
+          id: 'starter-05-v2',
           title:
               'The worst sandwich that is still technically food — and one bite',
           description:
@@ -157,7 +159,7 @@ class StarterPackData {
           durationSeconds: 90,
         ),
         _t(
-          id: 'starter-08',
+          id: 'starter-08-v2',
           title: 'Wear as many things on your head as possible',
           description:
               'Balance as many objects as you can on your head. Balanced, not '
@@ -169,7 +171,7 @@ class StarterPackData {
           durationSeconds: 60,
         ),
         _t(
-          id: 'starter-09',
+          id: 'starter-09-v2',
           title: 'The face of someone who has just remembered the oven is on '
               '— in another country',
           description:
@@ -183,7 +185,7 @@ class StarterPackData {
           durationSeconds: 30,
         ),
         _t(
-          id: 'starter-10',
+          id: 'starter-10-v2',
           title: 'Your autobiography: the trailer',
           description:
               'Hold up the cover of your autobiography. The title is the last '
@@ -205,25 +207,25 @@ class StarterPackData {
   /// caption/fallback text, and it is what shows if the seeded clip is ever
   /// unavailable.
   static const Map<String, String> houseEntries = {
-    'starter-01':
+    'starter-01-v2':
         'Egg made it 4 steps. Narration made it 30 seconds.',
-    'starter-02': 'Seven objects, one shoe, 1.5 seconds of standing.',
+    'starter-02-v2': 'Seven objects, one shoe, 1.5 seconds of standing.',
     'starter-03':
         "The lamp is now The Understudy.\nSlogan: it waits, quietly, for the "
             'sun to fail.',
     'starter-04':
         'I am in this kitchen. I am the beige one. Take your time, there is no '
             'prize for finding me quickly and there is no prize for me either.',
-    'starter-05': 'Pickle, custard, toast, regret. One bite.',
+    'starter-05-v2': 'Pickle, custard, toast, regret. One bite.',
     'starter-06':
         'The Scream, performed by a tea towel, two grapes, and a man who '
             'cannot quite reach the good props.',
     'starter-07':
         'There are four yoghurts.\nI have bought three yoghurts in my life.\n'
             'Three.',
-    'starter-08': 'Nine things. The colander was the mistake.',
-    'starter-09': "Layer 4 was 'the cat is also in the oven'.",
-    'starter-10':
+    'starter-08-v2': 'Nine things. The colander was the mistake.',
+    'starter-09-v2': "Layer 4 was 'the cat is also in the oven'.",
+    'starter-10-v2':
         "'I said I'd be five minutes.' — reviewed by the kettle: 'a lie'",
   };
 }

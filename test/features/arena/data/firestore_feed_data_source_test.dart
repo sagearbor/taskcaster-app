@@ -9,7 +9,7 @@ import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data
 FeedPost makePost({
   String id = '',
   String userId = 'user-1',
-  String taskId = 'starter-01',
+  String taskId = 'starter-01-v2',
   int minutesOld = 0,
   int gradeCount = 0,
 }) {
@@ -46,7 +46,7 @@ void main() {
     expect(doc.exists, isTrue);
     // The id lives on the document, not inside it.
     expect(doc.data()!.containsKey('id'), isFalse);
-    expect(doc.data()!['taskId'], 'starter-01');
+    expect(doc.data()!['taskId'], 'starter-01-v2');
     expect((await repo.watchPost(id).first)!.id, id);
   });
 
@@ -147,13 +147,13 @@ void main() {
   });
 
   test('watchUnlockedTaskIds reads the user\'s own posts', () async {
-    await repo.createPost(makePost(userId: 'me', taskId: 'starter-01'));
+    await repo.createPost(makePost(userId: 'me', taskId: 'starter-01-v2'));
     await repo.createPost(makePost(userId: 'me', taskId: 'starter-04'));
-    await repo.createPost(makePost(userId: 'other', taskId: 'starter-09'));
+    await repo.createPost(makePost(userId: 'other', taskId: 'starter-09-v2'));
 
     expect(
       await repo.watchUnlockedTaskIds('me').first,
-      {'starter-01', 'starter-04'},
+      {'starter-01-v2', 'starter-04'},
     );
   });
 
@@ -164,7 +164,7 @@ void main() {
     expect(first.docs.length, StarterPackData.houseEntries.length);
     expect(
       first.docs.map((d) => d.id),
-      contains('house-starter-01'),
+      contains('house-starter-01-v2'),
     );
 
     await repo.ensureHouseEntries();
@@ -175,11 +175,11 @@ void main() {
   test('re-seeding keeps grades the crowd has already given', () async {
     await repo.ensureHouseEntries();
     await repo.gradePost(
-        postId: 'house-starter-01', graderId: 'me', score: 5);
+        postId: 'house-starter-01-v2', graderId: 'me', score: 5);
 
     await repo.ensureHouseEntries();
 
-    final post = await repo.watchPost('house-starter-01').first;
+    final post = await repo.watchPost('house-starter-01-v2').first;
     expect(post!.gradeCount, 1);
     expect(post.gradeSum, 5);
     expect(post.graderIds, ['me']);
@@ -188,14 +188,14 @@ void main() {
   test('the queue is gated, filtered and ordered off a real query', () async {
     await repo.createPost(makePost(id: 'mine', userId: 'me'));
     await repo.createPost(
-        makePost(id: 'locked', userId: 'other', taskId: 'starter-09'));
+        makePost(id: 'locked', userId: 'other', taskId: 'starter-09-v2'));
     await repo.createPost(
         makePost(id: 'newer', userId: 'other', minutesOld: 1));
     await repo.createPost(
         makePost(id: 'older', userId: 'other', minutesOld: 30));
 
     final queue = await repo
-        .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01'})
+        .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
         .first;
     expect(queue.map((p) => p.id), ['newer', 'older']);
   });

@@ -9,7 +9,7 @@ import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data
 FeedPost makePost({
   String id = '',
   String userId = 'user-1',
-  String taskId = 'starter-01',
+  String taskId = 'starter-01-v2',
   String gameId = 'game-1',
   int minutesOld = 0,
   int gradeCount = 0,
@@ -79,13 +79,13 @@ void main() {
     });
 
     test('shows only posts for tasks the viewer has unlocked', () async {
-      await repo.createPost(makePost(userId: 'other', taskId: 'starter-01'));
-      await repo.createPost(makePost(userId: 'other', taskId: 'starter-02'));
+      await repo.createPost(makePost(userId: 'other', taskId: 'starter-01-v2'));
+      await repo.createPost(makePost(userId: 'other', taskId: 'starter-02-v2'));
 
       final queue = await repo
-          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01'})
+          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
           .first;
-      expect(queue.map((p) => p.taskId), ['starter-01']);
+      expect(queue.map((p) => p.taskId), ['starter-01-v2']);
     });
 
     test('never shows the viewer their own post', () async {
@@ -93,7 +93,7 @@ void main() {
       await repo.createPost(makePost(userId: 'other'));
 
       final queue = await repo
-          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01'})
+          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
           .first;
       expect(queue.map((p) => p.userId), ['other']);
     });
@@ -102,7 +102,7 @@ void main() {
       final id = await repo.createPost(makePost(userId: 'other'));
       expect(
         (await repo
-                .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01'})
+                .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
                 .first)
             .length,
         1,
@@ -112,7 +112,7 @@ void main() {
 
       expect(
         await repo
-            .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01'})
+            .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
             .first,
         isEmpty,
       );
@@ -123,7 +123,7 @@ void main() {
         makePost(userId: 'house', isHouse: true),
       );
       final queue = await repo
-          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01'})
+          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
           .first;
       expect(queue.single.isHouse, isTrue);
     });
@@ -135,7 +135,7 @@ void main() {
       final queue = await repo
           .watchQueue(
             viewerId: 'me',
-            unlockedTaskIds: const {'starter-01'},
+            unlockedTaskIds: const {'starter-01-v2'},
             limit: 3,
           )
           .first;
@@ -163,7 +163,7 @@ void main() {
           gradeSum: 4, boosted: true));
 
       final queue = await repo
-          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01'})
+          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
           .first;
 
       expect(queue.map((p) => p.id), [
@@ -291,14 +291,14 @@ void main() {
     });
 
     test('is the set of task ids the user has posted to', () async {
-      await repo.createPost(makePost(userId: 'me', taskId: 'starter-01'));
-      await repo.createPost(makePost(userId: 'me', taskId: 'starter-02'));
-      await repo.createPost(makePost(userId: 'me', taskId: 'starter-02'));
+      await repo.createPost(makePost(userId: 'me', taskId: 'starter-01-v2'));
+      await repo.createPost(makePost(userId: 'me', taskId: 'starter-02-v2'));
+      await repo.createPost(makePost(userId: 'me', taskId: 'starter-02-v2'));
       await repo.createPost(makePost(userId: 'other', taskId: 'starter-07'));
 
       expect(
         await repo.watchUnlockedTaskIds('me').first,
-        {'starter-01', 'starter-02'},
+        {'starter-01-v2', 'starter-02-v2'},
       );
     });
 
@@ -307,12 +307,12 @@ void main() {
       final sub = repo.watchUnlockedTaskIds('me').listen(seen.add);
       await Future<void>.delayed(Duration.zero);
 
-      await repo.createPost(makePost(userId: 'me', taskId: 'starter-01'));
+      await repo.createPost(makePost(userId: 'me', taskId: 'starter-01-v2'));
       await Future<void>.delayed(Duration.zero);
 
       await sub.cancel();
       expect(seen.first, isEmpty);
-      expect(seen.last, {'starter-01'});
+      expect(seen.last, {'starter-01-v2'});
     });
   });
 
@@ -321,10 +321,10 @@ void main() {
       await repo.createPost(makePost(id: 'newest', userId: 'a', minutesOld: 1));
       await repo.createPost(makePost(id: 'oldest', userId: 'b', minutesOld: 90));
       await repo.createPost(
-          makePost(id: 'other-task', userId: 'c', taskId: 'starter-02'));
+          makePost(id: 'other-task', userId: 'c', taskId: 'starter-02-v2'));
 
       final posts = await repo
-          .watchPostsForTask(gameId: 'game-1', taskId: 'starter-01')
+          .watchPostsForTask(gameId: 'game-1', taskId: 'starter-01-v2')
           .first;
       expect(posts.map((p) => p.id), ['oldest', 'newest']);
     });
@@ -335,7 +335,7 @@ void main() {
           .createPost(makePost(id: 'theirs', userId: 'b', gameId: 'game-2'));
 
       final posts = await repo
-          .watchPostsForTask(gameId: 'game-1', taskId: 'starter-01')
+          .watchPostsForTask(gameId: 'game-1', taskId: 'starter-01-v2')
           .first;
       expect(posts.map((p) => p.id), ['ours']);
     });
@@ -402,8 +402,8 @@ void main() {
       // A doc seeded by an older build: text, no clip.
       await source.ensureHouseEntries([
         {
-          'id': 'house-starter-01',
-          'taskId': 'starter-01',
+          'id': 'house-starter-01-v2',
+          'taskId': 'starter-01-v2',
           'mediaType': SubmissionMediaType.text.name,
           'text': 'old copy',
           'isHouse': true,
@@ -414,9 +414,9 @@ void main() {
       await repo.ensureHouseEntries();
 
       final row =
-          source.posts.firstWhere((p) => p['id'] == 'house-starter-01');
+          source.posts.firstWhere((p) => p['id'] == 'house-starter-01-v2');
       expect(row['mediaType'], SubmissionMediaType.video.name);
-      expect(row['videoUrl'], StarterPackData.houseVideoUrl('starter-01'));
+      expect(row['videoUrl'], StarterPackData.houseVideoUrl('starter-01-v2'));
       expect(row['text'], isNot('old copy'));
     });
 
@@ -430,7 +430,7 @@ void main() {
 
     test('re-seeding keeps the grades the crowd has already given', () async {
       await repo.ensureHouseEntries();
-      const id = 'house-starter-01';
+      const id = 'house-starter-01-v2';
       await repo.gradePost(postId: id, graderId: 'me', score: 5);
 
       await repo.ensureHouseEntries();

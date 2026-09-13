@@ -10,10 +10,14 @@ void main() {
       expect(tasks.length, 10);
     });
 
-    test('ids are starter-01..starter-10, in order', () {
+    test('ids are starter-01..starter-10 (video tasks -v2), in order', () {
       expect(
         tasks.map((t) => t.id),
-        [for (var i = 1; i <= 10; i++) 'starter-${i.toString().padLeft(2, '0')}'],
+        [
+          for (var i = 1; i <= 10; i++)
+            'starter-${i.toString().padLeft(2, '0')}'
+                '${const {1, 2, 5, 8, 9, 10}.contains(i) ? '-v2' : ''}',
+        ],
       );
     });
 
@@ -42,8 +46,8 @@ void main() {
           .toList();
       expect(
         videoIds,
-        ['starter-01', 'starter-02', 'starter-05', 'starter-08',
-         'starter-09', 'starter-10'],
+        ['starter-01-v2', 'starter-02-v2', 'starter-05-v2', 'starter-08-v2',
+         'starter-09-v2', 'starter-10-v2'],
       );
     });
 
@@ -66,12 +70,12 @@ void main() {
       expect(byId['starter-04'], SubmissionType.photo);
       expect(byId['starter-06'], SubmissionType.photo);
       for (final id in const [
-        'starter-01',
-        'starter-02',
-        'starter-05',
-        'starter-08',
-        'starter-09',
-        'starter-10',
+        'starter-01-v2',
+        'starter-02-v2',
+        'starter-05-v2',
+        'starter-08-v2',
+        'starter-09-v2',
+        'starter-10-v2',
       ]) {
         expect(byId[id], SubmissionType.video, reason: id);
       }
@@ -81,16 +85,16 @@ void main() {
       expect(
         {for (final t in tasks) t.id: t.durationSeconds},
         {
-          'starter-01': 30,
-          'starter-02': 60,
+          'starter-01-v2': 30,
+          'starter-02-v2': 60,
           'starter-03': 60,
           'starter-04': 120,
-          'starter-05': 90,
+          'starter-05-v2': 90,
           'starter-06': 180,
           'starter-07': 90,
-          'starter-08': 60,
-          'starter-09': 30,
-          'starter-10': 30,
+          'starter-08-v2': 60,
+          'starter-09-v2': 30,
+          'starter-10-v2': 30,
         },
       );
     });
