@@ -5,7 +5,7 @@
   "description": "TaskCaster server-side automatic video montage pipeline (finale + moments).",
   "main": "src/index.js",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "scripts": {
     "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
