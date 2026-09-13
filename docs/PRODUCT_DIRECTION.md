@@ -56,11 +56,8 @@ an audience that reacts. The show gets the audience by editing. We get it by
     (~60–150 KB), stored inline in the post document. No Firebase Storage,
     no cost, works on web/iOS/Android.
   * **Text** — a line or three, for wordplay tasks.
-  * **Video link** — kept as an optional third path for people who want it;
-    never required by a starter task.
-  * *Deliberately not built:* in-app video upload. It needs Firebase Storage
-    (billing-metered) and multi-MB uploads on web. Path when wanted: 15 s
-    cap, 480p, Storage with a budget alarm. See §7.
+  * **Video** — in-app, capped at min(task timer, 30 s), 32 MB, 10 per day,
+    Storage with a $100 budget alarm, raw clips deleted after 30 days.
 
 ### 2.2 Edit (automatic — the player never sees an editing UI)
 
@@ -299,7 +296,6 @@ posts and are clearly labelled `HOUSE`.
 
 ## 7. Deliberately not doing tonight
 
-* In-app video upload (cost + web upload friction; see §2.1).
 * Real ads SDK or payments (owner's rule: no accounts, no payment details).
 * Push notifications for "you got graded" (web push needs a VAPID key round
   trip with the owner; the model already stores everything needed).

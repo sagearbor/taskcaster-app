@@ -302,3 +302,138 @@ flutter run -d chrome
 # Run with mocks (development)
 flutter run -d chrome -t lib/main_simple.dart
 ```
+
+---
+
+## Video storage and cost controls
+
+In-app video submissions (§2.1 of `docs/PRODUCT_DIRECTION.md`) use Firebase
+Storage. This is the one part of TaskCaster with metered, open-ended cloud
+cost, so it ships with several independent controls rather than relying on
+any single one.
+
+### Bucket
+
+Default Firebase Storage bucket: `gs://taskmaster-app-3d480.firebasestorage.app`
+(US-CENTRAL1). `storageBucket` in `lib/firebase_options.dart` already points
+at it.
+
+### Rules summary (`storage.rules`)
+
+Player clips live at `submissions/{uid}/{yyyyMMdd}/{slot}`, `slot` a single
+digit `0`–`9` (see `lib/core/services/video/video_policy.dart`, the contract
+this file mirrors):
+
+- **Read is public** (`allow read: if true`) — Arena clips are public content,
+  watchable without signing in, and read covers both `get` (one clip) and
+  `list` (a day's folder) via a recursive-wildcard match block.
+- **Create** is restricted to the signed-in owner (`request.auth.uid == uid`),
+  a well-formed `yyyyMMdd` day and single-digit slot, a size cap of
+  32 MiB (`request.resource.size <= 32 * 1024 * 1024`), and a `video/*`
+  content type.
+- **Update is denied** (`allow update: if false`). See the KNOWN LIMITATION
+  callout below — this blocks metadata patches but, per Firebase's own
+  documented Storage Rules semantics, does **not** by itself block an
+  overwrite of a slot's content.
+- **Delete** is restricted to the owner (lets someone remove a clip early
+  instead of waiting on the lifecycle rule below).
+- Everything else in the bucket denies both read and write.
+
+**Known limitation — overwrite is not fully closed by rules alone.** Firebase
+Storage Security Rules classify *any write to file contents* — including an
+overwrite of an existing object — as `create`, not `update`; `update` only
+ever applies to a metadata-only patch on a pre-existing object
+(https://firebase.google.com/docs/storage/security/core-syntax, "Granular
+operations"; see also `firebase/firebase-js-sdk#5079`). `resource` is `null`
+on a content write unless the bucket has **GCS Object Versioning** enabled,
+so the `create` rule (which only checks path/size/type, not "does this slot
+already have a video") is what actually runs even on a re-upload to the same
+slot. This was confirmed directly against this rules file: a second
+`uploadBytes` to an already-created slot succeeds in the emulator today (see
+the skipped test in `test/rules/storage.test.js`). The client
+(`video_policy.dart`) only ever picks the next *unused* slot, so a
+well-behaved app can't accidentally exceed 10 uploads/day — what's still open
+is a client that deliberately re-uploads the same slot number. Fully closing
+that gap needs a bucket-level change outside this rules file: enable Object
+Versioning (`gsutil versioning set on gs://taskmaster-app-3d480.firebasestorage.app`)
+paired with a lifecycle rule that expires noncurrent versions immediately (a
+`condition.numNewerVersions` rule), so versioning itself doesn't add storage
+cost. That's a deliberate follow-up, not done here — it's a cloud-state
+change and, per the $100 budget alarm, the daily/size caps and the alarm
+already bound the downside in practice.
+
+### Lifecycle (`storage.lifecycle.json`)
+
+One rule: delete objects under `submissions/` after 30 days
+(`condition.age: 30`, `matchesPrefix: ["submissions/"]`). This is **not**
+applied by these rules files — Storage bucket lifecycle is a bucket-level
+setting, applied with:
+
+```bash
+gcloud storage buckets update gs://taskmaster-app-3d480.firebasestorage.app \
+  --lifecycle-file=storage.lifecycle.json \
+  --project taskmaster-app-3d480
+```
+
+(The orchestrator runs this — it is a cloud-state change.)
+
+### Budget alarm
+
+GCP budget `taskcaster-video-ceiling-100`: $100/month on the project, alerts
+at 50/90/100%. This is a **notification**, not a hard stop — Firebase Storage
+has no native "cut off at $X" switch, so the caps above (size, slots/day,
+30-day retention) are what actually bound spend; the budget alarm is the
+backstop that tells a human if those caps ever prove insufficient (e.g. a
+clip going unexpectedly viral within Arena).
+
+### Slot/day design
+
+`video_policy.dart` writes to `submissions/{uid}/{yyyyMMdd(UTC)}/{slot}`,
+`slot` being the first unused digit `0`–`9` that day. This bounds each user
+to 10 uploads/day and makes the object count for the whole feature bounded
+by `users × 10 × 30` (a day's worth of slots times the retention window) at
+any moment, rather than growing without limit.
+
+### Cost model
+
+Cloud Storage Standard, US-CENTRAL1: storage ≈ **$0.020–0.026/GB-month**
+(using **$0.023/GB-month** as the working midpoint below); egress
+≈ **$0.12/GB**. Firebase's no-cost tier on Blaze covers the first 5 GB
+stored and 1 GB/day (~30 GB/month) downloaded — the figures below are the
+*additional*, billable cost once a workload is big enough to exceed that
+tier; for the volumes below it mostly is not (see the per-1000-clips case),
+which is worth calling out explicitly.
+
+**Per 1000 clips, typical (8 MB average clip, watched 10 times each):**
+
+```
+storage  = 1000 clips × 8 MB / 1024 MB/GB           =  7.81 GB
+         × $0.023/GB-month                          =  $0.18/month
+
+egress   = 1000 clips × 8 MB × 10 views / 1024       = 78.13 GB
+         × $0.12/GB                                  =  $9.38
+
+total    ≈ $9.55 / month per 1000 clips
+```
+
+**Per 1000 clips, worst case (32 MB clip — the hard cap — watched 50 times each):**
+
+```
+storage  = 1000 clips × 32 MB / 1024 MB/GB          = 31.25 GB
+         × $0.023/GB-month                          =  $0.72/month
+
+egress   = 1000 clips × 32 MB × 50 views / 1024      = 1562.5 GB
+         × $0.12/GB                                  =  $187.50
+
+total    ≈ $188.22 / month per 1000 clips
+```
+
+The worst case alone blows past the $100/month alarm well under 1000 clips —
+solving for the alarm threshold with 1000 worst-case (32 MB) clips: egress
+cost per "one more view of every clip" round is `1000 × 32 MB / 1024 ×
+$0.12 ≈ $3.75`, plus the ~$0.72 flat storage cost, so `($100 − $0.72) /
+$3.75 ≈ 26` view-rounds (~26 views per clip on average) trips the alarm.
+This is exactly why the alarm exists as a second line of defense alongside
+the per-clip size cap and the 10/day upload cap — a single popular clip
+being replayed heavily by the Arena crowd is the realistic way to approach
+the ceiling, not aggregate upload volume.
