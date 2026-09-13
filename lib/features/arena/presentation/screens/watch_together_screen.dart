@@ -395,6 +395,7 @@ class _ResultsList extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               'Results',
+              key: Key('watch-together-results'),
               style: TextStyle(
                 color: Colors.white,
                 fontFamily: 'Fredoka',

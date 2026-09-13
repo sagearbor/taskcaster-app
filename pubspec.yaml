@@ -127,6 +127,10 @@ dev_dependencies:
   bloc_test: ^9.1.4
   mocktail: ^1.0.0
   fake_cloud_firestore: ^3.0.3
+  # Widget tests swap VideoPlayerPlatform.instance for a fake (the pattern
+  # video_player's own suite uses) — see test/helpers/. Declared (not just
+  # transitive via video_player) to satisfy depend_on_referenced_packages.
+  video_player_platform_interface: ^6.3.0
   firebase_auth_mocks: ^0.14.1
   flutter_launcher_icons: ^0.13.1
 

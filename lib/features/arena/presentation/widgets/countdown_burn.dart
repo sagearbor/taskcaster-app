@@ -1,5 +1,3 @@
-import 'dart:ui' show FontFeature;
-
 import 'package:flutter/material.dart';
 
 /// The TASK clock, drawn over a clip in the bottom-right corner.

@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
@@ -82,6 +80,76 @@ class FirebaseVideoUploader implements VideoUploader {
     required DateTime when,
     Map<String, String>? metadata,
     void Function(double fraction)? onProgress,
+  }) {
+    return uploadToFirstFreeSlot(
+      userId: userId,
+      when: when,
+      byteCount: bytes.length,
+      attempt: (path) => _putAt(
+        path: path,
+        bytes: bytes,
+        contentType: contentType,
+        metadata: metadata,
+        onProgress: onProgress,
+      ),
+    );
+  }
+
+  /// Writes one object and returns its download URL. Throws whatever Storage
+  /// throws — [uploadToFirstFreeSlot] is what decides that a denial means
+  /// "slot taken" rather than "upload failed".
+  Future<String> _putAt({
+    required String path,
+    required Uint8List bytes,
+    required String contentType,
+    required Map<String, String>? metadata,
+    required void Function(double fraction)? onProgress,
+  }) async {
+    final ref = _storage.ref(path);
+    final task = ref.putData(
+      bytes,
+      SettableMetadata(contentType: contentType, customMetadata: metadata),
+    );
+
+    final progressSub = onProgress == null
+        ? null
+        : task.snapshotEvents.listen(
+            (snapshot) {
+              final total = snapshot.totalBytes;
+              if (total <= 0) return;
+              onProgress((snapshot.bytesTransferred / total).clamp(0.0, 1.0));
+            },
+            // Failures arrive on the task future below; the progress stream is
+            // decoration and must never become an unhandled error.
+            onError: (Object _) {},
+          );
+
+    try {
+      await task;
+    } finally {
+      await progressSub?.cancel();
+    }
+    return ref.getDownloadURL();
+  }
+
+  /// Walks the day's slots in order and returns the first one that accepts the
+  /// write.
+  ///
+  /// This is the whole daily cap. `submissions/{uid}/{yyyyMMdd}/{slot}` is
+  /// create-only in the bucket rules for slots 0..9, so an already-used slot
+  /// comes back as a denial rather than an overwrite — which means no
+  /// read-before-write, no counter document to keep in step, and no way for a
+  /// client bug to exceed the cap. When all ten are denied the player is out
+  /// of clips for the day.
+  ///
+  /// [attempt] writes the object at the given path and returns its download
+  /// URL; it is a parameter so this logic can be tested without Firebase.
+  @visibleForTesting
+  static Future<VideoUploadResult> uploadToFirstFreeSlot({
+    required String userId,
+    required DateTime when,
+    required int byteCount,
+    required Future<String> Function(String path) attempt,
   }) async {
     for (var slot = 0; slot < VideoPolicy.maxUploadsPerDay; slot++) {
       final path = VideoPolicy.storagePath(
@@ -90,45 +158,14 @@ class FirebaseVideoUploader implements VideoUploader {
         slot: slot,
       );
       try {
-        final ref = _storage.ref(path);
-        final task = ref.putData(
-          bytes,
-          SettableMetadata(
-            contentType: contentType,
-            customMetadata: metadata,
-          ),
-        );
-
-        final progressSub = onProgress == null
-            ? null
-            : task.snapshotEvents.listen(
-                (snapshot) {
-                  final total = snapshot.totalBytes;
-                  if (total <= 0) return;
-                  final fraction = snapshot.bytesTransferred / total;
-                  onProgress(fraction.clamp(0.0, 1.0));
-                },
-                // Failures arrive on the future below; the progress stream is
-                // decoration and must never become an unhandled error.
-                onError: (Object _) {},
-              );
-
-        try {
-          await task;
-        } finally {
-          await progressSub?.cancel();
-        }
-
-        final url = await ref.getDownloadURL();
-        onProgress?.call(1);
+        final url = await attempt(path);
         return VideoUploadResult(
           downloadUrl: url,
           storagePath: path,
-          bytes: bytes.length,
+          bytes: byteCount,
         );
       } on FirebaseException catch (e) {
         if (deniedCodes.contains(e.code)) {
-          // Slot already used today — try the next one.
           debugPrint('FirebaseVideoUploader: slot $slot taken, trying next');
           continue;
         }
