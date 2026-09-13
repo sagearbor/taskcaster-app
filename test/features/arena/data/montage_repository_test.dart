@@ -6,8 +6,8 @@ import 'package:taskcaster_app/features/arena/domain/models/montage.dart';
 
 void main() {
   group('Montage', () {
-    test('the document id is <gameId>_<taskId>', () {
-      expect(Montage.idFor('game-1', 'starter-01'), 'game-1_starter-01');
+    test('the document id is <scope>_<taskId> (starter tasks share the starter scope)', () {
+      expect(Montage.idFor('game-1', 'starter-01'), 'starter_starter-01');
     });
 
     test('round-trips through the map the server writes', () {
@@ -81,7 +81,7 @@ void main() {
     test('reads the document the server writes', () async {
       await firestore
           .collection(FirestoreMontageRepository.collection)
-          .doc('game-1_starter-01')
+          .doc('starter_starter-01')
           .set({
         'gameId': 'game-1',
         'taskId': 'starter-01',
@@ -103,7 +103,7 @@ void main() {
     test('a pending render is not ready', () async {
       await firestore
           .collection(FirestoreMontageRepository.collection)
-          .doc('game-1_starter-02')
+          .doc('starter_starter-02')
           .set({'status': 'pending', 'sourcePostIds': const <String>[]});
 
       final montage = await repo.watchMontage('game-1', 'starter-02').first;

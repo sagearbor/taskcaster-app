@@ -20,16 +20,16 @@ const BUCKET = 'taskmaster-app-3d480.firebasestorage.app';
 const MINUTE = 60000;
 
 test('montage doc id and object paths follow the contract', () => {
-  assert.equal(montageDocId('g1', 'starter-01'), 'g1_starter-01');
-  assert.equal(finaleObjectPath('g1', 'starter-01'), 'montages/g1/starter-01/finale.mp4');
-  assert.equal(momentsObjectPath('g1', 'starter-01'), 'montages/g1/starter-01/moments.mp4');
+  assert.equal(montageDocId('g1', 'starter-01'), 'starter_starter-01');
+  assert.equal(finaleObjectPath('g1', 'starter-01'), 'montages/starter/starter-01/finale.mp4');
+  assert.equal(momentsObjectPath('g1', 'starter-01'), 'montages/starter/starter-01/moments.mp4');
 });
 
 test('publicUrl builds the anyone-can-read download URL', () => {
   assert.equal(
-    publicUrl(BUCKET, 'montages/g1/starter-01/finale.mp4'),
+    publicUrl(BUCKET, 'montages/starter/starter-01/finale.mp4'),
     `https://firebasestorage.googleapis.com/v0/b/${BUCKET}` +
-      '/o/montages%2Fg1%2Fstarter-01%2Ffinale.mp4?alt=media',
+      '/o/montages%2Fstarter%2Fstarter-01%2Ffinale.mp4?alt=media',
   );
 });
 

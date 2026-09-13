@@ -32,6 +32,7 @@ const montage = require('./montage');
 const {
   MAX_CLIPS,
   montageDocId,
+  isStarterTask,
   finaleObjectPath,
   momentsObjectPath,
   publicUrl,
@@ -200,7 +201,11 @@ async function render(gameId, taskId, {force = false} = {}) {
   const started = Date.now();
   try {
     // Single-field query -> no composite index needed. Collections are small.
-    const snap = await db().collection(FEED_POSTS).where('gameId', '==', gameId).get();
+    // Starter Pack tasks are scoped across every player's solo game, so they
+    // are fetched by taskId; game tasks by gameId (selectClips re-filters).
+    const snap = isStarterTask(taskId)
+      ? await db().collection(FEED_POSTS).where('taskId', '==', taskId).get()
+      : await db().collection(FEED_POSTS).where('gameId', '==', gameId).get();
     const posts = selectClips(
       snap.docs.map((d) => ({id: d.id, ...d.data()})),
       {taskId, maxClips: MAX_CLIPS},

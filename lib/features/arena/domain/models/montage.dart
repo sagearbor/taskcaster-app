@@ -41,7 +41,17 @@ class Montage extends Equatable {
   });
 
   /// The document id the server writes under.
-  static String idFor(String gameId, String taskId) => '${gameId}_$taskId';
+  /// Starter Pack tasks (`starter-*`) are played in a separate solo game per
+  /// player but shown cross-game in the Arena, so their montage is scoped to
+  /// the literal `starter` rather than a game id. The Cloud Function applies
+  /// the identical rule (`montageScope` in functions/src/contract.js).
+  static const String starterScope = 'starter';
+
+  static String scopeFor(String gameId, String taskId) =>
+      taskId.startsWith('starter-') ? starterScope : gameId;
+
+  static String idFor(String gameId, String taskId) =>
+      '${scopeFor(gameId, taskId)}_$taskId';
 
   /// True when there is something worth showing a viewer.
   bool get isReady =>

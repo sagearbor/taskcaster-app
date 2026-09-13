@@ -30,10 +30,23 @@ const LOCK_MINUTES = 15;
 /** Hard cap on clips per montage — bounds /tmp usage and render time. */
 const MAX_CLIPS = 12;
 
-const montageDocId = (gameId, taskId) => `${gameId}_${taskId}`;
+/**
+ * The scope a montage is rendered over. Starter Pack tasks (`starter-*`) are
+ * played in a separate solo game per player, but the Arena shows them
+ * cross-game by taskId, so their finale must splice EVERY player's clip: the
+ * scope is the literal 'starter'. Any other task is scoped to its game.
+ * The app applies the identical rule (Montage.idFor) to find the document.
+ */
+const STARTER_SCOPE = 'starter';
+const isStarterTask = (taskId) => typeof taskId === 'string' && taskId.startsWith('starter-');
+const montageScope = (gameId, taskId) => (isStarterTask(taskId) ? STARTER_SCOPE : gameId);
 
-const finaleObjectPath = (gameId, taskId) => `montages/${gameId}/${taskId}/finale.mp4`;
-const momentsObjectPath = (gameId, taskId) => `montages/${gameId}/${taskId}/moments.mp4`;
+const montageDocId = (gameId, taskId) => `${montageScope(gameId, taskId)}_${taskId}`;
+
+const finaleObjectPath = (gameId, taskId) =>
+  `montages/${montageScope(gameId, taskId)}/${taskId}/finale.mp4`;
+const momentsObjectPath = (gameId, taskId) =>
+  `montages/${montageScope(gameId, taskId)}/${taskId}/moments.mp4`;
 
 /**
  * The anyone-can-read download URL. `montages/` is world-readable in
@@ -218,6 +231,9 @@ module.exports = {
   LOCK_MINUTES,
   MAX_CLIPS,
   montageDocId,
+  montageScope,
+  isStarterTask,
+  STARTER_SCOPE,
   finaleObjectPath,
   momentsObjectPath,
   publicUrl,
