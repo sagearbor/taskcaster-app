@@ -54,10 +54,16 @@ class Montage extends Equatable {
       '${scopeFor(gameId, taskId)}_$taskId';
 
   /// True when there is something worth showing a viewer.
-  bool get isReady =>
-      status == MontageStatus.ready &&
-      finaleUrl != null &&
-      finaleUrl!.isNotEmpty;
+  /// A finale exists to play. The server flips [status] back to `pending`
+  /// every time a new clip arrives (the next settle window), and to `failed`
+  /// when a re-render breaks, but it never removes the last rendered
+  /// [finaleUrl] — so the card keeps showing the latest finale until a newer
+  /// one replaces it. Verified on production: hiding on `pending` made the
+  /// card vanish the moment anyone else posted.
+  bool get isReady => finaleUrl != null && finaleUrl!.isNotEmpty;
+
+  /// A newer render is queued or running behind the finale being shown.
+  bool get isRerendering => isReady && status == MontageStatus.pending;
 
   factory Montage.fromMap(Map<String, dynamic> map) {
     return Montage(

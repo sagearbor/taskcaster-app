@@ -55,15 +55,29 @@ void main() {
     expect(find.byKey(const Key('arena-finale-card')), findsNothing);
   });
 
-  testWidgets('renders nothing when the render failed', (tester) async {
+  testWidgets('renders nothing when the first render failed (no finale yet)',
+      (tester) async {
     montages.seed(const Montage(
       gameId: 'game-1',
       taskId: 'starter-01',
-      finaleUrl: 'https://cdn.test/half.mp4',
       status: MontageStatus.failed,
     ));
     await pump(tester);
     expect(find.byKey(const Key('arena-finale-card')), findsNothing);
+  });
+
+  testWidgets('keeps the last finale while a re-render is pending or failed',
+      (tester) async {
+    // The server flips status on every new clip; the last rendered finale
+    // stays up until a newer one replaces it (seen on production).
+    montages.seed(const Montage(
+      gameId: 'game-1',
+      taskId: 'starter-01',
+      finaleUrl: 'https://cdn.test/previous.mp4',
+      status: MontageStatus.pending,
+    ));
+    await pump(tester);
+    expect(find.byKey(const Key('arena-finale-card')), findsOneWidget);
   });
 
   testWidgets('shows the finale once the server says ready', (tester) async {

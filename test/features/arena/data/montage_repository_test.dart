@@ -33,13 +33,16 @@ void main() {
       expect(montage.isReady, isFalse);
     });
 
-    test('isReady needs both a ready status and a finale url', () {
+    test('isReady means a finale url exists; a pending re-render keeps it', () {
+      // The server flips status back to pending whenever a new clip lands
+      // but never drops the last finaleUrl: the card must keep showing it.
       const pending = Montage(
         gameId: 'g',
         taskId: 't',
         finaleUrl: 'https://cdn.test/f.mp4',
       );
-      expect(pending.isReady, isFalse);
+      expect(pending.isReady, isTrue);
+      expect(pending.isRerendering, isTrue);
 
       const noUrl = Montage(
         gameId: 'g',
