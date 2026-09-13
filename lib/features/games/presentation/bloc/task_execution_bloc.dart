@@ -8,6 +8,8 @@ import '../../domain/repositories/game_repository.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/services/video/video_policy.dart';
+import '../../../../core/services/video/video_uploader.dart';
 import '../../../arena/domain/auto_edit.dart';
 import '../../../arena/domain/models/feed_post.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
@@ -22,15 +24,25 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
   /// means nothing is ever posted.
   final FeedRepository? feedRepository;
 
+  /// Puts in-app clips in the bucket. Nullable so every flow that never films
+  /// anything (and every existing test) works with no uploader wired up — a
+  /// null uploader simply means a clip submission is refused politely.
+  final VideoUploader? videoUploader;
+
   final Uuid _uuid = const Uuid();
 
   /// Largest inline photo we will store on a post, in bytes of base64. Above
   /// this a Firestore document starts flirting with its 1 MB ceiling.
   static const int maxPhotoDataBytes = 400 * 1024;
 
+  /// Upload progress is emitted in steps of this fraction, so a 30 MB clip
+  /// produces ~20 states rather than one per chunk.
+  static const double uploadProgressStep = 0.05;
+
   TaskExecutionBloc({
     required this.gameRepository,
     this.feedRepository,
+    this.videoUploader,
   }) : super(TaskExecutionInitial()) {
     on<LoadTask>(_onLoadTask);
     on<StartTask>(_onStartTask);
@@ -184,11 +196,15 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
           timerSeconds != null &&
           elapsedSeconds > timerSeconds + AutoEdit.graceSeconds;
 
-      final mediaType = event.photoBytes != null
-          ? SubmissionMediaType.photo
-          : (event.text != null
-              ? SubmissionMediaType.text
-              : SubmissionMediaType.link);
+      final clip = event.video;
+
+      final mediaType = clip != null
+          ? SubmissionMediaType.video
+          : (event.photoBytes != null
+              ? SubmissionMediaType.photo
+              : (event.text != null
+                  ? SubmissionMediaType.text
+                  : SubmissionMediaType.link));
 
       String? photoData;
       if (event.photoBytes != null) {
@@ -196,6 +212,81 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
         if (photoData.length > maxPhotoDataBytes) {
           emit(const TaskExecutionError(
             message: "That photo is too big to post — try a smaller one.",
+          ));
+          return;
+        }
+      }
+
+      // ---- In-app clip: size gate, then upload with progress ----------------
+      // The clip was auto-trimmed at capture (the recorder's maxDuration), so
+      // the only thing left to refuse here is size. Everything else is a cost
+      // control the Storage rules enforce for us; see VideoPolicy.
+      String? clipUrl;
+      String? clipStoragePath;
+      int? clipBytes;
+      String? clipContentType;
+      if (clip != null) {
+        final reject = VideoPolicy.rejectReason(bytes: clip.byteCount);
+        if (reject != null) {
+          emit(TaskExecutionError(message: reject));
+          return;
+        }
+
+        final uploader = videoUploader;
+        if (uploader == null) {
+          emit(const TaskExecutionError(
+            message: "Clips aren't available right now — snap a photo instead.",
+          ));
+          return;
+        }
+
+        final capSeconds = VideoPolicy.clipCapSeconds(timerSeconds);
+        emit(TaskExecutionUploading(progress: 0, task: task));
+
+        var lastEmitted = 0.0;
+        try {
+          final upload = await uploader.upload(
+            userId: event.userId,
+            bytes: clip.bytes,
+            contentType: clip.contentType,
+            when: now,
+            // Everything a later server-side splice needs to rebuild the task
+            // clock over this clip without reading pixels.
+            metadata: {
+              'gameId': event.gameId,
+              'taskId': task.id,
+              'userId': event.userId,
+              'clipCapSeconds': '$capSeconds',
+              if (timerSeconds != null) 'timerSeconds': '$timerSeconds',
+              if (event.clockOffsetSeconds != null)
+                'clockOffsetSeconds': '${event.clockOffsetSeconds}',
+              if (elapsedSeconds != null) 'elapsedSeconds': '$elapsedSeconds',
+              'isLate': '$isLate',
+            },
+            onProgress: (fraction) {
+              if (emit.isDone) return;
+              if (fraction < 1 &&
+                  fraction - lastEmitted < uploadProgressStep) {
+                return;
+              }
+              lastEmitted = fraction;
+              emit(TaskExecutionUploading(progress: fraction, task: task));
+            },
+          );
+          clipUrl = upload.downloadUrl;
+          clipStoragePath = upload.storagePath;
+          clipBytes = upload.bytes;
+          clipContentType = clip.contentType;
+        } on DailyVideoLimitReached catch (e) {
+          emit(TaskExecutionError(message: e.message));
+          return;
+        } catch (e) {
+          debugPrint('TaskExecutionBloc clip upload failed: $e');
+          emit(TaskExecutionError(
+            message: FriendlyErrors.action(
+              e,
+              fallback: "Couldn't post that clip. Please try again.",
+            ),
           ));
           return;
         }
@@ -218,6 +309,7 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
       String? feedPostId;
       final feed = feedRepository;
       final hasArenaContent = photoData != null ||
+          clipUrl != null ||
           (event.text != null && event.text!.isNotEmpty) ||
           (event.videoUrl != null && event.videoUrl!.isNotEmpty);
       if (feed != null &&
@@ -235,7 +327,16 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
           mediaType: mediaType,
           photoData: photoData,
           text: event.text,
-          videoUrl: event.videoUrl,
+          // A clip reuses videoUrl for its download URL; mediaType is what
+          // tells it apart from a pasted link.
+          videoUrl: clipUrl ?? event.videoUrl,
+          videoStoragePath: clipStoragePath,
+          videoBytes: clipBytes,
+          videoContentType: clipContentType,
+          // Unknown at upload time — playback trims at the cap regardless.
+          videoDurationSeconds: null,
+          clockOffsetSeconds: clip == null ? null : event.clockOffsetSeconds,
+          timerSeconds: clip == null ? null : timerSeconds,
           caption: caption.isEmpty ? null : caption,
           stamp: stamp,
           isLate: isLate,
@@ -267,7 +368,7 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
       final submission = Submission(
         id: existingIndex >= 0 ? updatedSubmissions[existingIndex].id : _uuid.v4(),
         userId: event.userId,
-        videoUrl: event.videoUrl,
+        videoUrl: clipUrl ?? event.videoUrl,
         score: existingIndex >= 0 ? updatedSubmissions[existingIndex].score : 0,
         isJudged: false,
         submittedAt: now,
@@ -278,6 +379,11 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
         isLate: isLate,
         elapsedSeconds: elapsedSeconds,
         feedPostId: feedPostId,
+        videoStoragePath: clipStoragePath,
+        videoBytes: clipBytes,
+        videoContentType: clipContentType,
+        clockOffsetSeconds: clip == null ? null : event.clockOffsetSeconds,
+        timerSeconds: clip == null ? null : timerSeconds,
       );
       if (existingIndex >= 0) {
         updatedSubmissions[existingIndex] = submission;

@@ -10,12 +10,16 @@ import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/services/photo/photo_capture.dart';
+import '../../../../core/services/video/video_capture.dart';
+import '../../../../core/services/video/video_policy.dart';
+import '../../../../core/services/video/video_uploader.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../arena/domain/models/feed_post.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
 import '../../../arena/presentation/screens/arena_screen.dart';
 import '../../../arena/presentation/widgets/watch_together_button.dart';
+import '../widgets/clip_preview.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/task_execution_bloc.dart';
@@ -32,6 +36,11 @@ import '../widgets/twist_banner.dart';
 import 'posted_screen.dart';
 import 'video_viewing_screen.dart';
 import '../../../../core/utils/link_utils.dart';
+
+/// What the player is handing in from the starter flow. Keeps the three
+/// branches of `_postSubmission` honest — the bloc infers the media type from
+/// which field is set, and this is what guarantees exactly one of them is.
+enum _Medium { photo, text, video }
 
 class TaskExecutionScreen extends StatelessWidget {
   final String gameId;
@@ -59,6 +68,7 @@ class TaskExecutionScreen extends StatelessWidget {
       create: (context) => TaskExecutionBloc(
         gameRepository: sl<GameRepository>(),
         feedRepository: sl<FeedRepository>(),
+        videoUploader: sl<VideoUploader>(),
       )..add(LoadTask(
           gameId: gameId,
           taskIndex: taskIndex,
@@ -109,6 +119,12 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   // this was a photo/text submission that should land on PostedScreen.
   Task? _lastLoadedTask;
   Uint8List? _capturedPhotoBytes;
+  // The clip the player just filmed, waiting on Retake / Post it. There is no
+  // trim or caption step between here and posting — see §2.2.
+  PickedVideo? _capturedVideo;
+  // Seconds already burned on the TASK clock when the recorder opened, so the
+  // countdown drawn over playback matches what the player saw.
+  int? _videoClockOffsetSeconds;
 
   @override
   void dispose() {
@@ -198,9 +214,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
 
           if (state is TaskExecutionSubmitted) {
             final task = _lastLoadedTask;
-            final isStarterMedium = task != null &&
-                (task.submissionType == SubmissionType.photo ||
-                    task.submissionType == SubmissionType.text);
+            final isStarterMedium =
+                task != null && _isStarterMedium(task.submissionType);
 
             if (isStarterMedium) {
               // Snap-and-post / write-and-post: replace this screen with the
@@ -254,8 +269,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             _lastLoadedTask = state.task;
 
             final isStarterMedium =
-                state.task.submissionType == SubmissionType.photo ||
-                    state.task.submissionType == SubmissionType.text;
+                _isStarterMedium(state.task.submissionType);
 
             // Auto-dispatch Start for the cold open / Home "next task" /
             // Posted "Next task" flows so the player never has to tap Start
@@ -289,6 +303,10 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             }
 
             return _buildTaskExecutionForm(context, state);
+          }
+
+          if (state is TaskExecutionUploading) {
+            return _buildUploadingView(context, state);
           }
 
           // Initial / Submitted — show a spinner instead of a blank screen.
@@ -643,6 +661,82 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   // docs/PRODUCT_DIRECTION.md §2.2 and tmp/round7/CONTRACTS.md's AutoEdit.
   // ===========================================================================
 
+  /// Submission types that use the two-tap starter flow (reveal -> Start ->
+  /// film/snap/write -> Posted). `SubmissionType.any` keeps the legacy
+  /// paste-a-link form.
+  static bool _isStarterMedium(SubmissionType type) =>
+      type == SubmissionType.photo ||
+      type == SubmissionType.text ||
+      type == SubmissionType.video;
+
+  /// The clip is on its way to the bucket. Deliberately a dead-end screen: no
+  /// Retake, no Cancel, nothing to tap — the player has already committed and
+  /// the only thing left is the bar.
+  Widget _buildUploadingView(
+    BuildContext context,
+    TaskExecutionUploading state,
+  ) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            state.task.title,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 28),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              key: const Key('clip-upload-progress'),
+              value: state.progress.clamp(0.0, 1.0),
+              minHeight: 10,
+              backgroundColor: AppTheme.violetSoft,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Uploading… ${state.percent}%',
+            key: const Key('clip-upload-label'),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Hang on — posting your clip.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.inkSoft),
+          ),
+          const SizedBox(height: 24),
+          // The buttons stay on screen but inert, so the layout does not jump
+          // when the upload finishes.
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: null,
+                  child: const Text('Retake'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: null,
+                  child: const Text('Post it'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStarterTaskFlow(BuildContext context, TaskExecutionLoaded state) {
     final task = state.task;
     final started = state.userStatus != null &&
@@ -710,10 +804,12 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
           const SizedBox(height: 20),
           TwistBanner(twist: task.twist),
           const SizedBox(height: 28),
-          if (task.submissionType == SubmissionType.photo)
-            _buildSnapSection(context)
-          else if (task.submissionType == SubmissionType.text)
-            _buildWriteSection(context),
+          if (task.submissionType == SubmissionType.text)
+            _buildWriteSection(context)
+          else
+            // Video is the default medium: every non-text starter task leads
+            // with "Film it" and keeps "Snap it" as the second option.
+            _buildCaptureSection(context, state),
         ],
       ),
     );
@@ -732,7 +828,42 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     return authState is AuthAuthenticated ? authState.user.displayName : 'Player';
   }
 
-  Widget _buildSnapSection(BuildContext context) {
+  /// Film it / Snap it, and the preview that replaces them once something has
+  /// been captured. NEVER a trim slider, a caption box or a sticker picker:
+  /// record -> Post it, two taps (docs/PRODUCT_DIRECTION.md §2.2).
+  Widget _buildCaptureSection(
+    BuildContext context,
+    TaskExecutionLoaded state,
+  ) {
+    final clip = _capturedVideo;
+    if (clip != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              height: 260,
+              child: ClipPreview(
+                clip: clip,
+                timerSeconds: state.task.durationSeconds,
+                clockOffsetSeconds: _videoClockOffsetSeconds,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildRetakeAndPost(
+            context,
+            onRetake: () => setState(() {
+              _capturedVideo = null;
+              _videoClockOffsetSeconds = null;
+            }),
+            onPost: () => _postSubmission(context, medium: _Medium.video),
+          ),
+        ],
+      );
+    }
+
     if (_capturedPhotoBytes != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -747,53 +878,122 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => setState(() => _capturedPhotoBytes = null),
-                  child: const Text('Retake'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => _postSubmission(context, photo: true),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.coral,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Post it'),
-                ),
-              ),
-            ],
+          _buildRetakeAndPost(
+            context,
+            onRetake: () => setState(() => _capturedPhotoBytes = null),
+            onPost: () => _postSubmission(context, medium: _Medium.photo),
           ),
         ],
       );
     }
 
-    return SizedBox(
-      height: 64,
-      width: double.infinity,
-      child: FilledButton(
-        onPressed: () => _snapIt(context),
-        style: FilledButton.styleFrom(
-          backgroundColor: AppTheme.coral,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    final capSeconds = VideoPolicy.clipCapSeconds(state.task.durationSeconds);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 72,
+          child: FilledButton(
+            onPressed: () => _filmIt(context, state),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.coral,
+              foregroundColor: Colors.white,
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '\u{1F3A5} Film it',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'up to $capSeconds s',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
+            ),
+          ),
         ),
-        child: const Text(
-          '📷 Snap it',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 52,
+          child: OutlinedButton(
+            onPressed: () => _snapIt(context),
+            child: const Text(
+              '\u{1F4F7} Snap it',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildRetakeAndPost(
+    BuildContext context, {
+    required VoidCallback onRetake,
+    required VoidCallback onPost,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: onRetake,
+            child: const Text('Retake'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: FilledButton(
+            onPressed: onPost,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.coral,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Post it'),
+          ),
+        ),
+      ],
     );
   }
 
   Future<void> _snapIt(BuildContext context) async {
     final bytes = await sl<PhotoCapture>().pick(fromCamera: true);
     if (!mounted || bytes == null) return;
-    setState(() => _capturedPhotoBytes = bytes);
+    setState(() {
+      _capturedPhotoBytes = bytes;
+      _capturedVideo = null;
+      _videoClockOffsetSeconds = null;
+    });
+  }
+
+  Future<void> _filmIt(
+    BuildContext context,
+    TaskExecutionLoaded state,
+  ) async {
+    // Stamp the TASK clock at the moment the recorder opens, BEFORE awaiting
+    // the picker: that offset is what lets playback draw the same countdown
+    // the player was watching, and what a later server-side splice uses
+    // instead of reading the number off the pixels.
+    final startedAt = state.userStatus?.startedAt;
+    final offset = startedAt == null
+        ? null
+        : DateTime.now().difference(startedAt).inSeconds;
+
+    // The recorder's own maxDuration IS the trim. There is no trim screen.
+    final cap = VideoPolicy.clipCapSeconds(state.task.durationSeconds);
+    final clip = await sl<VideoCapture>().pick(
+      fromCamera: true,
+      maxSeconds: cap,
+    );
+    if (!mounted || clip == null) return;
+    setState(() {
+      _capturedVideo = clip;
+      _videoClockOffsetSeconds = offset == null || offset < 0 ? 0 : offset;
+      _capturedPhotoBytes = null;
+    });
   }
 
   Widget _buildWriteSection(BuildContext context) {
@@ -820,7 +1020,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
         SizedBox(
           height: 56,
           child: FilledButton(
-            onPressed: () => _postSubmission(context, photo: false),
+            onPressed: () => _postSubmission(context, medium: _Medium.text),
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.coral,
               foregroundColor: Colors.white,
@@ -835,34 +1035,45 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     );
   }
 
-  void _postSubmission(BuildContext context, {required bool photo}) {
-    if (!photo) {
-      final text = _textEntryController.text.trim();
-      if (text.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Write something first')),
-        );
-        return;
-      }
-      context.read<TaskExecutionBloc>().add(SubmitTask(
-            gameId: widget.gameId,
-            taskIndex: widget.taskIndex,
-            userId: widget.userId,
-            text: text,
-            shareToArena: true,
-            displayName: _currentDisplayName(context),
-          ));
-      return;
+  void _postSubmission(BuildContext context, {required _Medium medium}) {
+    final displayName = _currentDisplayName(context);
+    switch (medium) {
+      case _Medium.text:
+        final text = _textEntryController.text.trim();
+        if (text.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Write something first')),
+          );
+          return;
+        }
+        context.read<TaskExecutionBloc>().add(SubmitTask(
+              gameId: widget.gameId,
+              taskIndex: widget.taskIndex,
+              userId: widget.userId,
+              text: text,
+              shareToArena: true,
+              displayName: displayName,
+            ));
+      case _Medium.photo:
+        context.read<TaskExecutionBloc>().add(SubmitTask(
+              gameId: widget.gameId,
+              taskIndex: widget.taskIndex,
+              userId: widget.userId,
+              photoBytes: _capturedPhotoBytes,
+              shareToArena: true,
+              displayName: displayName,
+            ));
+      case _Medium.video:
+        context.read<TaskExecutionBloc>().add(SubmitTask(
+              gameId: widget.gameId,
+              taskIndex: widget.taskIndex,
+              userId: widget.userId,
+              video: _capturedVideo,
+              clockOffsetSeconds: _videoClockOffsetSeconds,
+              shareToArena: true,
+              displayName: displayName,
+            ));
     }
-
-    context.read<TaskExecutionBloc>().add(SubmitTask(
-          gameId: widget.gameId,
-          taskIndex: widget.taskIndex,
-          userId: widget.userId,
-          photoBytes: _capturedPhotoBytes,
-          shareToArena: true,
-          displayName: _currentDisplayName(context),
-        ));
   }
 
   /// A player revisiting a photo/text task they already posted: their entry,

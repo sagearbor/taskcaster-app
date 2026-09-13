@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 
+import '../../../../core/services/video/video_capture.dart';
+
 abstract class TaskExecutionEvent extends Equatable {
   const TaskExecutionEvent();
 
@@ -41,9 +43,10 @@ class StartTask extends TaskExecutionEvent {
 
 /// Hand in an attempt.
 ///
-/// Exactly one of [photoBytes], [text] and [videoUrl] is normally set; the
-/// medium is inferred in that order (photo, then text, then link), and the
-/// stamp and caption are computed by `AutoEdit` — the UI never supplies them.
+/// Exactly one of [video], [photoBytes], [text] and [videoUrl] is normally
+/// set; the medium is inferred in that order (clip, photo, text, then link),
+/// and the stamp and caption are computed by `AutoEdit` — the UI never
+/// supplies them.
 class SubmitTask extends TaskExecutionEvent {
   final String gameId;
   final int taskIndex;
@@ -57,6 +60,16 @@ class SubmitTask extends TaskExecutionEvent {
 
   /// A text entry.
   final String? text;
+
+  /// An in-app clip, already recorded and auto-trimmed by the recorder's
+  /// `maxDuration`. Uploaded to Firebase Storage before the post is written.
+  final PickedVideo? video;
+
+  /// Seconds already burned on the TASK clock when the recorder opened —
+  /// captured by the screen at the moment of the "Film it" tap. Stored on the
+  /// post so playback (and a later server-side splice) can draw the task
+  /// countdown over the clip.
+  final int? clockOffsetSeconds;
 
   /// Post this attempt to the Arena. Also requires the game's
   /// `settings.shareToArena`.
@@ -72,6 +85,8 @@ class SubmitTask extends TaskExecutionEvent {
     this.videoUrl,
     this.photoBytes,
     this.text,
+    this.video,
+    this.clockOffsetSeconds,
     this.shareToArena = true,
     this.displayName = '',
   });
@@ -84,6 +99,8 @@ class SubmitTask extends TaskExecutionEvent {
         videoUrl,
         photoBytes,
         text,
+        video,
+        clockOffsetSeconds,
         shareToArena,
         displayName,
       ];
