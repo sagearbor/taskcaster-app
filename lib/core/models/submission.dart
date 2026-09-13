@@ -5,7 +5,12 @@ import 'package:equatable/equatable.dart';
 /// [link] is the legacy (and still supported) "paste a video URL" path and is
 /// the default, so every submission serialized before this field existed
 /// deserializes unchanged.
-enum SubmissionMediaType { link, photo, text }
+///
+/// [video] is an in-app clip: recorded by the player, uploaded to Firebase
+/// Storage under `submissions/{uid}/{yyyyMMdd}/{slot}` and played back from
+/// its download URL. It reuses [videoUrl] for that URL — the media type, not
+/// the field, is what distinguishes it from a pasted [link].
+enum SubmissionMediaType { link, photo, text, video }
 
 class Submission extends Equatable {
   final String id;
@@ -42,6 +47,33 @@ class Submission extends Equatable {
   /// The Arena `feed_posts` document id when this submission was shared.
   final String? feedPostId;
 
+  /// In-app clip only: the bucket object path
+  /// (`submissions/{uid}/{yyyyMMdd}/{slot}`) the clip was written to. Null for
+  /// every other medium.
+  final String? videoStoragePath;
+
+  /// In-app clip only: the uploaded size in bytes (<= `VideoPolicy
+  /// .maxUploadBytes`).
+  final int? videoBytes;
+
+  /// In-app clip only: the MIME type actually uploaded (`video/mp4`,
+  /// `video/quicktime`, `video/webm`).
+  final String? videoContentType;
+
+  /// In-app clip only: the clip's duration in seconds, or null when the
+  /// recorder did not tell us (playback trims at the cap either way).
+  final double? videoDurationSeconds;
+
+  /// In-app clip only: seconds already burned on the TASK clock (since
+  /// `startedAt`) when the recorder opened. Playback draws the task countdown
+  /// from `timerSeconds - clockOffsetSeconds - position`, and a later
+  /// server-side splice can rebuild the same clock without OCR.
+  final int? clockOffsetSeconds;
+
+  /// The task's `durationSeconds` at submit time, carried on the submission so
+  /// the countdown can be drawn from the post alone.
+  final int? timerSeconds;
+
   const Submission({
     required this.id,
     required this.userId,
@@ -57,6 +89,12 @@ class Submission extends Equatable {
     this.isLate = false,
     this.elapsedSeconds,
     this.feedPostId,
+    this.videoStoragePath,
+    this.videoBytes,
+    this.videoContentType,
+    this.videoDurationSeconds,
+    this.clockOffsetSeconds,
+    this.timerSeconds,
   });
 
   factory Submission.fromMap(Map<String, dynamic> map) {
@@ -80,6 +118,13 @@ class Submission extends Equatable {
       isLate: map['isLate'] as bool? ?? false,
       elapsedSeconds: map['elapsedSeconds'] as int?,
       feedPostId: map['feedPostId'] as String?,
+      // Absent on every document written before in-app video existed.
+      videoStoragePath: map['videoStoragePath'] as String?,
+      videoBytes: map['videoBytes'] as int?,
+      videoContentType: map['videoContentType'] as String?,
+      videoDurationSeconds: (map['videoDurationSeconds'] as num?)?.toDouble(),
+      clockOffsetSeconds: map['clockOffsetSeconds'] as int?,
+      timerSeconds: map['timerSeconds'] as int?,
     );
   }
 
@@ -99,6 +144,12 @@ class Submission extends Equatable {
       'isLate': isLate,
       'elapsedSeconds': elapsedSeconds,
       'feedPostId': feedPostId,
+      'videoStoragePath': videoStoragePath,
+      'videoBytes': videoBytes,
+      'videoContentType': videoContentType,
+      'videoDurationSeconds': videoDurationSeconds,
+      'clockOffsetSeconds': clockOffsetSeconds,
+      'timerSeconds': timerSeconds,
     };
   }
 
@@ -117,6 +168,12 @@ class Submission extends Equatable {
     bool? isLate,
     int? elapsedSeconds,
     String? feedPostId,
+    String? videoStoragePath,
+    int? videoBytes,
+    String? videoContentType,
+    double? videoDurationSeconds,
+    int? clockOffsetSeconds,
+    int? timerSeconds,
   }) {
     return Submission(
       id: id ?? this.id,
@@ -133,6 +190,13 @@ class Submission extends Equatable {
       isLate: isLate ?? this.isLate,
       elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
       feedPostId: feedPostId ?? this.feedPostId,
+      videoStoragePath: videoStoragePath ?? this.videoStoragePath,
+      videoBytes: videoBytes ?? this.videoBytes,
+      videoContentType: videoContentType ?? this.videoContentType,
+      videoDurationSeconds:
+          videoDurationSeconds ?? this.videoDurationSeconds,
+      clockOffsetSeconds: clockOffsetSeconds ?? this.clockOffsetSeconds,
+      timerSeconds: timerSeconds ?? this.timerSeconds,
     );
   }
 
@@ -155,5 +219,11 @@ class Submission extends Equatable {
         isLate,
         elapsedSeconds,
         feedPostId,
+        videoStoragePath,
+        videoBytes,
+        videoContentType,
+        videoDurationSeconds,
+        clockOffsetSeconds,
+        timerSeconds,
       ];
 }

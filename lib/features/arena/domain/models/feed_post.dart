@@ -53,7 +53,38 @@ class FeedPost extends Equatable {
   final String? photoData;
 
   final String? text;
+
+  /// The https download URL of the clip for a [SubmissionMediaType.video]
+  /// post, and the pasted share link for a [SubmissionMediaType.link] post.
+  /// The media type — never the field — is what tells the two apart.
   final String? videoUrl;
+
+  /// Video posts only: the bucket object path the clip lives at —
+  /// `submissions/{uid}/{yyyyMMdd}/{slot}` for a player's clip, or
+  /// `house/{taskId}.mp4` for a seeded house entry. The Firestore rules check
+  /// that a player's path starts with their own `submissions/<uid>/` prefix.
+  final String? videoStoragePath;
+
+  /// Video posts only: uploaded size in bytes.
+  final int? videoBytes;
+
+  /// Video posts only: the MIME type uploaded.
+  final String? videoContentType;
+
+  /// Video posts only: clip duration in seconds, or null when unknown —
+  /// playback trims at `VideoPolicy.maxClipSeconds` regardless.
+  final double? videoDurationSeconds;
+
+  /// Video posts only: seconds already burned on the TASK clock (since the
+  /// player tapped Start) at the moment the recorder opened. With
+  /// [timerSeconds] this is everything `CountdownBurn` needs to draw the task
+  /// clock over playback, and everything a later server-side splice needs to
+  /// rebuild it without OCR.
+  final int? clockOffsetSeconds;
+
+  /// The task's `durationSeconds`, copied onto the post so the countdown can
+  /// be drawn from the post alone (the Arena never loads the game).
+  final int? timerSeconds;
 
   /// Auto-generated; see `AutoEdit.caption`.
   final String? caption;
@@ -79,6 +110,13 @@ class FeedPost extends Equatable {
   /// Viewer "that's funny" taps. Never required, never blocks anything; breaks
   /// fewest-grades ties and drives the `DON'T ASK` stamp.
   final int tapCount;
+
+  /// Per-second histogram of viewer taps: `'<second>' -> taps`, where the key
+  /// is `VideoPolicy.tapBucket(position, cap)`. Empty for photo/text posts and
+  /// for video posts nobody has tapped yet. This is the raw signal future
+  /// automatic editing (auto-trim to the funniest second) will run on — it is
+  /// collected now so there is history to work with when that lands.
+  final Map<String, int> tapSeconds;
 
   /// Uids that have already graded this post. Persisted (see [toMap]) so the
   /// queue can exclude posts the viewer graded with a single array-contains
@@ -109,6 +147,13 @@ class FeedPost extends Equatable {
     this.gradeSum = 0,
     this.boosted = false,
     this.tapCount = 0,
+    this.tapSeconds = const {},
+    this.videoStoragePath,
+    this.videoBytes,
+    this.videoContentType,
+    this.videoDurationSeconds,
+    this.clockOffsetSeconds,
+    this.timerSeconds,
     this.graderIds = const [],
   });
 
@@ -140,6 +185,19 @@ class FeedPost extends Equatable {
       gradeSum: map['gradeSum'] as int? ?? 0,
       boosted: map['boosted'] as bool? ?? false,
       tapCount: map['tapCount'] as int? ?? 0,
+      // Written by `FieldValue.increment` on dotted `tapSeconds.<n>` keys, so
+      // Firestore hands it back as a nested map. Absent on every document
+      // written before in-app video existed.
+      tapSeconds: (map['tapSeconds'] as Map<dynamic, dynamic>?)?.map(
+            (k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0),
+          ) ??
+          const {},
+      videoStoragePath: map['videoStoragePath'] as String?,
+      videoBytes: map['videoBytes'] as int?,
+      videoContentType: map['videoContentType'] as String?,
+      videoDurationSeconds: (map['videoDurationSeconds'] as num?)?.toDouble(),
+      clockOffsetSeconds: map['clockOffsetSeconds'] as int?,
+      timerSeconds: map['timerSeconds'] as int?,
       graderIds: (map['graderIds'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
@@ -170,6 +228,13 @@ class FeedPost extends Equatable {
       'gradeSum': gradeSum,
       'boosted': boosted,
       'tapCount': tapCount,
+      'tapSeconds': tapSeconds,
+      'videoStoragePath': videoStoragePath,
+      'videoBytes': videoBytes,
+      'videoContentType': videoContentType,
+      'videoDurationSeconds': videoDurationSeconds,
+      'clockOffsetSeconds': clockOffsetSeconds,
+      'timerSeconds': timerSeconds,
       'graderIds': graderIds,
     };
   }
@@ -196,6 +261,13 @@ class FeedPost extends Equatable {
     int? gradeSum,
     bool? boosted,
     int? tapCount,
+    Map<String, int>? tapSeconds,
+    String? videoStoragePath,
+    int? videoBytes,
+    String? videoContentType,
+    double? videoDurationSeconds,
+    int? clockOffsetSeconds,
+    int? timerSeconds,
     List<String>? graderIds,
   }) {
     return FeedPost(
@@ -220,6 +292,13 @@ class FeedPost extends Equatable {
       gradeSum: gradeSum ?? this.gradeSum,
       boosted: boosted ?? this.boosted,
       tapCount: tapCount ?? this.tapCount,
+      tapSeconds: tapSeconds ?? this.tapSeconds,
+      videoStoragePath: videoStoragePath ?? this.videoStoragePath,
+      videoBytes: videoBytes ?? this.videoBytes,
+      videoContentType: videoContentType ?? this.videoContentType,
+      videoDurationSeconds: videoDurationSeconds ?? this.videoDurationSeconds,
+      clockOffsetSeconds: clockOffsetSeconds ?? this.clockOffsetSeconds,
+      timerSeconds: timerSeconds ?? this.timerSeconds,
       graderIds: graderIds ?? this.graderIds,
     );
   }
@@ -263,5 +342,12 @@ class FeedPost extends Equatable {
         gradeSum,
         boosted,
         tapCount,
+        tapSeconds,
+        videoStoragePath,
+        videoBytes,
+        videoContentType,
+        videoDurationSeconds,
+        clockOffsetSeconds,
+        timerSeconds,
       ];
 }

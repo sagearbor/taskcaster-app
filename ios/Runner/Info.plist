@@ -42,7 +42,9 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>This app uses the camera to play augmented-reality (AR) party tasks like Balloon Pop.</string>
+	<string>This app uses the camera to snap photos and film short clips for your task entries, and to play augmented-reality (AR) party tasks like Balloon Pop.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app records sound with your short task clips so your entry is funny with the audio on.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

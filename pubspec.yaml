@@ -81,6 +81,16 @@ dependencies:
   # keeps a single, well-understood entry point.
   image_picker: ^1.1.2
 
+  # In-app video submissions (Arena clips). Only
+  # lib/core/services/video/video_uploader.dart imports firebase_storage, and
+  # only lib/core/services/video/video_capture.dart calls pickVideo — the same
+  # single-entry-point rule the photo path follows. 12.x is the line that pairs
+  # with firebase_core ^3.8.1.
+  firebase_storage: ^12.3.7
+  # Clip playback (Arena, Watch together) and the pre-post preview. Only
+  # lib/features/arena/presentation/widgets/arena_video.dart imports this.
+  video_player: ^2.9.2
+
   # AI Integration
   http: ^1.1.0
   
