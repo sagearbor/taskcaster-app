@@ -89,6 +89,11 @@ service firebase.storage {
       // now that the bucket has Object Versioning enabled.
       allow create: if request.auth != null &&
                        request.auth.uid == uid &&
+                       // Explicit no-overwrite guard: a production probe showed
+                       // a second upload to an existing slot is still evaluated
+                       // as `create` even with Object Versioning on, so the
+                       // slot must be empty for the write to be allowed.
+                       resource == null &&
                        day.matches('^[0-9]{8}$') &&
                        slot.matches('^[0-9]$') &&
                        request.resource.size <= 32 * 1024 * 1024 &&
