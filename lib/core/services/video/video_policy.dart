@@ -1,8 +1,10 @@
 /// Cost controls for in-app video, enforced BY DESIGN on the client and
-/// mirrored in `storage.rules` (size, content type, one-shot slots per day)
-/// and by a 30-day lifecycle rule on the bucket. The owner approved Firebase
+/// mirrored in `storage.rules` (size, content type, one-shot slots per day). The owner approved Firebase
 /// Storage with a hard $100 ceiling (GCP budget `taskcaster-video-ceiling-100`,
 /// alerts at 50/90/100 %). Every number here is a lever for that ceiling.
+/// Retention is indefinite by the owner's decision ("maybe just not deleting
+/// now"): there is NO lifecycle deletion; the caps and the budget alarm are the
+/// controls.
 ///
 /// Storage layout: `submissions/{uid}/{yyyyMMdd}/{slot}` where `slot` is a
 /// single digit 0..9. The Storage rules refuse overwrites and any slot outside
@@ -26,8 +28,10 @@ class VideoPolicy {
   /// (the OS recorder may ignore it; the byte cap is the real control).
   static const int targetLongEdgePx = 854; // 480p
 
-  /// Raw uploads are deleted by the bucket lifecycle rule after this many days.
-  static const int retentionDays = 30;
+  /// Days before an upload is deleted; null = never (owner's decision, see
+  /// the class doc). Kept as a named lever so a lifecycle rule can be added
+  /// later without hunting for the number.
+  static const int? retentionDays = null;
 
   /// Root folder in the bucket for player clips.
   static const String storageRoot = 'submissions';
