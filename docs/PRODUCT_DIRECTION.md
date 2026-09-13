@@ -52,12 +52,14 @@ an audience that reacts. The show gets the audience by editing. We get it by
 * Submitting after `timer + 30 s grace` is allowed but flagged **LATE** (a red
   badge everyone sees; –1 point). Late is funnier than blocked.
 * Submission types, all **in-app**, no other apps:
+  * **Video (default)** — in-app camera, clip cap = min(task timer, 30 s),
+    32 MB per clip, 10 uploads/day/user, Firebase Storage with a $100/month
+    budget alarm (`taskcaster-video-ceiling-100`). Retention is indefinite
+    (the caps + the alarm are the cost controls, not deletion).
   * **Photo** — camera or gallery, downscaled client-side to ≤720 px JPEG
     (~60–150 KB), stored inline in the post document. No Firebase Storage,
     no cost, works on web/iOS/Android.
   * **Text** — a line or three, for wordplay tasks.
-  * **Video** — in-app, capped at min(task timer, 30 s), 32 MB, 10 per day,
-    Storage with a $100 budget alarm, raw clips deleted after 30 days.
 
 ### 2.2 Edit (automatic — the player never sees an editing UI)
 
@@ -73,6 +75,15 @@ There is no trim screen, no caption box, no sticker picker in the flow. Snap
 * **Auto-caption.** The task's *twist* line and the player's elapsed time
   ("Done in 41 s") are rendered on the post; that is the caption.
 * **Auto-frame.** Photos are downscaled and cropped to 4:5 client-side.
+* **Auto-countdown:** the task clock is drawn in the bottom-right of every
+  clip (overlay in-app, burned in by the server pass); the clip's start
+  offset against the task clock is stored as metadata so splicing never
+  needs OCR.
+* **Auto-montage:** for each task a finale (last 2 s of every clip back to
+  back) and a moments reel (one highlight per clip: viewer-tap clusters,
+  else audio peak, else frame-difference spike) are rendered server-side
+  with ffmpeg when submissions settle (3 new posts or 30 min); no human
+  step.
 * **Optional, after posting, never blocking:** the "Posted" screen has a
   single-line "Add a word for the judge" field. Skipping it is the default.
 
@@ -192,94 +203,114 @@ marks in the UI except stamps. The judge is always "the crowd".
 
 ---
 
-## 5. The 10 starter tasks
+## 5. The 10 starter tasks — video first
 
-Every task: doable alone, at home, with a phone, in under three minutes, and
-funny whether you succeed or fail. Timer is the *doing* time; the 30 s grace
-applies to all. Rubric is the single line the grader sees. Twist is shown
-under the task after **Start**.
+Owner's call: **video is the default submission type.** Clip cap = min(task
+timer, 30 s). Every video clip carries a countdown of the *task* clock in the
+bottom-right (overlay in-app; burned in by the server pass, §2.2). The last
+2 seconds of every clip feed the automatic "finale" montage, so each video
+task is written so that its last 2 seconds are the reveal. Photo and text
+stay where the still or the words ARE the joke (hide-and-seek, a tableau, a
+three-line story) — video would only slow those down. Timer is the *doing*
+time; the 30 s grace applies to all. Rubric is the single line the grader
+sees. Twist is shown under the task after **Start**.
 
 | # | id | Title | Type | Timer |
 |---|----|-------|------|-------|
-| 1 | starter-01 | A vegetable that has just received terrible news | photo | 90 s |
-| 2 | starter-02 | The tallest tower of things that were never meant to be stacked | photo | 120 s |
+| 1 | starter-01 | Egg on a spoon, to the far wall and back | video | 30 s |
+| 2 | starter-02 | The tallest tower of things that were never meant to be stacked | video | 60 s |
 | 3 | starter-03 | Rename a household object | text | 60 s |
 | 4 | starter-04 | Hide in plain sight | photo | 120 s |
-| 5 | starter-05 | The worst sandwich that is still technically food | photo | 180 s |
+| 5 | starter-05 | The worst sandwich that is still technically food — and one bite | video | 90 s |
 | 6 | starter-06 | A famous painting, using only what is within arm's reach | photo | 180 s |
 | 7 | starter-07 | A three-line horror story about your fridge | text | 90 s |
-| 8 | starter-08 | Wear as many things on your head as possible | photo | 60 s |
-| 9 | starter-09 | The face of someone who has just remembered the oven is on — in another country | photo | 30 s |
-| 10 | starter-10 | Your autobiography | photo | 90 s |
+| 8 | starter-08 | Wear as many things on your head as possible | video | 60 s |
+| 9 | starter-09 | The face of someone who has just remembered the oven is on — in another country | video | 30 s |
+| 10 | starter-10 | Your autobiography: the trailer | video | 30 s |
 
-### starter-01 — A vegetable that has just received terrible news
-**Copy:** Find a vegetable. If you have no vegetables, find the most
-vegetable-adjacent thing in your home and do not tell us what it is.
-Photograph it at the exact moment it receives devastating news. Lighting,
-angle and emotional truth all count. **Twist:** The news must be implied by
-the photo alone; no text on the vegetable. **Rubric:** Emotional truth of the
-vegetable. **Photo · 90 s.**
+### starter-01 — Egg on a spoon, to the far wall and back · VIDEO · 30 s
+**Copy:** Put an egg (or the roundest thing in your kitchen) on a spoon. Walk
+to the farthest wall in the room and back without touching the egg. Film the
+whole trip; end on the egg, wherever it ends up. **Twist:** You must narrate
+it like a nature documentary. **Rubric:** Distance covered before disaster,
+then narration.
 
-### starter-02 — The tallest tower of things that were never meant to be stacked
+### starter-02 — The tallest tower of things that were never meant to be stacked · VIDEO · 60 s
 **Copy:** Build the tallest freestanding tower you can from objects that have
-no business being stacked. It must stand on its own for the photo. A shoe
-must be involved somewhere. **Twist:** Nothing in the tower may be a box.
-**Rubric:** Height × how much you fear for it. **Photo · 120 s.**
+no business being stacked. Film the last three objects going on. A shoe must
+be involved somewhere. **Twist:** The final object goes on with one hand, on
+camera, and you must say "and that's the tower" before you let go.
+**Rubric:** Height × how long it stands after you let go.
 
-### starter-03 — Rename a household object
+### starter-03 — Rename a household object · TEXT · 60 s
 **Copy:** Pick any object in the room. Give it the name it clearly should have
 had all along, and a one-line slogan to sell it. Type both. **Twist:** The
 name must not contain any part of the object's real name. **Rubric:** Would
-you buy it. **Text · 60 s.**
+you buy it.
 
-### starter-04 — Hide in plain sight
+### starter-04 — Hide in plain sight · PHOTO · 120 s
 **Copy:** Take a photo of a room with you in it. The crowd must need at least
 three seconds to find you. Being fully hidden is cheating; that is just a
 photo of a room. **Twist:** Some part of your face must be visible.
-**Rubric:** Seconds to find you, then style points. **Photo · 120 s.**
+**Rubric:** Seconds to find you, then style points. (Photo on purpose: the
+still IS the joke.)
 
-### starter-05 — The worst sandwich that is still technically food
+### starter-05 — The worst sandwich that is still technically food — and one bite · VIDEO · 90 s
 **Copy:** Assemble the worst sandwich you can from what is in your kitchen.
-Every ingredient must be edible. Photograph it with pride and list the
-ingredients in the caption. Do not eat it. We are not asking you to eat it.
-**Twist:** It must be cut in half for the photo. **Rubric:** Horror, then
-plausibility that it is food. **Photo · 180 s.**
+Every ingredient must be edible. Film the assembly, then take exactly one
+bite. The clip ends on your face. **Twist:** Name every ingredient out loud
+as it goes on. **Rubric:** Horror of the sandwich, then the face.
 
-### starter-06 — A famous painting, using only what is within arm's reach
+### starter-06 — A famous painting, using only what is within arm's reach · PHOTO · 180 s
 **Copy:** Without moving from where you are, recreate a famous painting with
 whatever you can reach. You may be in it. Name the painting in the caption.
 **Twist:** No phones or screens in the picture except the one taking it.
-**Rubric:** Could you name the painting before reading the caption.
-**Photo · 180 s.**
+**Rubric:** Could you name the painting before reading the caption. (Photo on
+purpose: a tableau is a still.)
 
-### starter-07 — A three-line horror story about your fridge
+### starter-07 — A three-line horror story about your fridge · TEXT · 90 s
 **Copy:** Write a horror story about your fridge in exactly three lines. It
 must be based on something actually in your fridge right now. **Twist:** The
 last line must be a single word. **Rubric:** Chills, then the word.
-**Text · 90 s.**
 
-### starter-08 — Wear as many things on your head as possible
-**Copy:** Balance as many objects as you can on your head. Balanced, not tied,
-not held. Take the photo one moment before disaster. **Twist:** Count them in
-the caption; the crowd will check. **Rubric:** Number of things × your
-dignity. **Photo · 60 s.**
+### starter-08 — Wear as many things on your head as possible · VIDEO · 60 s
+**Copy:** Balance as many objects as you can on your head. Balanced, not
+tied, not held. Film yourself adding them one at a time and keep filming
+until they fall. **Twist:** Count out loud as each one goes on; the crowd
+will check. **Rubric:** Number of things × your dignity when they go.
 
-### starter-09 — The face of someone who has just remembered the oven is on — in another country
-**Copy:** Selfie. You have just remembered that you left the oven on. You are
-currently in a different country. It is 3 a.m. there. Show us every layer of
-that realisation in one face. **Twist:** No hands in the photo. **Rubric:**
-Number of distinct regrets visible. **Photo · 30 s.**
+### starter-09 — The face of someone who has just remembered the oven is on — in another country · VIDEO · 30 s
+**Copy:** Selfie video. You have just remembered that you left the oven on.
+You are currently in a different country. It is 3 a.m. there. Show us every
+layer of that realisation arriving, one at a time. **Twist:** No hands in the
+shot, and you may say exactly one word. **Rubric:** Number of distinct
+regrets visible, then the word.
 
-### starter-10 — Your autobiography
-**Copy:** Hold up the cover of your autobiography. The title is the last thing
-you said out loud today. Make the cover: pose, props, expression. Put the
-title in the caption. **Twist:** The cover must include a review quote from a
-household object. **Rubric:** Would you read it. **Photo · 90 s.**
+### starter-10 — Your autobiography: the trailer · VIDEO · 30 s
+**Copy:** Hold up the cover of your autobiography. The title is the last
+thing you said out loud today. Read the first line of the book in a
+movie-trailer voice. **Twist:** The cover must include a review quote from a
+household object. **Rubric:** Would you watch it.
 
 House entries: each task ships with one seeded **house entry** in the Arena
 ("Greg's assistant" as the poster) so a brand-new player always has something
-to grade immediately, and the Arena never looks empty. House entries are text
-posts and are clearly labelled `HOUSE`.
+to grade immediately, and the Arena never looks empty, labelled `HOUSE`. For
+the six video tasks (01, 02, 05, 08, 09, 10) the house entry is a short
+generated clip (6–8 s, 480p, 4:5 or 9:16) on a plain coloured background with
+the house text in Fredoka, the countdown in the bottom-right, ending on a
+"reveal" frame in its last 2 s — stored at `house/<taskId>.mp4` in the
+bucket (public read; see `storage.rules`), referenced by `videoUrl`
+`https://firebasestorage.googleapis.com/v0/b/taskmaster-app-3d480.firebasestorage.app/o/house%2F<taskId>.mp4?alt=media`
+and `videoStoragePath` `house/<taskId>.mp4`, `mediaType: 'video'`. House copy
+per video task: starter-01 "Egg made it 4 steps. Narration made it 30
+seconds." (reveal `SPLAT`); starter-02 "Seven objects, one shoe, 1.5 seconds
+of standing." (reveal `TIMBER`); starter-05 "Pickle, custard, toast, regret.
+One bite." (reveal `WHY`); starter-08 "Nine things. The colander was the
+mistake." (reveal `CLATTER`); starter-09 "Layer 4 was 'the cat is also in
+the oven'." (reveal `OH NO`); starter-10 "'I said I'd be five minutes.' —
+reviewed by the kettle: 'a lie'" (reveal `COMING SOON`). The four photo/text
+tasks (03, 04, 06, 07) keep their house entries exactly as before: plain text
+posts.
 
 ---
 
@@ -301,5 +332,6 @@ posts and are clearly labelled `HOUSE`.
   trip with the owner; the model already stores everything needed).
 * AI judging. The `AITaskService` hook exists; an LLM "first reaction" line
   on each post would be a strong follow-up.
-* Trimming/filters and any manual editing. Stamps and captions are automatic;
-  viewer taps are the future signal for automatic trimming of video.
+* Trimming/filters and any manual editing UI. Stamps, captions, the
+  countdown overlay, and the finale/moments-reel montages (§2.2) are all
+  computed server-side; there is no player-facing edit step for any of it.

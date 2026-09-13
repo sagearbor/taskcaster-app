@@ -331,68 +331,90 @@ this file mirrors):
   a well-formed `yyyyMMdd` day and single-digit slot, a size cap of
   32 MiB (`request.resource.size <= 32 * 1024 * 1024`), and a `video/*`
   content type.
-- **Update is denied** (`allow update: if false`). See the KNOWN LIMITATION
-  callout below — this blocks metadata patches but, per Firebase's own
-  documented Storage Rules semantics, does **not** by itself block an
-  overwrite of a slot's content.
-- **Delete** is restricted to the owner (lets someone remove a clip early
-  instead of waiting on the lifecycle rule below).
+- **Update is denied** (`allow update: if false`). See the OVERWRITE
+  PROTECTION note below — this blocks metadata patches, and, now that the
+  bucket has Object Versioning enabled, also blocks a same-path re-upload
+  (which Storage evaluates as `update` once versioning is on).
+- **Delete** is restricted to the owner (lets someone remove a clip early —
+  e.g. a re-take, or a privacy change of mind). Retention is otherwise
+  **indefinite** by the owner's decision ("maybe just not deleting now");
+  there is no lifecycle rule that ages out a live clip.
+- `house/{file}` and `montages/{gameId}/{taskId}/{file}` are public-read,
+  no-client-write (see "Other bucket prefixes" below).
 - Everything else in the bucket denies both read and write.
 
-**Known limitation — overwrite is not fully closed by rules alone.** Firebase
-Storage Security Rules classify *any write to file contents* — including an
-overwrite of an existing object — as `create`, not `update`; `update` only
-ever applies to a metadata-only patch on a pre-existing object
+**Overwrite protection.** Firebase Storage Security Rules classify *any
+write to file contents* — including an overwrite of an existing object — as
+`create`, not `update`, UNLESS the bucket has **GCS Object Versioning**
+enabled, in which case a write to an existing path is correctly evaluated as
+`update` instead
 (https://firebase.google.com/docs/storage/security/core-syntax, "Granular
-operations"; see also `firebase/firebase-js-sdk#5079`). `resource` is `null`
-on a content write unless the bucket has **GCS Object Versioning** enabled,
-so the `create` rule (which only checks path/size/type, not "does this slot
-already have a video") is what actually runs even on a re-upload to the same
-slot. This was confirmed directly against this rules file: a second
-`uploadBytes` to an already-created slot succeeds in the emulator today (see
-the skipped test in `test/rules/storage.test.js`). The client
-(`video_policy.dart`) only ever picks the next *unused* slot, so a
-well-behaved app can't accidentally exceed 10 uploads/day — what's still open
-is a client that deliberately re-uploads the same slot number. Fully closing
-that gap needs a bucket-level change outside this rules file: enable Object
-Versioning (`gsutil versioning set on gs://taskmaster-app-3d480.firebasestorage.app`)
-paired with a lifecycle rule that expires noncurrent versions immediately (a
-`condition.numNewerVersions` rule), so versioning itself doesn't add storage
-cost. That's a deliberate follow-up, not done here — it's a cloud-state
-change and, per the $100 budget alarm, the daily/size caps and the alarm
-already bound the downside in practice.
+operations"; see also `firebase/firebase-js-sdk#5079`). The orchestrator has
+enabled Object Versioning on
+`gs://taskmaster-app-3d480.firebasestorage.app`, paired with a lifecycle rule
+that deletes only **noncurrent** versions after 1 day — the live/current
+version of every object (i.e. every clip anyone can actually see) is never
+touched by that rule, so retention of live clips stays indefinite per the
+owner's decision above; the lifecycle rule exists purely so that a denied
+overwrite attempt doesn't quietly leave a billable noncurrent version behind
+forever. With versioning on, a second write to an already-created
+`submissions/{uid}/{day}/{slot}` path is evaluated as `update`, which `allow
+update: if false` denies — so the create-only slot scheme is a **real**
+10/day cap in production. The Firebase Storage **emulator** does not
+implement Object Versioning, so it always evaluates a same-path rewrite as
+`create` and cannot demonstrate this protection either way — see the skipped
+test in `test/rules/storage.test.js`.
 
-### Lifecycle (`storage.lifecycle.json`)
-
-One rule: delete objects under `submissions/` after 30 days
-(`condition.age: 30`, `matchesPrefix: ["submissions/"]`). This is **not**
-applied by these rules files — Storage bucket lifecycle is a bucket-level
-setting, applied with:
+The commands the orchestrator ran to turn this on:
 
 ```bash
 gcloud storage buckets update gs://taskmaster-app-3d480.firebasestorage.app \
-  --lifecycle-file=storage.lifecycle.json \
+  --versioning \
+  --project taskmaster-app-3d480
+
+gcloud storage buckets update gs://taskmaster-app-3d480.firebasestorage.app \
+  --lifecycle-file=noncurrent-versions.json \
   --project taskmaster-app-3d480
 ```
 
-(The orchestrator runs this — it is a cloud-state change.)
+where `noncurrent-versions.json` is:
+
+```json
+{"rule":[{"action":{"type":"Delete"},"condition":{"daysSinceNoncurrentTime":1}}]}
+```
+
+### Other bucket prefixes
+
+- `house/{file}` — seeded, pre-rendered house-entry clips (e.g.
+  `house/starter-01.mp4`), placed directly in the bucket out-of-band (never
+  by an app user). Public read; `allow write: if false` — there is no
+  sanctioned client write path.
+- `montages/{gameId}/{taskId}/{file}` — server-rendered "finale" and
+  "moments reel" highlight clips (PRODUCT_DIRECTION.md §2.2), written by a
+  Cloud Function using the Admin SDK, which bypasses Storage Security Rules
+  entirely. Public read; `allow write: if false` blocks client writes (the
+  only kind these rules can see).
 
 ### Budget alarm
 
 GCP budget `taskcaster-video-ceiling-100`: $100/month on the project, alerts
 at 50/90/100%. This is a **notification**, not a hard stop — Firebase Storage
-has no native "cut off at $X" switch, so the caps above (size, slots/day,
-30-day retention) are what actually bound spend; the budget alarm is the
-backstop that tells a human if those caps ever prove insufficient (e.g. a
-clip going unexpectedly viral within Arena).
+has no native "cut off at $X" switch, so with retention indefinite the caps
+above (size, slots/day, the overwrite protection that makes slots/day real)
+are what actually bound spend; the budget alarm is the backstop that tells a
+human if those caps ever prove insufficient (e.g. a clip going unexpectedly
+viral within Arena, or stored volume growing over months since nothing is
+deleted).
 
 ### Slot/day design
 
 `video_policy.dart` writes to `submissions/{uid}/{yyyyMMdd(UTC)}/{slot}`,
 `slot` being the first unused digit `0`–`9` that day. This bounds each user
-to 10 uploads/day and makes the object count for the whole feature bounded
-by `users × 10 × 30` (a day's worth of slots times the retention window) at
-any moment, rather than growing without limit.
+to 10 uploads/day. Because retention is indefinite, the object count for the
+whole feature grows with `users × days-since-launch × ≤10` rather than being
+capped by a retention window — this is why the cost model below is expressed
+per 1000 hours *stored* (not per upload) as well as per clip, and why the
+budget alarm is a real backstop rather than a formality.
 
 ### Cost model
 
@@ -437,3 +459,57 @@ This is exactly why the alarm exists as a second line of defense alongside
 the per-clip size cap and the 10/day upload cap — a single popular clip
 being replayed heavily by the Arena crowd is the realistic way to approach
 the ceiling, not aggregate upload volume.
+
+**Per 1000 HOURS of video stored per month.** With retention indefinite,
+storage is better read as a standing monthly line item that scales with
+total hours of footage accumulated, not per-clip. Bitrate-to-size:
+480p at ~2 Mbps = 2,000,000 bits/s ÷ 8 = 250,000 bytes/s × 3600 s/hour ÷
+1024² bytes/GB ≈ **0.9 GB/hour**; the worst case (a full 32 MB clip every
+30 s, i.e. the hard per-clip cap sustained back to back) is 32 MB × (3600 s
+÷ 30 s) ÷ 1024 MB/GB ≈ **3.8 GB/hour**.
+
+```
+typical:    1000 hours × 0.9 GB/hour   =   900 GB
+            × $0.023/GB-month          =  $20.70/month
+
+worst case: 1000 hours × 3.8 GB/hour   =  3800 GB
+            × $0.023/GB-month          =  $87.40/month
+```
+
+So 1000 hours of *typical* footage sitting in the bucket costs about
+$20.70/month; 1000 hours of *worst-case* (everyone always maxing out the
+32 MB cap) costs about $87.40/month — under the $100 alarm on its own, but
+close enough that it, plus any egress that month, is exactly the scenario
+the alarm is there to catch.
+
+**Per 1000 VIEWS (egress only).** Average clip 8 MB, worst case 32 MB (the
+hard cap):
+
+```
+typical:    1000 views × 8 MB / 1024 MB/GB    =  7.81 GB
+            × $0.12/GB                        =  $0.94 / 1000 views
+
+worst case: 1000 views × 32 MB / 1024 MB/GB   = 31.25 GB
+            × $0.12/GB                        =  $3.75 / 1000 views
+```
+
+**Cloud Functions gen2 (ffmpeg montage rendering, §2.2).** Gen2 Cloud
+Functions bill CPU and memory time at Cloud Run rates
+(≈ $0.000024/vCPU-second, ≈ $0.0000025/GiB-second) on top of a free
+invocation tier of 2,000,000 invocations/month. Budgeting **~30 s of CPU per
+render** at **1 vCPU / 2 GiB**:
+
+```
+CPU per render     = 30 s × 1 vCPU  × $0.000024/vCPU-s   = $0.00072
+memory per render  = 30 s × 2 GiB   × $0.0000025/GiB-s    = $0.00015
+                                                    total  ≈ $0.00087/render
+
+1000 renders/month ≈ $0.87/month (compute) + $0 (invocations, well inside
+the 2M/month free tier)
+```
+
+Each task settling (3 new posts or 30 min) triggers one finale render and
+one moments-reel render, so a busy starter pack of, say, 500 task-settles in
+a month is ~1000 renders ≈ **well under $1/month** — montage compute is
+noise next to storage/egress at any realistic volume; it isn't a lever the
+$100 ceiling needs to worry about.
