@@ -21,31 +21,59 @@ void main() {
       expect(tasks.map((t) => t.id).toSet().length, tasks.length);
     });
 
-    test('every task can be done with a phone: photo or text only', () {
+    test('every task can be done with a phone: film, snap or write', () {
       for (final task in tasks) {
         expect(
           task.submissionType,
-          anyOf(SubmissionType.photo, SubmissionType.text),
-          reason: '${task.id} must not need a video or a link',
+          anyOf(
+            SubmissionType.video,
+            SubmissionType.photo,
+            SubmissionType.text,
+          ),
+          reason: '${task.id} must not need a pasted link',
         );
+      }
+    });
+
+    test('video is the default medium: six of the ten are clips', () {
+      final videoIds = tasks
+          .where((t) => t.submissionType == SubmissionType.video)
+          .map((t) => t.id)
+          .toList();
+      expect(
+        videoIds,
+        ['starter-01', 'starter-02', 'starter-05', 'starter-08',
+         'starter-09', 'starter-10'],
+      );
+    });
+
+    test('every video task fits the clip cap', () {
+      for (final task in tasks) {
+        if (task.submissionType != SubmissionType.video) continue;
+        // The clip is capped at min(timer, 30 s); a task whose timer is under
+        // 30 s shortens the clip, never the other way round.
+        expect(task.durationSeconds, isNotNull, reason: task.id);
+        expect(task.durationSeconds! > 0, isTrue, reason: task.id);
       }
     });
 
     test('the submission types match the product table', () {
       final byId = {for (final t in tasks) t.id: t.submissionType};
+      // Wordplay stays text; 04 and 06 stay photo on purpose (the still IS
+      // the joke); everything else is a clip.
       expect(byId['starter-03'], SubmissionType.text);
       expect(byId['starter-07'], SubmissionType.text);
+      expect(byId['starter-04'], SubmissionType.photo);
+      expect(byId['starter-06'], SubmissionType.photo);
       for (final id in const [
         'starter-01',
         'starter-02',
-        'starter-04',
         'starter-05',
-        'starter-06',
         'starter-08',
         'starter-09',
         'starter-10',
       ]) {
-        expect(byId[id], SubmissionType.photo, reason: id);
+        expect(byId[id], SubmissionType.video, reason: id);
       }
     });
 
@@ -53,16 +81,16 @@ void main() {
       expect(
         {for (final t in tasks) t.id: t.durationSeconds},
         {
-          'starter-01': 90,
-          'starter-02': 120,
+          'starter-01': 30,
+          'starter-02': 60,
           'starter-03': 60,
           'starter-04': 120,
-          'starter-05': 180,
+          'starter-05': 90,
           'starter-06': 180,
           'starter-07': 90,
           'starter-08': 60,
           'starter-09': 30,
-          'starter-10': 90,
+          'starter-10': 30,
         },
       );
     });
@@ -99,11 +127,11 @@ void main() {
 
     test('the copy is the product copy', () {
       final first = tasks.first;
-      expect(first.title, 'A vegetable that has just received terrible news');
-      expect(first.description, startsWith('Find a vegetable.'));
-      expect(first.description, contains('emotional truth'));
-      expect(first.rubric, 'Emotional truth of the vegetable.');
-      expect(first.twist, contains('no text on the vegetable'));
+      expect(first.title, 'Egg on a spoon, to the far wall and back');
+      expect(first.description, startsWith('Put an egg'));
+      expect(first.description, contains('Film the whole trip'));
+      expect(first.rubric, 'Distance covered before disaster, then narration.');
+      expect(first.twist, contains('nature documentary'));
     });
   });
 
@@ -123,6 +151,19 @@ void main() {
         expect(text.length, lessThan(280), reason: entry.key);
         expect('\n'.allMatches(text).length, lessThanOrEqualTo(2),
             reason: entry.key);
+      }
+    });
+
+    test('the seeded house clips point at house/<taskId>.mp4', () {
+      for (final task in tasks) {
+        if (task.submissionType != SubmissionType.video) continue;
+        expect(StarterPackData.houseVideoPath(task.id), 'house/${task.id}.mp4');
+        expect(
+          StarterPackData.houseVideoUrl(task.id),
+          contains('house%2F${task.id}.mp4?alt=media'),
+        );
+        // Public read, no download token in the URL.
+        expect(StarterPackData.houseVideoUrl(task.id), isNot(contains('token')));
       }
     });
 
