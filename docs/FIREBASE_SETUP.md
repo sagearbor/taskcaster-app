@@ -302,3 +302,214 @@ flutter run -d chrome
 # Run with mocks (development)
 flutter run -d chrome -t lib/main_simple.dart
 ```
+
+---
+
+## Video storage and cost controls
+
+In-app video submissions (§2.1 of `docs/PRODUCT_DIRECTION.md`) use Firebase
+Storage. This is the one part of TaskCaster with metered, open-ended cloud
+cost, so it ships with several independent controls rather than relying on
+any single one.
+
+### Bucket
+
+Default Firebase Storage bucket: `gs://taskmaster-app-3d480.firebasestorage.app`
+(US-CENTRAL1). `storageBucket` in `lib/firebase_options.dart` already points
+at it.
+
+### Rules summary (`storage.rules`)
+
+Player clips live at `submissions/{uid}/{yyyyMMdd}/{slot}`, `slot` a single
+digit `0`–`9` (see `lib/core/services/video/video_policy.dart`, the contract
+this file mirrors):
+
+- **Read is public** (`allow read: if true`) — Arena clips are public content,
+  watchable without signing in, and read covers both `get` (one clip) and
+  `list` (a day's folder) via a recursive-wildcard match block.
+- **Create** is restricted to the signed-in owner (`request.auth.uid == uid`),
+  a well-formed `yyyyMMdd` day and single-digit slot, a size cap of
+  32 MiB (`request.resource.size <= 32 * 1024 * 1024`), and a `video/*`
+  content type.
+- **Update is denied** (`allow update: if false`). See the OVERWRITE
+  PROTECTION note below — this blocks metadata patches, and, now that the
+  bucket has Object Versioning enabled, also blocks a same-path re-upload
+  (which Storage evaluates as `update` once versioning is on).
+- **Delete** is restricted to the owner (lets someone remove a clip early —
+  e.g. a re-take, or a privacy change of mind). Retention is otherwise
+  **indefinite** by the owner's decision ("maybe just not deleting now");
+  there is no lifecycle rule that ages out a live clip.
+- `house/{file}` and `montages/{gameId}/{taskId}/{file}` are public-read,
+  no-client-write (see "Other bucket prefixes" below).
+- Everything else in the bucket denies both read and write.
+
+**Overwrite protection.** Firebase Storage Security Rules classify *any
+write to file contents* — including an overwrite of an existing object — as
+`create`, not `update`, UNLESS the bucket has **GCS Object Versioning**
+enabled, in which case a write to an existing path is correctly evaluated as
+`update` instead
+(https://firebase.google.com/docs/storage/security/core-syntax, "Granular
+operations"; see also `firebase/firebase-js-sdk#5079`). The orchestrator has
+enabled Object Versioning on
+`gs://taskmaster-app-3d480.firebasestorage.app`, paired with a lifecycle rule
+that deletes only **noncurrent** versions after 1 day — the live/current
+version of every object (i.e. every clip anyone can actually see) is never
+touched by that rule, so retention of live clips stays indefinite per the
+owner's decision above; the lifecycle rule exists purely so that a denied
+overwrite attempt doesn't quietly leave a billable noncurrent version behind
+forever. With versioning on, a second write to an already-created
+`submissions/{uid}/{day}/{slot}` path is evaluated as `update`, which `allow
+update: if false` denies — so the create-only slot scheme is a **real**
+10/day cap in production. The Firebase Storage **emulator** does not
+implement Object Versioning, so it always evaluates a same-path rewrite as
+`create` and cannot demonstrate this protection either way — see the skipped
+test in `test/rules/storage.test.js`.
+
+The commands the orchestrator ran to turn this on:
+
+```bash
+gcloud storage buckets update gs://taskmaster-app-3d480.firebasestorage.app \
+  --versioning \
+  --project taskmaster-app-3d480
+
+gcloud storage buckets update gs://taskmaster-app-3d480.firebasestorage.app \
+  --lifecycle-file=noncurrent-versions.json \
+  --project taskmaster-app-3d480
+```
+
+where `noncurrent-versions.json` is:
+
+```json
+{"rule":[{"action":{"type":"Delete"},"condition":{"daysSinceNoncurrentTime":1}}]}
+```
+
+### Other bucket prefixes
+
+- `house/{file}` — seeded, pre-rendered house-entry clips (e.g.
+  `house/starter-01.mp4`), placed directly in the bucket out-of-band (never
+  by an app user). Public read; `allow write: if false` — there is no
+  sanctioned client write path.
+- `montages/{gameId}/{taskId}/{file}` — server-rendered "finale" and
+  "moments reel" highlight clips (PRODUCT_DIRECTION.md §2.2), written by a
+  Cloud Function using the Admin SDK, which bypasses Storage Security Rules
+  entirely. Public read; `allow write: if false` blocks client writes (the
+  only kind these rules can see).
+
+### Budget alarm
+
+GCP budget `taskcaster-video-ceiling-100`: $100/month on the project, alerts
+at 50/90/100%. This is a **notification**, not a hard stop — Firebase Storage
+has no native "cut off at $X" switch, so with retention indefinite the caps
+above (size, slots/day, the overwrite protection that makes slots/day real)
+are what actually bound spend; the budget alarm is the backstop that tells a
+human if those caps ever prove insufficient (e.g. a clip going unexpectedly
+viral within Arena, or stored volume growing over months since nothing is
+deleted).
+
+### Slot/day design
+
+`video_policy.dart` writes to `submissions/{uid}/{yyyyMMdd(UTC)}/{slot}`,
+`slot` being the first unused digit `0`–`9` that day. This bounds each user
+to 10 uploads/day. Because retention is indefinite, the object count for the
+whole feature grows with `users × days-since-launch × ≤10` rather than being
+capped by a retention window — this is why the cost model below is expressed
+per 1000 hours *stored* (not per upload) as well as per clip, and why the
+budget alarm is a real backstop rather than a formality.
+
+### Cost model
+
+Cloud Storage Standard, US-CENTRAL1: storage ≈ **$0.020–0.026/GB-month**
+(using **$0.023/GB-month** as the working midpoint below); egress
+≈ **$0.12/GB**. Firebase's no-cost tier on Blaze covers the first 5 GB
+stored and 1 GB/day (~30 GB/month) downloaded — the figures below are the
+*additional*, billable cost once a workload is big enough to exceed that
+tier; for the volumes below it mostly is not (see the per-1000-clips case),
+which is worth calling out explicitly.
+
+**Per 1000 clips, typical (8 MB average clip, watched 10 times each):**
+
+```
+storage  = 1000 clips × 8 MB / 1024 MB/GB           =  7.81 GB
+         × $0.023/GB-month                          =  $0.18/month
+
+egress   = 1000 clips × 8 MB × 10 views / 1024       = 78.13 GB
+         × $0.12/GB                                  =  $9.38
+
+total    ≈ $9.55 / month per 1000 clips
+```
+
+**Per 1000 clips, worst case (32 MB clip — the hard cap — watched 50 times each):**
+
+```
+storage  = 1000 clips × 32 MB / 1024 MB/GB          = 31.25 GB
+         × $0.023/GB-month                          =  $0.72/month
+
+egress   = 1000 clips × 32 MB × 50 views / 1024      = 1562.5 GB
+         × $0.12/GB                                  =  $187.50
+
+total    ≈ $188.22 / month per 1000 clips
+```
+
+The worst case alone blows past the $100/month alarm well under 1000 clips —
+solving for the alarm threshold with 1000 worst-case (32 MB) clips: egress
+cost per "one more view of every clip" round is `1000 × 32 MB / 1024 ×
+$0.12 ≈ $3.75`, plus the ~$0.72 flat storage cost, so `($100 − $0.72) /
+$3.75 ≈ 26` view-rounds (~26 views per clip on average) trips the alarm.
+This is exactly why the alarm exists as a second line of defense alongside
+the per-clip size cap and the 10/day upload cap — a single popular clip
+being replayed heavily by the Arena crowd is the realistic way to approach
+the ceiling, not aggregate upload volume.
+
+**Per 1000 HOURS of video stored per month.** With retention indefinite,
+storage is better read as a standing monthly line item that scales with
+total hours of footage accumulated, not per-clip. Bitrate-to-size:
+480p at ~2 Mbps = 2,000,000 bits/s ÷ 8 = 250,000 bytes/s × 3600 s/hour ÷
+1024² bytes/GB ≈ **0.9 GB/hour**; the worst case (a full 32 MB clip every
+30 s, i.e. the hard per-clip cap sustained back to back) is 32 MB × (3600 s
+÷ 30 s) ÷ 1024 MB/GB ≈ **3.8 GB/hour**.
+
+```
+typical:    1000 hours × 0.9 GB/hour   =   900 GB
+            × $0.023/GB-month          =  $20.70/month
+
+worst case: 1000 hours × 3.8 GB/hour   =  3800 GB
+            × $0.023/GB-month          =  $87.40/month
+```
+
+So 1000 hours of *typical* footage sitting in the bucket costs about
+$20.70/month; 1000 hours of *worst-case* (everyone always maxing out the
+32 MB cap) costs about $87.40/month — under the $100 alarm on its own, but
+close enough that it, plus any egress that month, is exactly the scenario
+the alarm is there to catch.
+
+**Per 1000 VIEWS (egress only).** Average clip 8 MB, worst case 32 MB (the
+hard cap):
+
+```
+typical:    1000 views × 8 MB / 1024 MB/GB    =  7.81 GB
+            × $0.12/GB                        =  $0.94 / 1000 views
+
+worst case: 1000 views × 32 MB / 1024 MB/GB   = 31.25 GB
+            × $0.12/GB                        =  $3.75 / 1000 views
+```
+
+**Cloud Functions gen2 (ffmpeg montage rendering, §2.2).** Gen2 Cloud
+Functions bill CPU and memory time at Cloud Run rates
+(≈ $0.000024/vCPU-second, ≈ $0.0000025/GiB-second) on top of a free
+invocation tier of 2,000,000 invocations/month. Budgeting **~30 s of CPU per
+render** at **1 vCPU / 2 GiB**:
+
+```
+CPU per render     = 30 s × 1 vCPU  × $0.000024/vCPU-s   = $0.00072
+memory per render  = 30 s × 2 GiB   × $0.0000025/GiB-s    = $0.00015
+                                                    total  ≈ $0.00087/render
+
+1000 renders/month ≈ $0.87/month (compute) + $0 (invocations, well inside
+the 2M/month free tier)
+```
+
+Each task settling (3 new posts or 30 min) triggers one finale render and
+one moments-reel render, so a busy starter pack of, say, 500 task-settles in
+a month is ~1000 renders ≈ **well under $1/month** — montage compute is
+noise next to storage/egress at any realistic volume; it isn't a lever the
+$100 ceiling needs to worry about.

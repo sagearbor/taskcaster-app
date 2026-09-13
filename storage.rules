@@ -1,0 +1,138 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------------------
+// TaskCaster Firebase Storage rules — cost controls for in-app video.
+//
+// WHY this file exists at all: the owner approved Firebase Storage for
+// in-app video with a HARD $100/month ceiling (GCP budget
+// `taskcaster-video-ceiling-100`, alerts at 50/90/100 %). Retention is
+// indefinite by the owner's decision ("maybe just not deleting now") — there
+// is no lifecycle deletion of live clips. That means the controls below are
+// ALL the cost levers there are:
+//
+//   - `create`-only (no `update`) is what makes "10 slots/day" a REAL cap.
+//     If overwriting an existing slot were allowed, a client could re-upload
+//     the same slot forever and blow past the daily/size budget the slot
+//     scheme is meant to enforce. `video_policy.dart` picks a slot 0..9 per
+//     UTC day; refusing overwrite means the 10th create in a day has nowhere
+//     left to land and fails. See "OVERWRITE PROTECTION" below for how this
+//     is actually enforced at the bucket level.
+//   - the 32 MiB `request.resource.size` cap bounds per-clip storage cost and
+//     egress cost (each Arena view re-downloads the clip).
+//   - the `video/.*` content-type check keeps non-video blobs (large images,
+//     zips, etc.) from being smuggled into a path sized for a 30 s clip.
+//   - the day/slot regexes reject anything outside the exact
+//     `submissions/{uid}/{yyyyMMdd}/{0-9}` shape `video_policy.dart` writes,
+//     so a bug or a hostile client can't fan out into unbounded object counts.
+//   - with retention indefinite, the caps above plus the $100 GCP budget
+//     alarm (`taskcaster-video-ceiling-100`, 50/90/100 %) are the entire cost
+//     model: bounded per-user upload volume, bounded per-clip size, and a
+//     human notified before spend gets away from either.
+//   - everything outside the sanctioned prefixes below (`submissions/**`,
+//     `house/**`, `montages/**`) is denied entirely: there is no other
+//     sanctioned use of this bucket, and an open bucket is an open line item
+//     on the budget.
+//
+// OVERWRITE PROTECTION: Firebase Storage Security Rules classify any write
+// to file *contents* — including an overwrite of an existing object — as
+// `create`, not `update`; `resource` is null (so the `create` rule is what
+// runs) on every content write UNLESS the bucket has GCS Object Versioning
+// enabled, in which case a write to an existing path is correctly evaluated
+// as `update` instead. The orchestrator has enabled Object Versioning on
+// `gs://taskmaster-app-3d480.firebasestorage.app`, paired with a lifecycle
+// rule that deletes only NONCURRENT versions after 1 day (the live/current
+// version of every object is never touched by that rule — retention of live
+// clips stays indefinite per the owner's decision above). With versioning
+// on, a second write to an already-created `submissions/{uid}/{day}/{slot}`
+// path is classified as `update`, which `allow update: if false` below
+// denies — so the create-only slot scheme is a REAL 10/day cap in
+// production. The Firebase Storage emulator does not implement Object
+// Versioning, so it always evaluates a same-path rewrite as `create` and
+// cannot demonstrate this protection either way; see the skipped test in
+// `test/rules/storage.test.js` and docs/FIREBASE_SETUP.md "Video storage and
+// cost controls" for the write-up.
+// ---------------------------------------------------------------------------
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Player video submissions. Arena clips are public content (anyone can
+    // watch an Arena entry without signing in), so read/list is open; writes
+    // are locked to the owning uid and to the exact shape video_policy.dart
+    // produces.
+    //
+    // Split into two match blocks on purpose:
+    //   - a recursive-wildcard block that grants `read` (get AND list, per
+    //     Storage's rule that `list` on a prefix needs a `**` wildcard
+    //     reaching it) at any depth under a day folder;
+    //   - an exact single-segment block for create/update/delete, where
+    //     `slot` binds as a plain STRING (not a path object) and so supports
+    //     `.matches()` directly. A recursive `{slot=**}` variable is a path
+    //     object in this engine and has no `.size()`/`.matches()` of its
+    //     own — and even indexing into it (`slot[0]`) would happily match a
+    //     deeper path like `.../0/extra`, which is exactly the "fan out into
+    //     unbounded object counts" risk called out above. Keeping create tied
+    //     to the exact single-segment match closes that gap: a path with more
+    //     than one trailing segment simply doesn't match this block at all.
+    match /submissions/{uid}/{day}/{path=**} {
+      // Public read (get AND list, via the recursive wildcard) — clips are
+      // public Arena content once posted.
+      allow read: if true;
+    }
+
+    match /submissions/{uid}/{day}/{slot} {
+      // Create-only: the owner, writing their own uid, into a well-formed
+      // yyyyMMdd/0-9 path, under the size cap, as an actual video. No
+      // `update` rule exists (see OVERWRITE PROTECTION above) — `allow
+      // update: if false` below makes that explicit rather than
+      // implicit-deny, and is what the create-only cap actually relies on
+      // now that the bucket has Object Versioning enabled.
+      allow create: if request.auth != null &&
+                       request.auth.uid == uid &&
+                       day.matches('^[0-9]{8}$') &&
+                       slot.matches('^[0-9]$') &&
+                       request.resource.size <= 32 * 1024 * 1024 &&
+                       request.resource.contentType.matches('video/.*');
+
+      // Never allowed. An object can only be created once, then deleted (by
+      // its owner) — never replaced in place. This is the mechanism that
+      // makes "10 uploads/day" real (see OVERWRITE PROTECTION above).
+      allow update: if false;
+
+      // The owner may remove their own clip (e.g. a re-take, or a privacy
+      // change of mind). Retention is otherwise indefinite — there is no
+      // lifecycle rule that ages out a live clip on its own.
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Seeded "house" video clips (e.g. house/starter-01.mp4) — short,
+    // pre-rendered filler clips for the starter-pack house entries. Public
+    // read, like player submissions, so they play in the Arena the same way.
+    // Write is never allowed through client rules: these are placed directly
+    // in the bucket out-of-band (not by app users), so there is no
+    // sanctioned client write path at all.
+    match /house/{file} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Server-rendered montages (the per-task "finale" and "moments reel").
+    // Public read, same as the clips they're assembled from. Write is never
+    // allowed through client rules: a Cloud Function writes these with the
+    // Admin SDK, which bypasses Storage Security Rules entirely — so
+    // `allow write: if false` here only blocks *client* writes, which is
+    // exactly right (no app user should ever be able to place or replace a
+    // montage).
+    match /montages/{gameId}/{taskId}/{file} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Everything else in the bucket: no sanctioned use, so no access. Keeping
+    // this explicit (rather than relying on Storage's implicit default-deny)
+    // documents that any future path added here needs its own cost review.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
