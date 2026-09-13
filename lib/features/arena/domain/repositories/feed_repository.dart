@@ -28,7 +28,12 @@ abstract class FeedRepository {
 
   /// Viewer "that's funny" tap. Fire-and-forget safe: never throws for the
   /// caller's purposes and never blocks playback.
-  Future<void> tapPost(String postId, {int taps = 1});
+  ///
+  /// [atSecond] is the second of the clip the viewer was watching (from
+  /// `VideoPolicy.tapBucket`), and null for a post with no timeline. When it
+  /// is set, the same write also bumps `tapSeconds.<atSecond>` — the
+  /// per-second histogram future automatic editing trims on.
+  Future<void> tapPost(String postId, {int taps = 1, int? atSecond});
 
   /// Task ids [userId] has submitted, i.e. what they have unlocked. Derived
   /// from their own posts (every submission creates one).

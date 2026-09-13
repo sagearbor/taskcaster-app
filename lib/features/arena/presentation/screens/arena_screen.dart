@@ -12,6 +12,7 @@ import '../bloc/arena_bloc.dart';
 import '../bloc/arena_event.dart';
 import '../bloc/arena_state.dart';
 import '../widgets/ad_slot_card.dart';
+import '../widgets/finale_card.dart';
 import '../widgets/grade_bar.dart';
 import '../widgets/post_card.dart';
 
@@ -205,11 +206,19 @@ class _ArenaLoadedBodyState extends State<_ArenaLoadedBody> {
       child: Column(
         key: ValueKey(post.id),
         children: [
+          // The automatic finale for this task, when the server has rendered
+          // one. Silent no-op otherwise.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: FinaleCard(gameId: post.gameId, taskId: post.taskId),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: PostCard(
               post: post,
-              onTap: () => context.read<ArenaBloc>().add(const TapCurrent()),
+              onTap: (atSecond) => context
+                  .read<ArenaBloc>()
+                  .add(TapCurrent(atSecond: atSecond)),
             ),
           ),
           Padding(

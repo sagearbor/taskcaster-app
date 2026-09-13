@@ -20,8 +20,17 @@ class LoadArena extends ArenaEvent {
 
 /// Viewer "that's funny" tap on the current post. Never blocks, never fails
 /// visibly, never advances the queue.
+///
+/// [atSecond] is the second of the clip the tap landed on (null for a post
+/// with no timeline), which the repository folds into the post's `tapSeconds`
+/// histogram alongside the plain counter.
 class TapCurrent extends ArenaEvent {
-  const TapCurrent();
+  final int? atSecond;
+
+  const TapCurrent({this.atSecond});
+
+  @override
+  List<Object?> get props => [atSecond];
 }
 
 /// Grade the current post 1..5 and advance.

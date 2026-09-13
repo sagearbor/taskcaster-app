@@ -1,4 +1,5 @@
 import '../../../../core/models/submission.dart';
+import '../../../../core/models/task.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
 import '../../domain/models/feed_post.dart';
 import '../../domain/repositories/feed_repository.dart';
@@ -75,8 +76,8 @@ class FeedRepositoryImpl implements FeedRepository {
   }
 
   @override
-  Future<void> tapPost(String postId, {int taps = 1}) =>
-      remoteDataSource.tapPost(postId, taps: taps);
+  Future<void> tapPost(String postId, {int taps = 1, int? atSecond}) =>
+      remoteDataSource.tapPost(postId, taps: taps, atSecond: atSecond);
 
   @override
   Stream<Set<String>> watchUnlockedTaskIds(String userId) {
@@ -137,28 +138,43 @@ class FeedRepositoryImpl implements FeedRepository {
 
   /// The seeded house entries as raw documents, with deterministic ids.
   /// Exposed so tests (and the Firestore source) can assert the exact shape.
+  ///
+  /// A video task's house entry is a VIDEO post: a short generated clip in the
+  /// bucket at `house/<taskId>.mp4`, public-read, with the task countdown
+  /// already burned into its pixels (which is why playback skips the overlay
+  /// for house entries). Its [FeedPost.text] is kept as the fallback the card
+  /// shows if the clip cannot be played. Photo and text tasks keep the text
+  /// house entry they have always had.
   static List<Map<String, dynamic>> houseEntryPosts() {
     final tasks = StarterPackData.tasks();
     return [
       for (final task in tasks)
         if (StarterPackData.houseEntries[task.id] != null)
-          FeedPost(
-            id: houseIdFor(task.id),
-            gameId: '',
-            taskId: task.id,
-            taskTitle: task.title,
-            rubric: task.rubric,
-            userId: houseUserId,
-            displayName: StarterPackData.housePosterName,
-            mediaType: SubmissionMediaType.text,
-            text: StarterPackData.houseEntries[task.id],
-            caption: task.twist,
-            stamp: Stamps.art,
-            isHouse: true,
-            // Fixed epoch so the seeds sort last by recency and seeding is
-            // byte-for-byte identical every time.
-            createdAt: DateTime.utc(2026, 1, 1),
-          ).toMap(),
+          () {
+            final isVideo = task.submissionType == SubmissionType.video;
+            return FeedPost(
+              id: houseIdFor(task.id),
+              gameId: '',
+              taskId: task.id,
+              taskTitle: task.title,
+              rubric: task.rubric,
+              userId: houseUserId,
+              displayName: StarterPackData.housePosterName,
+              mediaType: isVideo
+                  ? SubmissionMediaType.video
+                  : SubmissionMediaType.text,
+              text: StarterPackData.houseEntries[task.id],
+              videoUrl: isVideo ? StarterPackData.houseVideoUrl(task.id) : null,
+              videoStoragePath:
+                  isVideo ? StarterPackData.houseVideoPath(task.id) : null,
+              caption: task.twist,
+              stamp: Stamps.art,
+              isHouse: true,
+              // Fixed epoch so the seeds sort last by recency and seeding is
+              // byte-for-byte identical every time.
+              createdAt: DateTime.utc(2026, 1, 1),
+            ).toMap();
+          }(),
     ];
   }
 }

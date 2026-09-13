@@ -32,8 +32,9 @@ abstract class FeedRemoteDataSource {
     required int score,
   });
 
-  /// Increment a post's viewer-tap counter.
-  Future<void> tapPost(String postId, {int taps = 1});
+  /// Increment a post's viewer-tap counter and, when [atSecond] is given, the
+  /// `tapSeconds.<atSecond>` bucket, in the SAME write.
+  Future<void> tapPost(String postId, {int taps = 1, int? atSecond});
 
   /// How many posts [userId] has graded.
   Future<int> gradedCountBy(String userId);
