@@ -19,7 +19,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const {runFfmpeg, assertDrawtext} = require('./ffmpeg');
+const {runFfmpeg, hasDrawtext} = require('./ffmpeg');
 const {probe, pickHighlight} = require('./analyze');
 const {countdownSpec, FONT_FILE} = require('./countdown');
 const {writeRoundedRectPng} = require('./badge');
@@ -124,7 +124,9 @@ function countdownPieces({tmpDir, canvasW, canvasH, timerSeconds, clockOffsetSec
  *                    countdownFrom:number|null}>}
  */
 async function burnCountdown(input, output, opts = {}) {
-  await assertDrawtext();
+  // Degrade, never fail: without drawtext the clip is still transcoded, the
+  // countdown just isn't burned in (the app overlays it client-side).
+  const burn = await hasDrawtext();
   const {timerSeconds, clockOffsetSeconds = 0, isLate = false, width = MAX_LONG_EDGE} = opts;
   const info = opts.probe || (await probe(input));
   const {width: outW, height: outH} = fitWithin(info.width, info.height, width);
@@ -145,7 +147,7 @@ async function burnCountdown(input, output, opts = {}) {
 
     const inputs = ['-i', input];
     let chain = `[0:v]scale=${outW}:${outH}:flags=bicubic,setsar=1,fps=${opts.fps || CANVAS.fps}`;
-    if (cd) {
+    if (cd && burn) {
       inputs.push('-i', cd.badgePath);
       chain += `[base];[base][1:v]${cd.overlay}[boxed];[boxed]${cd.drawtext}`;
     }
@@ -195,6 +197,7 @@ async function burnCountdown(input, output, opts = {}) {
  */
 async function renderSegment(clip, output, opts) {
   const {start, duration, canvas = CANVAS, tmpDir} = opts;
+  const burn = await hasDrawtext();
   const cd = countdownPieces({
     tmpDir,
     canvasW: canvas.width,
@@ -211,7 +214,7 @@ async function renderSegment(clip, output, opts) {
     `[0:v]scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=decrease:flags=bicubic,` +
     `pad=${canvas.width}:${canvas.height}:(ow-iw)/2:(oh-ih)/2:color=0x0B0B10,setsar=1,fps=${canvas.fps},` +
     'setpts=PTS-STARTPTS';
-  if (cd) {
+  if (cd && burn) {
     inputs.push('-i', cd.badgePath);
     chain += `[base];[base][1:v]${cd.overlay}[boxed];[boxed]${cd.drawtext}`;
   }
@@ -277,8 +280,9 @@ async function titleCard(output, opts) {
     }),
   ].filter(Boolean);
 
-  const chain =
-    `[0:v]${filters.join(',')},format=yuv420p[v]`;
+  // No drawtext -> a plain colour card (the montage still plays end to end).
+  const textFilters = (await hasDrawtext()) ? filters : [];
+  const chain = `[0:v]${[...textFilters, 'format=yuv420p'].join(',')}[v]`;
 
   await runFfmpeg([
     '-f', 'lavfi', '-i',
@@ -357,7 +361,7 @@ async function hydrate(clips) {
 
 /** Shared build for finale/moments: title card, segments, gaps, concat. */
 async function buildMontage(clips, output, opts) {
-  await assertDrawtext();
+  await hasDrawtext(); // probe once up front (cached); never throws
   const {
     kicker,
     taskTitle = '',

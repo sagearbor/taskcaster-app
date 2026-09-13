@@ -119,6 +119,34 @@ async function assertDrawtext() {
   return undefined;
 }
 
+/**
+ * Whether the ffmpeg in use can draw text. Cached after the first probe.
+ * The renderers use this to DEGRADE rather than fail: without drawtext the
+ * montage is still produced, just without the burned-in countdown / title
+ * text (the app overlays the countdown client-side), and the montage doc
+ * records `countdownBurned: false` so the gap is visible.
+ * @returns {Promise<boolean>}
+ */
+async function hasDrawtext() {
+  if (drawtextChecked !== null) return drawtextChecked;
+  let stdout = '';
+  let stderr = '';
+  try {
+    ({stdout, stderr} = await runBinary(ffmpegPath(), ['-hide_banner', '-filters'], {label: 'ffmpeg-caps'}));
+  } catch (err) {
+    log(`[ffmpeg-caps] probe failed: ${err.message}`);
+    stdout = '';
+  }
+  drawtextChecked = /\bdrawtext\b/.test(stdout);
+  if (!drawtextChecked) {
+    log(
+      `[ffmpeg-caps] no drawtext filter in ${ffmpegPath()}; rendering WITHOUT burned-in text. ` +
+        `filters head: ${stdout.slice(0, 300).replace(/\s+/g, ' ')} | stderr: ${(stderr || '').slice(0, 300)}`,
+    );
+  }
+  return drawtextChecked;
+}
+
 module.exports = {
   ffmpegPath,
   ffprobePath,
@@ -126,5 +154,6 @@ module.exports = {
   runFfprobe,
   runBinary,
   assertDrawtext,
+  hasDrawtext,
   tail,
 };

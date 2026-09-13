@@ -29,6 +29,7 @@ const {onCall, HttpsError} = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 
 const montage = require('./montage');
+const {hasDrawtext} = require('./ffmpeg');
 const {
   MAX_CLIPS,
   montageDocId,
@@ -262,6 +263,9 @@ async function render(gameId, taskId, {force = false} = {}) {
       sourcePostIds: clips.map((c) => c.postId),
       clipCount: finaleResult.clipCount,
       status: 'ready',
+      // false when the runtime ffmpeg lacks drawtext: montage rendered, but
+      // without burned-in countdown/title text (the app overlays the clock).
+      countdownBurned: await hasDrawtext(),
       error: FieldValue.delete(),
       updatedAt: nowIso(),
       version: claimResult.version + 1,
