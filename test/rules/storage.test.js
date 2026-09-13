@@ -91,20 +91,23 @@ describe('storage.rules — submissions/{uid}/{day}/{slot}', function () {
     );
   });
 
-  // SKIPPED — not a rules bug, a documented Storage Rules limitation.
-  // Per Firebase's own docs (Granular operations, core-syntax) and
-  // firebase/firebase-js-sdk#5079: `create` governs ALL writes to file
-  // *contents*, including an overwrite of an existing object; `update`
-  // governs only metadata patches on a pre-existing object. `resource` is
-  // null on a content write unless the bucket has Object Versioning
-  // enabled, so `allow update: if false` cannot block a same-path
-  // re-upload — that write is still evaluated (and allowed) under the
-  // `create` rule above. Confirmed against this exact rules file: the
-  // second uploadBytes below currently SUCCEEDS. Closing this needs a
-  // bucket-level change (Object Versioning + a noncurrent-version lifecycle
-  // rule) outside this rules file — see the "KNOWN LIMITATION" note at the
-  // top of storage.rules and docs/FIREBASE_SETUP.md. Left skipped, not
-  // deleted, so this is easy to re-enable once that's decided.
+  // SKIPPED — not a rules bug, an emulator limitation. Per Firebase's own
+  // docs (Granular operations, core-syntax) and firebase/firebase-js-sdk#5079:
+  // `create` governs ALL writes to file *contents*, including an overwrite
+  // of an existing object, UNLESS the bucket has GCS Object Versioning
+  // enabled, in which case a write to an existing path is correctly
+  // evaluated as `update` instead. The production bucket
+  // (gs://taskmaster-app-3d480.firebasestorage.app) DOES have Object
+  // Versioning enabled (paired with a lifecycle rule that expires only
+  // noncurrent versions after 1 day), so in production this write is denied
+  // by `allow update: if false` — see the "OVERWRITE PROTECTION" note at the
+  // top of storage.rules. The Firebase Storage EMULATOR does not implement
+  // Object Versioning, so `resource` is always null on a content write here
+  // and this same-path re-upload is always evaluated (and allowed) under the
+  // `create` rule above regardless of the bucket's real versioning state.
+  // Confirmed against this exact rules file: the second uploadBytes below
+  // currently SUCCEEDS in the emulator. Left skipped, not deleted, because
+  // there is no way to exercise the production behavior locally.
   it.skip('a second write to an already-created object is denied (create-only)', async () => {
     const storage = testEnv.authenticatedContext('u1').storage();
     await assertSucceeds(
@@ -176,5 +179,91 @@ describe('storage.rules — submissions/{uid}/{day}/{slot}', function () {
     await assertFails(getBytes(ref(owner, OTHER_PATH)));
     const anon = testEnv.unauthenticatedContext().storage();
     await assertFails(getBytes(ref(anon, OTHER_PATH)));
+  });
+});
+
+describe('storage.rules — house/{file}', function () {
+  this.timeout(180000);
+  let testEnv;
+
+  before(async () => {
+    testEnv = await makeTestEnv();
+  });
+
+  afterEach(async () => {
+    await testEnv.clearStorage();
+  });
+
+  after(async () => {
+    await testEnv.cleanup();
+  });
+
+  const HOUSE_PATH = 'house/starter-01.mp4';
+
+  it('an unauthenticated caller can read a house clip', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), HOUSE_PATH), bytes(1024), {
+        contentType: 'video/mp4',
+      });
+    });
+    const anon = testEnv.unauthenticatedContext().storage();
+    await assertSucceeds(getBytes(ref(anon, HOUSE_PATH)));
+  });
+
+  it('a signed-in user cannot create a house clip', async () => {
+    const storage = testEnv.authenticatedContext('u1').storage();
+    await assertFails(
+      uploadBytes(ref(storage, HOUSE_PATH), bytes(1024), { contentType: 'video/mp4' })
+    );
+  });
+
+  it('an unauthenticated caller cannot create a house clip', async () => {
+    const storage = testEnv.unauthenticatedContext().storage();
+    await assertFails(
+      uploadBytes(ref(storage, HOUSE_PATH), bytes(1024), { contentType: 'video/mp4' })
+    );
+  });
+});
+
+describe('storage.rules — montages/{gameId}/{taskId}/{file}', function () {
+  this.timeout(180000);
+  let testEnv;
+
+  before(async () => {
+    testEnv = await makeTestEnv();
+  });
+
+  afterEach(async () => {
+    await testEnv.clearStorage();
+  });
+
+  after(async () => {
+    await testEnv.cleanup();
+  });
+
+  const MONTAGE_PATH = 'montages/game1/starter-01/finale.mp4';
+
+  it('an unauthenticated caller can read a montage', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), MONTAGE_PATH), bytes(1024), {
+        contentType: 'video/mp4',
+      });
+    });
+    const anon = testEnv.unauthenticatedContext().storage();
+    await assertSucceeds(getBytes(ref(anon, MONTAGE_PATH)));
+  });
+
+  it('a signed-in user cannot create a montage', async () => {
+    const storage = testEnv.authenticatedContext('u1').storage();
+    await assertFails(
+      uploadBytes(ref(storage, MONTAGE_PATH), bytes(1024), { contentType: 'video/mp4' })
+    );
+  });
+
+  it('an unauthenticated caller cannot create a montage', async () => {
+    const storage = testEnv.unauthenticatedContext().storage();
+    await assertFails(
+      uploadBytes(ref(storage, MONTAGE_PATH), bytes(1024), { contentType: 'video/mp4' })
+    );
   });
 });
