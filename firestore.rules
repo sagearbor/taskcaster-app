@@ -157,16 +157,27 @@ service cloud.firestore {
                   .matches('^submissions/' + request.auth.uid + '/.*'));
       }
 
+      // A house video post's Storage object must live under the bucket's
+      // seeded house/ prefix (storage.rules denies client writes there
+      // entirely — these clips are placed out-of-band, never by an app
+      // user), never under a real uid's submissions/ folder.
+      function houseVideoPathOk() {
+        return request.resource.data.mediaType != 'video' ||
+               (request.resource.data.videoStoragePath is string &&
+                request.resource.data.videoStoragePath.matches('^house/.*'));
+      }
+
       // You may post as yourself, with a video only when it's provably your
       // own upload. The seeded "house" entries are the one exception: any
-      // signed-in user may write them, but only as the 'house' author and
-      // only as text (never with an inline photo or a video).
+      // signed-in user may write them, but only as the 'house' author, never
+      // with an inline photo, and with a video only when it points at the
+      // seeded house/ prefix (never a real uid's submissions/ path).
       allow create: if isSignedIn() && (
         (request.resource.data.userId == request.auth.uid && ownVideoPathOk()) ||
         (request.resource.data.isHouse == true &&
          request.resource.data.userId == 'house' &&
          request.resource.data.photoData == null &&
-         request.resource.data.videoStoragePath == null)
+         houseVideoPathOk())
       );
 
       // The owner may rewrite their own post. Everyone else may only move the
@@ -196,6 +207,17 @@ service cloud.firestore {
                          request.resource.data.score <= 5;
         allow update, delete: if false;
       }
+    }
+
+    // ---- Montages ----
+    // Server-rendered per-task highlight reels (the "finale" and "moments
+    // reel" — see PRODUCT_DIRECTION.md §2.2). A Cloud Function writes these
+    // documents with the Admin SDK, which bypasses these rules entirely;
+    // client writes are never sanctioned, hence create/update/delete: false
+    // rather than any conditional client write path.
+    match /montages/{montageId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
     }
 
     // ---- Community tasks ----
