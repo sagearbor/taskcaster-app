@@ -1,0 +1,25 @@
+{
+  "name": "taskcaster-functions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskCaster server-side automatic video montage pipeline (finale + moments).",
+  "main": "src/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
+    "lint": "eslint src test",
+    "lint:fix": "eslint src test --fix",
+    "serve": "firebase emulators:start --only functions"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.15.0"
+  }
+}
