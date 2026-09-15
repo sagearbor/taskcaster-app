@@ -220,6 +220,20 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // ---- Web push subscriptions ----
+    // "Tell me when someone grades my clip." One document per user, holding a
+    // `subs` map of browser push subscriptions keyed by a hash of the endpoint.
+    //
+    // These live here rather than on users/{uid} on purpose: that document is
+    // readable by ANY signed-in user (see the Users block above), and a push
+    // endpoint plus its keys is not something to hand out. This document is
+    // readable and writable only by the person it belongs to; the Cloud
+    // Function that sends the notification reads it through the Admin SDK,
+    // which bypasses rules entirely.
+    match /push_subscriptions/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
     // ---- Community tasks ----
     match /community_tasks/{taskId} {
       allow read: if isSignedIn();
