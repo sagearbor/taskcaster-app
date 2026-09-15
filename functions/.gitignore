@@ -4,3 +4,4 @@ lib/
 *.log
 tmp/
 test-output/
+bin/
