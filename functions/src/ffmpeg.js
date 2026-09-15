@@ -6,24 +6,43 @@
  * Binary choice, in order:
  *   1. `FFMPEG_PATH` / `FFPROBE_PATH` env vars (local overrides, e.g.
  *      /opt/homebrew/bin/ffmpeg).
- *   2. The `ffmpeg-static` / `ffprobe-static` npm packages, which is what runs
- *      in Cloud Functions.
+ *   2. `functions/bin/ffmpeg`, the libfreetype-enabled static build that
+ *      `scripts/fetch_ffmpeg.js` installs as a postinstall step. This is what
+ *      runs in Cloud Functions and it is the only one of the three that can
+ *      burn in the countdown and the finale title card.
+ *   3. The `ffmpeg-static` / `ffprobe-static` npm packages — the local-dev and
+ *      last-resort fallback.
  *
- * NOTE: Homebrew's ffmpeg is frequently built WITHOUT libfreetype, which means
- * no `drawtext` filter and therefore no burned-in countdown. `assertDrawtext()`
- * gives a clear error instead of a cryptic ffmpeg one.
+ * NOTE: both Homebrew's ffmpeg and the linux-x64 binary that `ffmpeg-static`
+ * downloads are frequently built WITHOUT libfreetype, which means no
+ * `drawtext` filter and therefore no burned-in countdown. `assertDrawtext()`
+ * gives a clear error instead of a cryptic ffmpeg one, and `hasDrawtext()`
+ * lets the renderers degrade instead of failing.
  */
 
+const fs = require('fs');
+const path = require('path');
 const {spawn} = require('child_process');
 const {log} = require('./log');
 
 let cachedFfmpeg = null;
 let cachedFfprobe = null;
 
+/** The postinstall-fetched freetype build, or null when it was not installed. */
+function bundledFfmpeg() {
+  const candidate = path.join(__dirname, '..', 'bin', 'ffmpeg');
+  try {
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 function ffmpegPath() {
   if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
   if (cachedFfmpeg) return cachedFfmpeg;
-  cachedFfmpeg = require('ffmpeg-static');
+  cachedFfmpeg = bundledFfmpeg() || require('ffmpeg-static');
   if (!cachedFfmpeg) {
     throw new Error('ffmpeg binary not found: set FFMPEG_PATH or install ffmpeg-static');
   }

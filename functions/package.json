@@ -11,7 +11,8 @@
     "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
     "lint": "eslint src test",
     "lint:fix": "eslint src test --fix",
-    "serve": "firebase emulators:start --only functions"
+    "serve": "firebase emulators:start --only functions",
+    "postinstall": "node scripts/fetch_ffmpeg.js"
   },
   "dependencies": {
     "ffmpeg-static": "^5.2.0",
