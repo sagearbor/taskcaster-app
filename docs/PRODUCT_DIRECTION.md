@@ -328,8 +328,17 @@ posts.
 ## 7. Deliberately not doing tonight
 
 * Real ads SDK or payments (owner's rule: no accounts, no payment details).
-* Push notifications for "you got graded" (web push needs a VAPID key round
-  trip with the owner; the model already stores everything needed).
+* ~~Push notifications for "you got graded"~~ — **shipped.** It turned out not
+  to need a round trip with the owner: FCM web push would have, because its
+  VAPID key pair can only be registered through the Firebase console, but a
+  key pair is not an account and nothing stops us speaking the Web Push
+  protocol directly. The browser subscribes with our own public key
+  (`web/push.js`, worker at `/push/sw.js` in its own scope so it does not
+  collide with Flutter's), the subscription is stored in
+  `push_subscriptions/{uid}`, and `onGradeCreated` signs and sends with the
+  private half from Secret Manager. The opt-in is asked once, on the Posted
+  screen after a first post — the browser grants exactly one prompt per origin,
+  so it is spent at the moment the player has a reason to want the answer.
 * AI judging. The `AITaskService` hook exists; an LLM "first reaction" line
   on each post would be a strong follow-up.
 * Trimming/filters and any manual editing UI. Stamps, captions, the

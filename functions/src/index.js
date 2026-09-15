@@ -31,6 +31,12 @@ const logger = require('firebase-functions/logger');
 const montage = require('./montage');
 const {hasDrawtext} = require('./ffmpeg');
 const {
+  VAPID_PUBLIC_KEY,
+  gradeNotification,
+  shouldNotify,
+  sendToSubscriptions,
+} = require('./push');
+const {
   MAX_CLIPS,
   montageDocId,
   isStarterTask,
@@ -60,8 +66,23 @@ const RENDER_OPTS = {
   concurrency: 1,
 };
 
+/**
+ * Light function shape, for the push trigger. RENDER_OPTS is sized for ffmpeg
+ * (2 GiB, 9 minutes) and would be absurd for sending a few HTTP requests.
+ * `secrets` mounts the VAPID private key from Secret Manager as an env var.
+ */
+const PUSH_OPTS = {
+  region: REGION,
+  memory: '256MiB',
+  timeoutSeconds: 60,
+  maxInstances: 5,
+  secrets: ['VAPID_PRIVATE_KEY'],
+};
+
 const MONTAGES = 'montages';
 const FEED_POSTS = 'feed_posts';
+const GRADES = 'grades';
+const PUSH_SUBSCRIPTIONS = 'push_subscriptions';
 
 const db = () => getFirestore();
 const bucket = () => getStorage().bucket();
@@ -156,6 +177,79 @@ exports.renderMontageNow = onCall({...RENDER_OPTS, maxInstances: 1}, async (requ
   }
   return render(gameId, taskId, {force: true});
 });
+
+/**
+ * "You got graded" web push.
+ *
+ * Fires on the grade document, not on the post. A grade is written as
+ * `feed_posts/{postId}/grades/{graderUid}` in the same transaction that bumps
+ * gradeCount/gradeSum/graderIds on the post, and the rules make that document
+ * create-only and immutable -- so this fires exactly once per (post, grader).
+ * Watching the post document instead would mean re-firing on every tap, boost
+ * and tapSeconds write.
+ */
+exports.onGradeCreated = onDocumentCreated(
+  {document: `${FEED_POSTS}/{postId}/${GRADES}/{graderUid}`, ...PUSH_OPTS},
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const {postId, graderUid} = event.params;
+    const score = snap.data() ? snap.data().score : null;
+
+    const postSnap = await db().collection(FEED_POSTS).doc(postId).get();
+    if (!postSnap.exists) {
+      logger.warn('push: graded post is gone', {postId});
+      return;
+    }
+    const post = {id: postId, ...postSnap.data()};
+
+    const verdict = shouldNotify({post, graderUid});
+    if (!verdict.ok) {
+      logger.info('push: skipped', {postId, reason: verdict.reason});
+      return;
+    }
+
+    const subsRef = db().collection(PUSH_SUBSCRIPTIONS).doc(post.userId);
+    const subsSnap = await subsRef.get();
+    const subscriptions = subsSnap.exists ? subsSnap.data().subs || {} : {};
+    if (!Object.keys(subscriptions).length) {
+      // The overwhelmingly common case: the player never opted in. Not a
+      // problem, and not worth a warning.
+      logger.info('push: no subscriptions', {postId, uid: post.userId});
+      return;
+    }
+
+    const privateKey = process.env.VAPID_PRIVATE_KEY;
+    if (!privateKey) {
+      logger.error('push: VAPID_PRIVATE_KEY is not set; cannot send');
+      return;
+    }
+
+    const notification = gradeNotification({post, score});
+    const result = await sendToSubscriptions({
+      subscriptions,
+      notification,
+      keys: {publicKey: VAPID_PUBLIC_KEY, privateKey},
+    });
+
+    // Drop subscriptions the push service says are permanently gone, so a
+    // cleared browser does not cost a failed request on every future grade.
+    if (result.gone.length) {
+      const deletions = {};
+      for (const id of result.gone) deletions[`subs.${id}`] = FieldValue.delete();
+      await subsRef.update(deletions);
+    }
+
+    logger.info('push: sent', {
+      postId,
+      uid: post.userId,
+      sent: result.sent.length,
+      gone: result.gone.length,
+      failed: result.failed.length,
+      skipped: result.skipped.length,
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Render

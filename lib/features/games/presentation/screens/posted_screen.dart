@@ -8,6 +8,7 @@ import '../../../arena/domain/repositories/feed_repository.dart';
 import '../../../arena/presentation/screens/arena_screen.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../widgets/late_badge.dart';
+import '../widgets/push_opt_in_card.dart';
 import '../widgets/stamp_sticker.dart';
 import 'task_execution_screen.dart';
 
@@ -165,6 +166,11 @@ class _PostedScreenState extends State<PostedScreen> {
                     );
                   },
                 ),
+                // Web push opt-in, asked here and nowhere else: the browser
+                // gives exactly one chance to prompt, and this is the first
+                // moment the player has a reason to want the answer. Renders
+                // nothing on mobile or when already answered.
+                if (widget.feedPostId != null) const PushOptInCard(),
                 // "Add a word for the judge" — the spec wants an optional,
                 // collapsed-by-default single-line field whose submit
                 // appends to the post's caption via

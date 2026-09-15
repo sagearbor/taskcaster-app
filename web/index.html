@@ -40,6 +40,11 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <!-- Web push ("you got graded"). Defines window.taskcasterPush* for the Dart
+       side; registers nothing until the player opts in after their first post.
+       Loaded before the Flutter bootstrap so the functions exist by the time
+       any screen can call them. -->
+  <script src="push.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
