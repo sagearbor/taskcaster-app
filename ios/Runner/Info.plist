@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -22,8 +24,26 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to snap photos and film short clips for your task entries, and to play augmented-reality (AR) party tasks like Balloon Pop.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Location is only used by location-based AR party tasks while you play one. TaskCaster never tracks you in the background or stores your location.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is only used by location-based AR party tasks, to place a task where you are. TaskCaster never tracks you or stores your location.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app records sound with your short task clips so your entry is funny with the audio on.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app can pick a clip or photo you already filmed, so you can enter a task with something from your camera roll.</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -41,27 +61,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>This app uses the camera to snap photos and film short clips for your task entries, and to play augmented-reality (AR) party tasks like Balloon Pop.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>This app records sound with your short task clips so your entry is funny with the audio on.</string>
-	<!-- Every call site today passes fromCamera: true, so the picker's gallery
-	     branch is not reached on iOS. It is one argument away from being used
-	     (VideoCapture/PhotoCapture both take `fromCamera`), and iOS does not
-	     fail politely: presenting UIImagePickerController for the photo library
-	     without this key aborts the process. Declared so that path degrades to
-	     a permission sheet instead of a crash. -->
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app can pick a clip or photo you already filmed, so you can enter a task with something from your camera roll.</string>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 </dict>
 </plist>
