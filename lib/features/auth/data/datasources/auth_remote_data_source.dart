@@ -5,13 +5,22 @@ abstract class AuthRemoteDataSource {
   Future<String> signInAnonymously();
 
   /// Sign in with Google. Returns the Firebase uid of the signed-in user.
+  /// When the current session is a guest, the Google identity is LINKED to it
+  /// so the uid (and the guest's games and posts) is kept.
   /// Throws if the user cancels the picker or the credential exchange fails.
   Future<String> signInWithGoogle();
 
   /// Sign in with Apple. Returns the Firebase uid of the signed-in user.
+  /// Links to a guest session the same way [signInWithGoogle] does.
   /// On Android this drives Apple's web OAuth flow (Services ID + redirect).
   /// Throws if the user cancels or the credential exchange fails.
   Future<String> signInWithApple();
+
+  /// A one-line message about the last Google/Apple sign-in, consumed on
+  /// read. Non-null only when a guest could not be linked because that
+  /// Google/Apple identity already had an account, so the session moved to
+  /// that existing account instead.
+  String? takeSignInNotice();
 
   Future<void> signOut();
   String? getCurrentUserId();

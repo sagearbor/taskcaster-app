@@ -14,10 +14,15 @@ class AuthLoading extends AuthState {}
 class AuthAuthenticated extends AuthState {
   final User user;
 
-  const AuthAuthenticated({required this.user});
+  /// Optional one-line message for the player about how they got here, e.g.
+  /// "Signed in to your existing account" when a guest's Google/Apple
+  /// identity already belonged to another account.
+  final String? notice;
+
+  const AuthAuthenticated({required this.user, this.notice});
 
   @override
-  List<Object> get props => [user];
+  List<Object?> get props => [user, notice];
 }
 
 /// Emitted after a successful profile edit. Extends [AuthAuthenticated] so the

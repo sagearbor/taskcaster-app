@@ -13,6 +13,10 @@ abstract class AuthRepository {
   /// Sign in with Apple (web OAuth flow on Android). Returns the [User].
   Future<User> signInWithApple();
 
+  /// See [AuthRemoteDataSource.takeSignInNotice]: a one-line message to show
+  /// after a Google/Apple sign-in (consumed on read), or null.
+  String? takeSignInNotice();
+
   Future<void> signOut();
   String? getCurrentUserId();
   Future<User?> getCurrentUser();

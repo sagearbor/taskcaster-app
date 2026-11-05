@@ -107,7 +107,10 @@ class MockAuthDataSource implements AuthRemoteDataSource {
   @override
   Future<String> signInWithGoogle() async {
     await Future.delayed(const Duration(milliseconds: 800));
-    _currentUserId = 'mock_google_${DateTime.now().millisecondsSinceEpoch}';
+    // Like the real data source, a guest is linked, keeping their uid.
+    if (!(_isAnonymous && _currentUserId != null)) {
+      _currentUserId = 'mock_google_${DateTime.now().millisecondsSinceEpoch}';
+    }
     _email = 'google.user@example.com';
     _displayName = 'Google User';
     _avatarEmoji = null;
@@ -120,7 +123,9 @@ class MockAuthDataSource implements AuthRemoteDataSource {
   @override
   Future<String> signInWithApple() async {
     await Future.delayed(const Duration(milliseconds: 800));
-    _currentUserId = 'mock_apple_${DateTime.now().millisecondsSinceEpoch}';
+    if (!(_isAnonymous && _currentUserId != null)) {
+      _currentUserId = 'mock_apple_${DateTime.now().millisecondsSinceEpoch}';
+    }
     _email = 'apple.user@example.com';
     _displayName = 'Apple User';
     _avatarEmoji = null;
@@ -129,6 +134,9 @@ class MockAuthDataSource implements AuthRemoteDataSource {
     _authStateController.add(_currentUserId);
     return _currentUserId!;
   }
+
+  @override
+  String? takeSignInNotice() => null;
 
   @override
   Future<void> signOut() async {

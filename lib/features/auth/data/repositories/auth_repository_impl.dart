@@ -150,6 +150,9 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  String? takeSignInNotice() => remoteDataSource.takeSignInNotice();
+
+  @override
   bool isCurrentUserAnonymous() {
     final userData = remoteDataSource.getCurrentUserData();
     return userData?['isAnonymous'] == true;
