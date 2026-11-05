@@ -91,6 +91,9 @@ const nowIso = () => new Date().toISOString();
 // Triggers
 // ---------------------------------------------------------------------------
 
+/** Auth user deleted: remove their posts, grades, clips, subs and games. */
+exports.deleteUserData = require('./account_deletion').onAuthUserDeleted;
+
 /**
  * A new post landed. If it is a player video for a real task (a Starter Pack
  * task, or a task in a game the poster belongs to) and the poster is under
