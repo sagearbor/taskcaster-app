@@ -49,11 +49,15 @@ class JudgingBloc extends Bloc<JudgingEvent, JudgingState> {
         final playerId = entry.key;
         final status = entry.value;
 
-        // Find player name
-        final player = game.players.firstWhere(
-          (p) => p.userId == playerId,
-          orElse: () => throw Exception('Player not found: $playerId'),
-        );
+        // A status left behind by someone who has since left the game (or
+        // one written before they were on the roster) is skipped, not fatal:
+        // one stray id used to make the whole judging screen unusable.
+        final player =
+            game.players.where((p) => p.userId == playerId).firstOrNull;
+        if (player == null) {
+          debugPrint('JudgingBloc: skipping unknown player $playerId');
+          continue;
+        }
 
         submissions.add(SubmissionData(
           playerId: playerId,

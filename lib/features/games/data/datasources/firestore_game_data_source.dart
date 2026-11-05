@@ -24,38 +24,22 @@ class FirestoreGameDataSource implements GameRemoteDataSource {
       return Stream.value([]);
     }
 
-    developer.log('Getting games stream for user: $userId');
-
+    // ONE query scoped to the user: every game they create or join carries
+    // them in the flat playerIds list (the creator is seeded into it). This
+    // used to listen to the whole collection and filter client-side, which
+    // billed a read for every game in the database on every snapshot.
+    // Needs the playerIds (array-contains) + createdAt (desc) composite index
+    // in firestore.indexes.json.
     return _firestore
         .collection(_gamesCollection)
+        .where('playerIds', arrayContains: userId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-      developer.log('Total games in Firestore: ${snapshot.docs.length}');
-
-      final games = snapshot.docs
-          .map((doc) {
-            final data = doc.data();
-            data['id'] = doc.id;
-            developer.log('Game ${doc.id}: creatorId=${data['creatorId']}, players=${data['players']}');
-            return data;
-          })
-          .where((game) {
-            // Filter for games where user is creator OR in players array
-            final creatorId = game['creatorId'];
-            final players = List.from(game['players'] ?? []);
-            final isCreator = creatorId == userId;
-            final isPlayer = players.any((p) => p['userId'] == userId);
-            final shouldShow = isCreator || isPlayer;
-
-            developer.log('Game ${game['id']}: isCreator=$isCreator, isPlayer=$isPlayer, shouldShow=$shouldShow');
-            return shouldShow;
-          })
-          .toList();
-
-      developer.log('Filtered to ${games.length} games for user $userId');
-      return games;
-    });
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = doc.data();
+              data['id'] = doc.id;
+              return data;
+            }).toList());
   }
 
   @override
@@ -163,71 +147,30 @@ class FirestoreGameDataSource implements GameRemoteDataSource {
   }
 
   @override
-  Future<String> joinGame(String inviteCode, String userId) async {
-    try {
-      developer.log('User $userId attempting to join game with code: $inviteCode');
+  Future<String?> findGameIdByInviteCode(String inviteCode) async {
+    final query = await _firestore
+        .collection(_gamesCollection)
+        .where('inviteCode', isEqualTo: inviteCode)
+        .limit(1)
+        .get();
+    return query.docs.isEmpty ? null : query.docs.first.id;
+  }
 
-      // Query for game with this invite code
-      final querySnapshot = await _firestore
-          .collection(_gamesCollection)
-          .where('inviteCode', isEqualTo: inviteCode)
-          .limit(1)
-          .get();
-
-      if (querySnapshot.docs.isEmpty) {
-        developer.log('No game found with invite code: $inviteCode');
-        throw Exception('Game not found with invite code: $inviteCode');
+  @override
+  Future<void> transactGame(String gameId, GameMutation mutate) {
+    final ref = _firestore.collection(_gamesCollection).doc(gameId);
+    return _firestore.runTransaction<void>((tx) async {
+      final snapshot = await tx.get(ref);
+      if (!snapshot.exists) {
+        throw Exception('Game not found');
       }
-
-      final gameDoc = querySnapshot.docs.first;
-      final gameId = gameDoc.id;
-      final gameData = gameDoc.data();
-
-      // Check if user is already in the game
-      final players = List<Map<String, dynamic>>.from(gameData['players'] ?? []);
-      final isAlreadyInGame = players.any((player) => player['userId'] == userId);
-
-      if (!isAlreadyInGame) {
-        // Get user display name from auth or use default
-        final currentUser = _auth.currentUser;
-        final displayName = currentUser?.displayName ??
-                           currentUser?.email?.split('@')[0] ??
-                           'Player ${userId.substring(0, 8)}';
-
-        players.add({
-          'userId': userId,
-          'displayName': displayName,
-          'totalScore': 0,
-        });
-
-        await _firestore.collection(_gamesCollection).doc(gameId).update({
-          'players': players,
-          // Keep the flat participant-id list in step so the joining player
-          // passes the games update security rule on subsequent writes.
-          'playerIds': players.map((p) => p['userId']).toList(),
-        });
-
-        developer.log('User $userId joined game $gameId');
-      } else {
-        developer.log('User $userId already in game $gameId');
-        // Defensively backfill playerIds for legacy docs created before the
-        // field existed, so existing members satisfy the update rule.
-        if (gameData['playerIds'] == null) {
-          await _firestore.collection(_gamesCollection).doc(gameId).update({
-            'playerIds': players.map((p) => p['userId']).toList(),
-          });
-        }
+      final data = Map<String, dynamic>.from(snapshot.data()!);
+      data['id'] = snapshot.id;
+      final updates = mutate(data);
+      if (updates != null && updates.isNotEmpty) {
+        tx.update(ref, updates);
       }
-
-      return gameId;
-    } catch (e, stackTrace) {
-      developer.log(
-        'Error joining game with code $inviteCode',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      rethrow;
-    }
+    });
   }
 
   Future<void> startGame(String gameId) async {

@@ -97,6 +97,8 @@ class _JoinGameScreenState extends State<JoinGameScreen> {
   /// surfaces as an "Exception: Game not found ..." string from the data layer;
   /// players should never see that.
   String _friendlyJoinError(Object error) {
+    // Already-started / full: the repository's message is player-facing.
+    if (error is GameJoinException) return error.message;
     final text = error.toString().toLowerCase();
     if (text.contains('not found') || text.contains('no game')) {
       return 'We couldn\'t find a game with that code. Double-check it and try again.';
