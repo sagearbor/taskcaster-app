@@ -47,6 +47,7 @@ import '../../features/friends/data/repositories/mock_friends_repository.dart';
 import '../../features/friends/data/repositories/mock_invites_repository.dart';
 
 import '../services/invite/pending_invite_service.dart';
+import '../services/share/share_service.dart';
 import '../services/ai_task_service.dart';
 import '../services/notification_service.dart';
 import '../services/ar/ar_capability_service.dart';
@@ -120,6 +121,14 @@ class ServiceLocator {
         () => FirestoreMontageRepository(),
       );
     }
+
+    // WP-09 sharing: the OS share sheet plus the `shareable` flag and
+    // share_attributions writes. Mock builds keep those writes in memory.
+    sl.registerLazySingleton<ShareService>(
+      () => ShareService(
+        store: useMockServices ? InMemoryShareStore() : FirestoreShareStore(),
+      ),
+    );
 
     // Friend graph + one-tap invites (Phase 1b). Mock builds keep an in-memory
     // graph so the UI is fully exercisable offline / in widget tests.

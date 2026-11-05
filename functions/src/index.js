@@ -30,7 +30,7 @@ const {setGlobalOptions} = require('firebase-functions/v2');
 const {onDocumentCreated} = require('firebase-functions/v2/firestore');
 const {onObjectFinalized} = require('firebase-functions/v2/storage');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
-const {onCall, HttpsError} = require('firebase-functions/v2/https');
+const {onCall, onRequest, HttpsError} = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 
 const montage = require('./montage');
@@ -51,6 +51,8 @@ const {
 const {requireAdmin} = require('./guards');
 const pipeline = require('./pipeline');
 const transcode = require('./transcode');
+const sharePage = require('./share_page');
+const {watermarkFor} = require('./watermark');
 
 initializeApp();
 
@@ -262,6 +264,9 @@ exports.onClipUploaded = onObjectFinalized(TRANSCODE_OPTS, async (event) => {
   }
 });
 
+/** WP-09 public share pages (/p/ /c/ /t/ /f/, rewritten by firebase.json). */
+exports.sharePage = onRequest(sharePage.FUNCTION_OPTS, sharePage.httpHandler(db, logger));
+
 const clipStore = () => transcode.firestoreClipStore({db: db(), FieldValue, feedPosts: FEED_POSTS});
 
 /** The Storage side of a transcode, over the Admin SDK (bypasses rules). */
@@ -374,8 +379,13 @@ async function render(gameId, taskId, {force = false} = {}) {
     const finalePath = path.join(workDir, 'finale.mp4');
     const momentsPath = path.join(workDir, 'moments.mp4');
 
-    const finaleResult = await montage.finale(clips, finalePath, {seconds: 2, taskTitle});
-    const momentsResult = await montage.moments(clips, momentsPath, {seconds: 3, taskTitle});
+    // WP-09: free-tier renders carry a small 'taskcaster.app' mark.
+    const watermark = await watermarkFor({
+      gameId, isStarter: isStarterTask(taskId),
+      getGame: async (id) => ((await db().collection('games').doc(id).get()).data() || null),
+    });
+    const finaleResult = await montage.finale(clips, finalePath, {seconds: 2, taskTitle, watermark});
+    const momentsResult = await montage.moments(clips, momentsPath, {seconds: 3, taskTitle, watermark});
 
     const finaleObject = finaleObjectPath(gameId, taskId);
     const momentsObject = momentsObjectPath(gameId, taskId);

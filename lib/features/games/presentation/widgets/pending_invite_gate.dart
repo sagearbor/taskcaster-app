@@ -56,7 +56,12 @@ class _PendingInviteGuestSignInState extends State<PendingInviteGuestSignIn> {
       _requested = false;
       return;
     }
-    if (_requested || _invites.pendingCode == null) return;
+    // WP-09: a share link (/t/, /c/, /p/, web ?task=) also skips the cold
+    // open — the stranger lands straight on the task.
+    if (_requested ||
+        (_invites.pendingCode == null && _invites.pendingLink == null)) {
+      return;
+    }
     // Only once the startup auth check has settled on "nobody signed in";
     // AuthInitial/AuthLoading are re-evaluated by the BlocListener below.
     if (auth.state is! AuthUnauthenticated) return;
@@ -234,13 +239,9 @@ class _JoinInviteDialogState extends State<_JoinInviteDialog> {
       final text = e.toString().toLowerCase();
       setState(() {
         _joining = false;
-        // Already started (an ordinary game past its lobby) or full: the
-        // repository's message is player-facing.
-        _error = e is GameJoinException
-            ? e.message
-            : text.contains('not found') || text.contains('no game')
-                ? 'That game has ended or the code is wrong.'
-                : 'Couldn\'t join right now. Check your connection and try again.';
+        _error = text.contains('not found') || text.contains('no game')
+            ? 'That game has ended or the code is wrong.'
+            : 'Couldn\'t join right now. Check your connection and try again.';
       });
     }
   }

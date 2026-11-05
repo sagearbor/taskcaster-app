@@ -351,7 +351,11 @@ class _ArenaLoadedBodyState extends State<_ArenaLoadedBody> {
           // one. Silent no-op otherwise.
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: FinaleCard(gameId: post.gameId, taskId: post.taskId),
+            child: FinaleCard(
+              gameId: post.gameId,
+              taskId: post.taskId,
+              taskTitle: post.taskTitle,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

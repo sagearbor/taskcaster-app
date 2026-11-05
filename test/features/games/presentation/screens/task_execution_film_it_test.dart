@@ -28,7 +28,6 @@ import 'package:taskcaster_app/features/games/presentation/screens/task_executio
 import 'package:taskcaster_app/features/games/presentation/widgets/clip_preview.dart';
 
 import '../../../../helpers/fake_video_player_platform.dart';
-import '../../../../helpers/atomic_task_writes.dart';
 
 class MockGameRepository extends Mock implements GameRepository {}
 
@@ -112,7 +111,8 @@ void main() {
       () => FeedRepositoryImpl(feedSource),
     );
 
-    stubAtomicTaskWrites(gameRepository, onWrite: (_) {});
+    when(() => gameRepository.updateGame(any(), any()))
+        .thenAnswer((_) async {});
 
     final authRepository = MockAuthRepository();
     when(() => authRepository.getCurrentUser()).thenAnswer((_) async => User(

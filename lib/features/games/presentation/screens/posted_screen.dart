@@ -5,7 +5,10 @@ import '../../../../core/models/game.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../arena/domain/models/feed_post.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
+import '../../../../core/services/share/share_service.dart';
 import '../../../arena/presentation/screens/arena_screen.dart';
+import '../../../arena/presentation/widgets/challenge_vs_card.dart';
+import '../../../arena/presentation/widgets/share_attempt_button.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../widgets/late_badge.dart';
 import '../widgets/push_opt_in_card.dart';
@@ -29,6 +32,18 @@ class PostedScreen extends StatefulWidget {
 
   final bool isLate;
 
+  /// WP-09: the post this attempt answered (the share link's "Your turn").
+  /// When set, the challenger's entry and this one are shown side by side —
+  /// the payoff — and the challenge is attributed (share_attributions).
+  final String? challengeFromPostId;
+
+  /// The task's id and the poster's uid, for the attribution record.
+  final String? taskId;
+  final String? userId;
+
+  /// Injectable for tests; defaults to the locator's [ShareService].
+  final ShareService? shareService;
+
   const PostedScreen({
     super.key,
     required this.gameId,
@@ -36,6 +51,10 @@ class PostedScreen extends StatefulWidget {
     required this.taskTitle,
     this.feedPostId,
     this.isLate = false,
+    this.challengeFromPostId,
+    this.taskId,
+    this.userId,
+    this.shareService,
   });
 
   @override
@@ -44,11 +63,34 @@ class PostedScreen extends StatefulWidget {
 
 class _PostedScreenState extends State<PostedScreen> {
   late Future<Game?> _gameFuture;
+  Stream<FeedPost?>? _myPost;
 
   @override
   void initState() {
     super.initState();
     _gameFuture = sl<GameRepository>().getGameStream(widget.gameId).first;
+    final postId = widget.feedPostId;
+    if (postId != null) {
+      // One listener for the sticker and the Share button (asBroadcastStream).
+      _myPost = sl<FeedRepository>().watchPost(postId).asBroadcastStream();
+    }
+    _recordChallenge();
+  }
+
+  ShareService get _share => widget.shareService ?? ShareService.fromLocator();
+
+  /// "X took your challenge" groundwork: best-effort, once, never blocking.
+  void _recordChallenge() {
+    final from = widget.challengeFromPostId;
+    final mine = widget.feedPostId;
+    final uid = widget.userId;
+    if (from == null || mine == null || uid == null || uid.isEmpty) return;
+    _share.recordChallengeAttribution(
+      uid: uid,
+      fromPostId: from,
+      postId: mine,
+      taskId: widget.taskId ?? '',
+    );
   }
 
   void _openArena() {
@@ -97,7 +139,23 @@ class _PostedScreenState extends State<PostedScreen> {
                       ),
                 ),
                 const SizedBox(height: 24),
-                if (widget.feedPostId != null) _stickerSection(),
+                if (widget.challengeFromPostId != null) ...[
+                  Text(
+                    'You vs. them',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: AppTheme.goldBright,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  ChallengeVsCard(
+                    challengerPostId: widget.challengeFromPostId!,
+                    myPostId: widget.feedPostId,
+                  ),
+                ] else if (widget.feedPostId != null)
+                  _stickerSection(),
                 if (widget.isLate) ...[
                   const SizedBox(height: 12),
                   const Center(child: LateBadge()),
@@ -112,23 +170,57 @@ class _PostedScreenState extends State<PostedScreen> {
                       ),
                 ),
                 const SizedBox(height: 32),
-                SizedBox(
-                  height: 58,
-                  child: FilledButton(
-                    onPressed: _openArena,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppTheme.coral,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Text(
-                      'See theirs',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                // WP-09: sharing is the primary action — the growth loop is
+                // "a friend sees your 8-second disaster -> Your turn".
+                if (_myPost != null) ...[
+                  StreamBuilder<FeedPost?>(
+                    stream: _myPost,
+                    builder: (context, snapshot) => ShareAttemptButton(
+                      post: snapshot.data,
+                      primary: true,
+                      label: widget.challengeFromPostId != null
+                          ? 'Send it back'
+                          : 'Share your attempt',
+                      shareService: widget.shareService,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                ],
+                SizedBox(
+                  height: 52,
+                  child: _myPost == null
+                      ? FilledButton(
+                          key: const Key('see-theirs-button'),
+                          onPressed: _openArena,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppTheme.coral,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: const Text(
+                            'See theirs',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        )
+                      : OutlinedButton(
+                          key: const Key('see-theirs-button'),
+                          onPressed: _openArena,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white70),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: const Text(
+                            'See theirs',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w700),
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 12),
                 FutureBuilder<Game?>(
@@ -191,7 +283,7 @@ class _PostedScreenState extends State<PostedScreen> {
 
   Widget _stickerSection() {
     return StreamBuilder<FeedPost?>(
-      stream: sl<FeedRepository>().watchPost(widget.feedPostId!),
+      stream: _myPost,
       builder: (context, snapshot) {
         final stamp = snapshot.data?.stamp;
         if (stamp == null) return const SizedBox.shrink();

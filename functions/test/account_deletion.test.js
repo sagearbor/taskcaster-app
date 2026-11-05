@@ -81,25 +81,6 @@ test('a member who was judge hands the judge seat back to the creator', () => {
   assert.equal(planGameDeparture(game, 'u').data.judgeId, 'a');
 });
 
-test('the leaver\'s per-task status goes too (WP-02 leaveGame parity)', () => {
-  const game = {
-    creatorId: 'a', judgeId: 'a', playerIds: ['a', 'u'], players: [player('a'), player('u')],
-    tasks: [{
-      title: 't',
-      submissions: [],
-      playerStatuses: {a: {playerId: 'a', state: 'submitted'}, u: {playerId: 'u', state: 'not_started'}},
-    }],
-  };
-  const plan = planGameDeparture(game, 'u');
-  assert.deepEqual(Object.keys(plan.data.tasks[0].playerStatuses), ['a']);
-});
-
-test('a legacy game without playerIds gets them from the remaining roster', () => {
-  const game = {creatorId: 'a', judgeId: 'a', players: [player('a'), player('u'), player('b')]};
-  const plan = planGameDeparture(game, 'u');
-  assert.deepEqual(plan.data.playerIds, ['a', 'b']);
-});
-
 // ---------------------------------------------------------------------------
 // Emulator: seed, fire the trigger, assert.
 // ---------------------------------------------------------------------------

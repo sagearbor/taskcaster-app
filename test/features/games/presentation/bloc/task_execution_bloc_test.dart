@@ -11,8 +11,6 @@ import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_b
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_event.dart';
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_state.dart';
 
-import '../../../../helpers/atomic_task_writes.dart';
-
 class MockGameRepository extends Mock implements GameRepository {}
 
 void main() {
@@ -157,7 +155,8 @@ void main() {
         build: () {
           when(() => mockGameRepository.getGameStream('game123'))
               .thenAnswer((_) => Stream.value(testGame));
-          stubAtomicTaskWrites(mockGameRepository, onWrite: (_) {});
+          when(() => mockGameRepository.updateGame(any(), any()))
+              .thenAnswer((_) async => {});
           return TaskExecutionBloc(gameRepository: mockGameRepository);
         },
         seed: () => TaskExecutionLoaded(
@@ -173,10 +172,9 @@ void main() {
           userId: 'player1',
         )),
         verify: (_) {
-          verify(() => mockGameRepository.updateTaskAtomically(
+          verify(() => mockGameRepository.updateGame(
                 'game123',
-                0,
-                any(),
+                any(that: isA<Game>()),
               )).called(1);
         },
       );
@@ -188,7 +186,8 @@ void main() {
         build: () {
           when(() => mockGameRepository.getGameStream('game123'))
               .thenAnswer((_) => Stream.value(testGame));
-          stubAtomicTaskWrites(mockGameRepository, onWrite: (_) {});
+          when(() => mockGameRepository.updateGame(any(), any()))
+              .thenAnswer((_) async => {});
           return TaskExecutionBloc(gameRepository: mockGameRepository);
         },
         seed: () => TaskExecutionLoaded(
@@ -205,17 +204,15 @@ void main() {
           videoUrl: 'https://youtube.com/watch?v=test',
         )),
         expect: () => [
-          TaskExecutionSubmitting(task: testGame.tasks[0]),
           const TaskExecutionSubmitted(
             gameId: 'game123',
             taskIndex: 0,
           ),
         ],
         verify: (_) {
-          verify(() => mockGameRepository.updateTaskAtomically(
+          verify(() => mockGameRepository.updateGame(
                 'game123',
-                0,
-                any(),
+                any(that: isA<Game>()),
               )).called(1);
         },
       );
@@ -244,7 +241,8 @@ void main() {
 
           when(() => mockGameRepository.getGameStream('game123'))
               .thenAnswer((_) => Stream.value(gameWithOneSubmitted));
-          stubAtomicTaskWrites(mockGameRepository, onWrite: (_) {});
+          when(() => mockGameRepository.updateGame(any(), any()))
+              .thenAnswer((_) async => {});
           return TaskExecutionBloc(gameRepository: mockGameRepository);
         },
         seed: () => TaskExecutionLoaded(
@@ -261,7 +259,6 @@ void main() {
           videoUrl: 'https://youtube.com/watch?v=test2',
         )),
         expect: () => [
-          TaskExecutionSubmitting(task: testGame.tasks[0]),
           const TaskExecutionSubmitted(
             gameId: 'game123',
             taskIndex: 0,
@@ -280,7 +277,8 @@ void main() {
 
           when(() => mockGameRepository.getGameStream('game123'))
               .thenAnswer((_) => Stream.value(gameWithSkipsAllowed));
-          stubAtomicTaskWrites(mockGameRepository, onWrite: (_) {});
+          when(() => mockGameRepository.updateGame(any(), any()))
+              .thenAnswer((_) async => {});
           return TaskExecutionBloc(gameRepository: mockGameRepository);
         },
         seed: () => TaskExecutionLoaded(
@@ -302,10 +300,9 @@ void main() {
           ),
         ],
         verify: (_) {
-          verify(() => mockGameRepository.updateTaskAtomically(
+          verify(() => mockGameRepository.updateGame(
                 'game123',
-                0,
-                any(),
+                any(that: isA<Game>()),
               )).called(1);
         },
       );

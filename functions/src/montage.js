@@ -317,7 +317,25 @@ async function gapCard(output, {canvas = CANVAS, duration = GAP_SECONDS} = {}) {
 }
 
 /** Concatenate pre-normalised segments (concat demuxer + a final re-encode). */
-async function concatSegments(files, output, {tmpDir}) {
+/**
+ * The free-tier brand mark (WP-09): small, top-left, semi-transparent, on
+ * every frame of the concatenated montage. Applied in the concat pass, which
+ * re-encodes anyway, so it costs no extra encode. '' when there is no text.
+ */
+function watermarkFilter(text, {tmpDir, fontFile = FONT_FILE, canvas = CANVAS}) {
+  if (!text) return '';
+  const fontSize = Math.max(12, Math.round(canvas.width / 30));
+  return drawtextLines([text], {
+    tmpDir,
+    fontFile,
+    fontSize,
+    color: 'white@0.72',
+    centerY: Math.round(fontSize * 1.4),
+    xExpr: String(Math.round(fontSize * 0.8)),
+  });
+}
+
+async function concatSegments(files, output, {tmpDir, videoFilter = ''}) {
   if (!files.length) throw new Error('concatSegments: nothing to concatenate');
   const listPath = path.join(tmpDir, `concat_${Date.now()}.txt`);
   fs.writeFileSync(
@@ -329,6 +347,7 @@ async function concatSegments(files, output, {tmpDir}) {
     '-f', 'concat',
     '-safe', '0',
     '-i', listPath,
+    ...(videoFilter ? ['-vf', videoFilter] : []),
     ...VIDEO_ARGS,
     ...AUDIO_ARGS,
     output,
@@ -421,7 +440,11 @@ async function buildMontage(clips, output, opts) {
 
     if (!used.length) throw new Error(`${kicker}: every clip was too short to use`);
 
-    await concatSegments(parts, output, {tmpDir});
+    // Degrade, never fail: no drawtext means no watermark, not no montage.
+    const videoFilter = opts.watermark && (await hasDrawtext())
+      ? watermarkFilter(opts.watermark, {tmpDir, canvas})
+      : '';
+    await concatSegments(parts, output, {tmpDir, videoFilter});
     const info = await probe(output);
     return {
       output,
@@ -442,7 +465,9 @@ async function buildMontage(clips, output, opts) {
  * @param {Array<{path:string, postId?:string, timerSeconds?:number,
  *                clockOffsetSeconds?:number, isLate?:boolean}>} clips
  * @param {string} output
- * @param {{seconds?:number, taskTitle?:string, canvas?:object}} [options]
+ * @param {{seconds?:number, taskTitle?:string, canvas?:object,
+ *          watermark?:string|null}} [options] `watermark`: free-tier brand
+ *          text burned into every frame (see watermark.js), null for clean.
  */
 async function finale(clips, output, options = {}) {
   const seconds = options.seconds || 2;
@@ -497,6 +522,7 @@ module.exports = {
   titleCard,
   gapCard,
   concatSegments,
+  watermarkFilter,
   finale,
   moments,
   probe,

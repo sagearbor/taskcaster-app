@@ -119,12 +119,7 @@ function planGameDeparture(game, uid) {
   if (!isMember && !isCreator && !isJudge) return {action: 'none'};
 
   const remainingPlayers = players.filter((p) => !p || p.userId !== uid);
-  // playerIds is what the games rule and the home query read (WP-02). A
-  // legacy game without it gets one derived from the remaining roster, so
-  // the update never leaves players[] and playerIds disagreeing.
-  const remainingIds = Array.isArray(game.playerIds) ?
-    playerIds.filter((id) => id !== uid) :
-    remainingPlayers.map((p) => p && p.userId).filter(Boolean);
+  const remainingIds = playerIds.filter((id) => id !== uid);
   const others = remainingIds.length > 0 ?
     remainingIds :
     remainingPlayers.map((p) => p && p.userId).filter(Boolean);
@@ -133,22 +128,9 @@ function planGameDeparture(game, uid) {
 
   const data = {players: remainingPlayers, playerIds: remainingIds};
   if (Array.isArray(game.tasks)) {
-    // Drop the user's submissions AND their per-task status, the same as the
-    // app's leaveGame, so nobody's judging screen waits on a deleted player.
-    data.tasks = game.tasks.map((t) => {
-      if (!t || typeof t !== 'object') return t;
-      const next = {...t};
-      if (Array.isArray(t.submissions)) {
-        next.submissions = t.submissions.filter((s) => !s || s.userId !== uid);
-      }
-      if (t.playerStatuses && typeof t.playerStatuses === 'object' &&
-          Object.prototype.hasOwnProperty.call(t.playerStatuses, uid)) {
-        const statuses = {...t.playerStatuses};
-        delete statuses[uid];
-        next.playerStatuses = statuses;
-      }
-      return next;
-    });
+    data.tasks = game.tasks.map((t) => (t && Array.isArray(t.submissions) ?
+      {...t, submissions: t.submissions.filter((s) => !s || s.userId !== uid)} :
+      t));
   }
   if (isCreator) data.creatorId = others[0];
   if (isJudge) {

@@ -21,9 +21,11 @@ import 'package:equatable/equatable.dart';
 ///   /join/?code=ABC234[&ref=uid]   -> [JoinGameLink]  (also /join/ABC234)
 ///   /?join=ABC234[&ref=uid]        -> [JoinGameLink]  (web "Play in browser";
 ///                                     NOT claimed by the native apps)
-///   /p/<postId>                    -> [FeedPostLink]  (reserved for WP-09)
-///   /t/<taskId>                    -> [TaskLink]      (reserved)
-///   /c/<challengeId>               -> [ChallengeLink] (reserved for WP-09)
+///   /p/<postId>                    -> [FeedPostLink]  (WP-09 share page)
+///   /t/<taskId>[?from=postId]      -> [TaskLink]      (WP-09 public task)
+///   /?task=<taskId>[&from=postId]  -> [TaskLink]      (web "Your turn" from
+///                                     a share page; NOT claimed natively)
+///   /c/<postId>                    -> [ChallengeLink] (WP-09 dare link)
 sealed class DeepLink extends Equatable {
   const DeepLink();
 }
@@ -39,7 +41,7 @@ final class JoinGameLink extends DeepLink {
   List<Object?> get props => [code, ref];
 }
 
-/// A shared Arena feed post (`/p/<postId>`). Reserved: nothing consumes it yet.
+/// A shared Arena feed post (`/p/<postId>`): opens the shared-post screen.
 final class FeedPostLink extends DeepLink {
   final String postId;
 
@@ -49,17 +51,21 @@ final class FeedPostLink extends DeepLink {
   List<Object?> get props => [postId];
 }
 
-/// A shared task (`/t/<taskId>`). Reserved: nothing consumes it yet.
+/// A shared task (`/t/<taskId>`, or `/?task=` on web): open that task, clock
+/// ready. [fromPostId] is the post being answered, when the link came from a
+/// share page's "Your turn" — the Posted screen then shows both side by side.
 final class TaskLink extends DeepLink {
   final String taskId;
+  final String? fromPostId;
 
-  const TaskLink(this.taskId);
+  const TaskLink(this.taskId, {this.fromPostId});
 
   @override
-  List<Object?> get props => [taskId];
+  List<Object?> get props => [taskId, fromPostId];
 }
 
-/// A shared challenge (`/c/<challengeId>`). Reserved: nothing consumes it yet.
+/// A shared dare (`/c/<postId>`): someone's attempt, with "Your turn". The
+/// id is the challenger's feed post id.
 final class ChallengeLink extends DeepLink {
   final String challengeId;
 
@@ -96,6 +102,11 @@ class InviteLinks {
 
   /// Query parameter the Flutter web app reads at `/` ("Play in browser").
   static const String webJoinParam = 'join';
+
+  /// Query parameters of the share pages' "Your turn" target:
+  /// `/?task=<taskId>&from=<postId>` (functions/src/share_page.js).
+  static const String webTaskParam = 'task';
+  static const String fromParam = 'from';
 
   /// Path prefixes the native apps claim on [webHost]. Must match the
   /// apple-app-site-association `components` and the Android autoVerify
@@ -155,8 +166,15 @@ class InviteLinks {
       if (segments.isEmpty) {
         // Web root: /?join=CODE ("Play in browser").
         final code = normalizeCode(uri.queryParameters[webJoinParam]);
-        if (code == null) return null;
-        return JoinGameLink(code, ref: _cleanRef(uri.queryParameters['ref']));
+        if (code != null) {
+          return JoinGameLink(code,
+              ref: _cleanRef(uri.queryParameters['ref']));
+        }
+        // Web root: /?task=ID[&from=POST] (a share page's "Your turn").
+        final taskId = _validId(uri.queryParameters[webTaskParam]);
+        if (taskId == null) return null;
+        return TaskLink(taskId,
+            fromPostId: _validId(uri.queryParameters[fromParam]));
       }
       route = segments.first;
       rest = segments.sublist(1);
@@ -175,7 +193,10 @@ class InviteLinks {
         return id == null ? null : FeedPostLink(id);
       case taskSegment:
         final id = _idFrom(rest);
-        return id == null ? null : TaskLink(id);
+        return id == null
+            ? null
+            : TaskLink(id,
+                fromPostId: _validId(uri.queryParameters[fromParam]));
       case challengeSegment:
         final id = _idFrom(rest);
         return id == null ? null : ChallengeLink(id);
@@ -186,8 +207,11 @@ class InviteLinks {
 
   static String? _idFrom(List<String> rest) {
     if (rest.length != 1) return null;
-    return _idPattern.hasMatch(rest.first) ? rest.first : null;
+    return _validId(rest.first);
   }
+
+  static String? _validId(String? raw) =>
+      raw != null && _idPattern.hasMatch(raw) ? raw : null;
 
   /// True when [code] is exactly [codeLength] characters from [codeAlphabet].
   static bool isValidCode(String code) => _codePattern.hasMatch(code);

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/services/share/share_service.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/models/feed_post.dart';
@@ -11,6 +13,7 @@ import '../../domain/repositories/feed_repository.dart';
 import '../../domain/repositories/montage_repository.dart';
 import '../widgets/arena_video.dart';
 import '../widgets/post_card.dart';
+import '../widgets/share_attempt_button.dart' show showShareOutcome;
 
 /// Same-room playback: every entry for one task, back to back, from one
 /// phone. Self-contained — no bloc, just a stream subscription and a timer.
@@ -46,6 +49,17 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
   /// Keyed so a tap anywhere on a finale slide can still ask the player where
   /// it is (the finale is not a PostCard).
   final GlobalKey<ArenaVideoState> _finaleKey = GlobalKey<ArenaVideoState>();
+
+  /// The viewer's uid, for "is this my post" (share button). Null in widget
+  /// tests that do not register an AuthRepository.
+  final String? _myUid = sl.isRegistered<AuthRepository>()
+      ? sl<AuthRepository>().getCurrentUserId()
+      : null;
+
+  Future<void> _share(FeedPost post) async {
+    final outcome = await ShareService.fromLocator().shareAttempt(post);
+    if (mounted) showShareOutcome(context, outcome);
+  }
 
   @override
   void initState() {
@@ -216,6 +230,10 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen>
                       loopVideo: false,
                       onVideoEnded: _isVideo(post) ? _advance : null,
                       onTap: (atSecond) => _tapPost(post, atSecond: atSecond),
+                      // WP-09: your own entry gets a share button.
+                      onShare: post.userId.isNotEmpty && post.userId == _myUid
+                          ? () => _share(post)
+                          : null,
                     ),
                   ),
                 ),

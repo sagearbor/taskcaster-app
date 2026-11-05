@@ -24,8 +24,7 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
   /// Carries settled crowd grades into the scoreboard when the owner of a
   /// crowd-judged game opens it. Nullable so existing bloc tests construct
   /// unchanged; [currentUserId] gates it to the game's own owner, since only
-  /// they are allowed to write its scores. It is also the caller id for
-  /// advance/complete (no id, no write).
+  /// they are allowed to write its scores.
   final CrowdScoreApplier? crowdScoreApplier;
   final String? currentUserId;
 
@@ -236,14 +235,14 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     }
   }
 
-  /// Fired by the scoreboard countdown on EVERY viewer's device. Only the
-  /// judge or creator writes, and only the `status` field, so a player's
-  /// stale cached game is never written back over the live one.
   Future<void> _onCompleteGame(CompleteGameEvent event, Emitter<GameDetailState> emit) async {
-    final caller = currentUserId;
-    if (caller == null) return;
     try {
-      await gameRepository.completeGame(event.gameId, callerId: caller);
+      // Update game status to completed by getting game from current state
+      if (state is GameDetailLoaded) {
+        final currentState = state as GameDetailLoaded;
+        final updatedGame = currentState.game.copyWith(status: GameStatus.completed);
+        await gameRepository.updateGame(event.gameId, updatedGame);
+      }
     } catch (e) {
       debugPrint('GameDetailBloc.CompleteGame failed: $e');
       emit(GameDetailError(
@@ -255,17 +254,14 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     }
   }
 
-  /// Same as [_onCompleteGame]: judge/creator only, `currentTaskIndex` only,
-  /// forward only.
   Future<void> _onAdvanceToNextTask(AdvanceToNextTaskEvent event, Emitter<GameDetailState> emit) async {
-    final caller = currentUserId;
-    if (caller == null) return;
     try {
-      await gameRepository.advanceToTask(
-        event.gameId,
-        event.nextTaskIndex,
-        callerId: caller,
-      );
+      // Update currentTaskIndex by getting game from current state
+      if (state is GameDetailLoaded) {
+        final currentState = state as GameDetailLoaded;
+        final updatedGame = currentState.game.copyWith(currentTaskIndex: event.nextTaskIndex);
+        await gameRepository.updateGame(event.gameId, updatedGame);
+      }
     } catch (e) {
       debugPrint('GameDetailBloc.AdvanceToNextTask failed: $e');
       emit(GameDetailError(

@@ -21,6 +21,7 @@ import 'features/games/domain/repositories/game_repository.dart';
 import 'features/games/presentation/bloc/games_bloc.dart';
 import 'features/games/presentation/screens/task_execution_screen.dart';
 import 'features/games/presentation/widgets/pending_invite_gate.dart';
+import 'features/games/presentation/widgets/pending_share_gate.dart';
 import 'features/home/presentation/screens/home_screen.dart';
 import 'features/onboarding/presentation/screens/cold_open_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
@@ -182,7 +183,10 @@ class _AuthScreenState extends State<AuthScreen> {
           // PendingInviteGate pops the "join your friend's game?" dialog when
           // an invite code arrived via deep link or install referrer. Mounted
           // only when authenticated so joinGame always has a real user.
-          return const PendingInviteGate(child: HomeScreen());
+          // PendingShareGate (WP-09) opens /t/, /c/ and /p/ share links.
+          return const PendingInviteGate(
+            child: PendingShareGate(child: HomeScreen()),
+          );
         }
 
         final firstTask = StarterPackData.tasks().first;
