@@ -115,8 +115,7 @@ class CountdownBurn extends StatelessWidget {
       child: Text(
         text,
         style: const TextStyle(
-          // Monospace so the digits do not jitter as the clock runs.
-          fontFamily: 'monospace',
+          // Tabular figures so the digits do not jitter as the clock runs.
           fontFeatures: [FontFeature.tabularFigures()],
           fontSize: 13,
           fontWeight: FontWeight.w700,

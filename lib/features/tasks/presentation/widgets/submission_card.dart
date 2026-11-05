@@ -58,7 +58,7 @@ class _SubmissionCardState extends State<SubmissionCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Scored ${widget.playerName}\'s submission: $_selectedScore points'),
-            backgroundColor: Colors.green,
+            backgroundColor: context.tokens.success,
           ),
         );
       }
@@ -67,7 +67,7 @@ class _SubmissionCardState extends State<SubmissionCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to score submission: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -171,7 +171,7 @@ class _SubmissionCardState extends State<SubmissionCard> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       color: widget.submission.isJudged 
-          ? Colors.green.withOpacity(0.05)
+          ? context.tokens.success.withOpacity(0.05)
           : null,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -183,7 +183,7 @@ class _SubmissionCardState extends State<SubmissionCard> {
               children: [
                 CircleAvatar(
                   backgroundColor: widget.submission.isJudged 
-                      ? Colors.green 
+                      ? context.tokens.success 
                       : Theme.of(context).colorScheme.primary,
                   child: Text(
                     widget.playerName.isNotEmpty 
@@ -219,15 +219,15 @@ class _SubmissionCardState extends State<SubmissionCard> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: context.tokens.success.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.green),
+                      border: Border.all(color: context.tokens.success),
                     ),
                     child: Text(
                       '${widget.submission.score} pts',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: Colors.green[700],
+                        color: context.tokens.success,
                       ),
                     ),
                   )
@@ -235,15 +235,15 @@ class _SubmissionCardState extends State<SubmissionCard> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
+                      color: context.tokens.warning.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.orange),
+                      border: Border.all(color: context.tokens.warning),
                     ),
                     child: Text(
                       'Pending',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: Colors.orange[700],
+                        color: context.tokens.warning,
                       ),
                     ),
                   ),
@@ -267,7 +267,7 @@ class _SubmissionCardState extends State<SubmissionCard> {
                     children: [
                       Icon(
                         widget.task.isVideoTask ? Icons.videocam : Icons.text_fields,
-                        color: widget.task.isVideoTask ? Colors.red[700] : Colors.blue[700],
+                        color: widget.task.isVideoTask ? Theme.of(context).colorScheme.error : context.tokens.info,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
@@ -275,7 +275,7 @@ class _SubmissionCardState extends State<SubmissionCard> {
                         widget.task.isVideoTask ? 'Video Submission' : 'Text Answer',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: widget.task.isVideoTask ? Colors.red[700] : Colors.blue[700],
+                          color: widget.task.isVideoTask ? Theme.of(context).colorScheme.error : context.tokens.info,
                         ),
                       ),
                     ],
@@ -292,26 +292,26 @@ class _SubmissionCardState extends State<SubmissionCard> {
                       child: Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: context.tokens.info.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                          border: Border.all(color: context.tokens.info.withOpacity(0.3)),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.play_circle_filled, color: Colors.blue[700]),
+                            Icon(Icons.play_circle_filled, color: context.tokens.info),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 widget.submission.videoUrl!,
                                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.blue[700],
+                                  color: context.tokens.info,
                                   decoration: TextDecoration.underline,
                                 ),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Icon(Icons.open_in_new, color: Colors.blue[700], size: 20),
+                            Icon(Icons.open_in_new, color: context.tokens.info, size: 20),
                           ],
                         ),
                       ),
@@ -341,14 +341,14 @@ class _SubmissionCardState extends State<SubmissionCard> {
                         children: [
                           Icon(
                             widget.submission.score > 0 ? Icons.check_circle : Icons.cancel,
-                            color: widget.submission.score > 0 ? Colors.green : Colors.red,
+                            color: widget.submission.score > 0 ? context.tokens.success : Theme.of(context).colorScheme.error,
                             size: 20,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             widget.submission.score > 0 ? 'Correct Answer' : 'Incorrect Answer',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: widget.submission.score > 0 ? Colors.green : Colors.red,
+                              color: widget.submission.score > 0 ? context.tokens.success : Theme.of(context).colorScheme.error,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -382,18 +382,18 @@ class _SubmissionCardState extends State<SubmissionCard> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: context.tokens.success.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle, color: Colors.green[700]),
+                    Icon(Icons.check_circle, color: context.tokens.success),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'This submission has been judged and scored',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.green[700],
+                          color: context.tokens.success,
                           fontWeight: FontWeight.w600,
                         ),
                       ),

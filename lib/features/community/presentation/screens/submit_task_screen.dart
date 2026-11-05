@@ -5,6 +5,7 @@ import '../../../../core/models/community_task.dart';
 import '../../../../core/models/task.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../bloc/community_bloc.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class SubmitTaskScreen extends StatefulWidget {
   const SubmitTaskScreen({super.key});
@@ -73,9 +74,9 @@ class _SubmitTaskScreenState extends State<SubmitTaskScreen> {
     final authState = context.read<AuthBloc>().state;
     if (authState is! AuthAuthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('You must be logged in to submit a task'),
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
       return;
@@ -104,9 +105,9 @@ class _SubmitTaskScreenState extends State<SubmitTaskScreen> {
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Task submitted successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: context.tokens.success,
           ),
         );
       }
@@ -115,7 +116,7 @@ class _SubmitTaskScreenState extends State<SubmitTaskScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to submit task: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -153,7 +154,7 @@ class _SubmitTaskScreenState extends State<SubmitTaskScreen> {
               Text(
                 'Submit a task idea for the community to enjoy',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Colors.grey[600],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -251,22 +252,22 @@ class _SubmitTaskScreenState extends State<SubmitTaskScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: context.tokens.info.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  border: Border.all(color: context.tokens.info.withOpacity(0.3)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.info_outline, color: Colors.blue[700]),
+                        Icon(Icons.info_outline, color: context.tokens.info),
                         const SizedBox(width: 8),
                         Text(
                           'Submission Guidelines',
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue[300],
+                            color: context.tokens.info,
                           ),
                         ),
                       ],
@@ -279,7 +280,7 @@ class _SubmitTaskScreenState extends State<SubmitTaskScreen> {
                       '• For puzzles, ensure answers are unambiguous\n'
                       '• Be creative and original!',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.blue[700],
+                        color: context.tokens.info,
                       ),
                     ),
                   ],

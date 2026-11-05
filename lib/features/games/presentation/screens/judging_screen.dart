@@ -61,7 +61,7 @@ class JudgingView extends StatelessWidget {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
-                backgroundColor: Colors.red,
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
             );
           }
@@ -136,8 +136,8 @@ class JudgingView extends StatelessWidget {
           // Submission Status Card
           Card(
             color: state.allSubmitted
-                ? Colors.green.withOpacity(0.1)
-                : Colors.orange.withOpacity(0.1),
+                ? context.tokens.success.withOpacity(0.1)
+                : context.tokens.warning.withOpacity(0.1),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -145,7 +145,7 @@ class JudgingView extends StatelessWidget {
                   Icon(
                     state.allSubmitted ? Icons.check_circle : Icons.schedule,
                     size: 48,
-                    color: state.allSubmitted ? Colors.green : Colors.orange,
+                    color: state.allSubmitted ? context.tokens.success : context.tokens.warning,
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -154,7 +154,7 @@ class JudgingView extends StatelessWidget {
                         : 'Waiting for Submissions',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: state.allSubmitted ? Colors.green[700] : Colors.orange[700],
+                          color: state.allSubmitted ? context.tokens.success : context.tokens.warning,
                         ),
                   ),
                   const SizedBox(height: 8),
@@ -167,7 +167,7 @@ class JudgingView extends StatelessWidget {
                     value: state.submittedCount / state.totalSubmissions,
                     backgroundColor: AppTheme.violetSoft,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      state.allSubmitted ? Colors.green : Colors.orange,
+                      state.allSubmitted ? context.tokens.success : context.tokens.warning,
                     ),
                   ),
                 ],
@@ -196,7 +196,7 @@ class JudgingView extends StatelessWidget {
                       child: ListTile(
                         leading: CircleAvatar(
                           backgroundColor: submission.status.hasSubmitted
-                              ? Colors.green
+                              ? context.tokens.success
                               : AppTheme.inkSoft,
                           child: Text(
                             submission.playerName.isNotEmpty
@@ -215,12 +215,12 @@ class JudgingView extends StatelessWidget {
                               : 'Not submitted yet',
                           style: TextStyle(
                             color: submission.status.hasSubmitted
-                                ? Colors.green[700]
+                                ? context.tokens.success
                                 : Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         trailing: submission.status.hasSubmitted
-                            ? const Icon(Icons.check_circle, color: Colors.green)
+                            ? Icon(Icons.check_circle, color: context.tokens.success)
                             : Icon(Icons.schedule,
                                 color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),

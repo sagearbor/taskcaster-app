@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/user_avatar.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
@@ -66,10 +67,10 @@ class VideoViewingView extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.error_outline,
                     size: 64,
-                    color: Colors.red,
+                    color: Theme.of(context).colorScheme.error,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -120,13 +121,13 @@ class VideoViewingView extends StatelessWidget {
               width: 100,
               height: 100,
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
+                color: context.tokens.warning.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.lock,
                 size: 64,
-                color: Colors.orange,
+                color: context.tokens.warning,
               ),
             ),
             const SizedBox(height: 24),
@@ -268,24 +269,7 @@ class VideoViewingView extends StatelessWidget {
               Row(
                 children: [
                   // Avatar
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _getAvatarColor(playerId),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        (playerId.isNotEmpty ? playerId[0] : '?').toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                  ),
+                  UserAvatar(displayName: playerId, radius: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -405,9 +389,9 @@ class VideoViewingView extends StatelessWidget {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Could not open video link'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -416,27 +400,13 @@ class VideoViewingView extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error opening link: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
     }
   }
 
-  Color _getAvatarColor(String playerId) {
-    final hash = playerId.hashCode;
-    final colors = [
-      Colors.blue,
-      Colors.purple,
-      Colors.pink,
-      Colors.teal,
-      Colors.indigo,
-      Colors.deepOrange,
-      Colors.cyan,
-      Colors.lime,
-    ];
-    return colors[hash % colors.length];
-  }
 
   String _getShortPlayerId(String playerId) {
     if (playerId.length > 8) {

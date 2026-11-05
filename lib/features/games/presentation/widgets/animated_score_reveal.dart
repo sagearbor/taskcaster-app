@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../screens/task_scoreboard_screen.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class AnimatedScoreReveal extends StatefulWidget {
   final List<PlayerScoreData> playersWithScores;
@@ -209,13 +210,13 @@ class _PlayerScoreCard extends StatelessWidget {
     IconData rankIcon;
 
     if (rank == 1) {
-      rankColor = Colors.amber[700]!;
+      rankColor = context.tokens.goldText;
       rankIcon = Icons.emoji_events;
     } else if (rank == 2) {
       rankColor = theme.colorScheme.onSurfaceVariant;
       rankIcon = Icons.military_tech;
     } else if (rank == 3) {
-      rankColor = Colors.brown[400]!;
+      rankColor = context.tokens.medalBronze;
       rankIcon = Icons.military_tech;
     } else {
       rankColor = theme.colorScheme.primary;
@@ -225,13 +226,13 @@ class _PlayerScoreCard extends StatelessWidget {
     return Card(
       elevation: isWinner ? 8 : 2,
       color: isWinner && isRevealed
-        ? Colors.amber.withOpacity(0.1)
+        ? context.tokens.gold.withOpacity(0.1)
         : null,
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           border: isWinner && isRevealed
-            ? Border.all(color: Colors.amber, width: 2)
+            ? Border.all(color: context.tokens.gold, width: 2)
             : null,
         ),
         padding: const EdgeInsets.all(16),
@@ -284,7 +285,7 @@ class _PlayerScoreCard extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.amber,
+                            color: context.tokens.gold,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Text(
@@ -371,7 +372,7 @@ class _PositionChangeIndicator extends StatelessWidget {
     if (change == 0) return const SizedBox.shrink();
 
     final isUp = change > 0;
-    final color = isUp ? Colors.green : Colors.red;
+    final color = isUp ? context.tokens.success : Theme.of(context).colorScheme.error;
     final icon = isUp ? Icons.arrow_upward : Icons.arrow_downward;
 
     return Container(
@@ -426,15 +427,9 @@ class _ConfettiOverlayState extends State<_ConfettiOverlay>
   }
 
   void _generateParticles() {
-    final colors = [
-      Colors.red,
-      Colors.blue,
-      Colors.green,
-      Colors.yellow,
-      Colors.purple,
-      Colors.orange,
-      Colors.pink,
-    ];
+    // Theme-independent party palette (this runs in initState, before the
+    // inherited theme is available).
+    const colors = AppTheme.confetti;
 
     for (int i = 0; i < 30; i++) {
       particles.add(_ConfettiParticle(

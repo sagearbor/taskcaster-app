@@ -17,7 +17,7 @@ class CrowdScoreBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: done ? AppTheme.violetSoft : Colors.grey.withOpacity(0.12),
+        color: done ? AppTheme.violetSoft : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.12),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

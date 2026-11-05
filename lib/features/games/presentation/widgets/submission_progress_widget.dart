@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/models/player_task_status.dart';
+import '../../../../core/widgets/user_avatar.dart';
 
 class SubmissionProgressWidget extends StatelessWidget {
   final Map<String, PlayerTaskStatus> playerStatuses;
@@ -39,7 +40,7 @@ class SubmissionProgressWidget extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _getProgressColor(submittedCount, totalPlayers)
+                    color: _getProgressColor(context, submittedCount, totalPlayers)
                         .withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -47,7 +48,7 @@ class SubmissionProgressWidget extends StatelessWidget {
                     '$submittedCount / $totalPlayers',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: _getProgressColor(submittedCount, totalPlayers),
+                          color: _getProgressColor(context, submittedCount, totalPlayers),
                         ),
                   ),
                 ),
@@ -58,7 +59,7 @@ class SubmissionProgressWidget extends StatelessWidget {
               value: totalPlayers > 0 ? submittedCount / totalPlayers : 0,
               backgroundColor: AppTheme.violetSoft,
               valueColor: AlwaysStoppedAnimation<Color>(
-                _getProgressColor(submittedCount, totalPlayers),
+                _getProgressColor(context, submittedCount, totalPlayers),
               ),
             ),
             const SizedBox(height: 16),
@@ -83,22 +84,22 @@ class SubmissionProgressWidget extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: context.tokens.success.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green),
+                  border: Border.all(color: context.tokens.success),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.check_circle,
-                      color: Colors.green,
+                      color: context.tokens.success,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'All players have submitted! Ready for judging.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.green[300],
+                              color: context.tokens.success,
                               fontWeight: FontWeight.bold,
                             ),
                       ),
@@ -126,11 +127,11 @@ class SubmissionProgressWidget extends StatelessWidget {
       case TaskPlayerState.submitted:
       case TaskPlayerState.judged:
         icon = Icons.check_circle;
-        iconColor = Colors.green;
+        iconColor = context.tokens.success;
         break;
       case TaskPlayerState.in_progress:
         icon = Icons.hourglass_empty;
-        iconColor = Colors.orange;
+        iconColor = context.tokens.warning;
         break;
       case TaskPlayerState.skipped:
         icon = Icons.skip_next;
@@ -164,24 +165,7 @@ class SubmissionProgressWidget extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Avatar (first letter of player ID)
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: _getAvatarColor(playerId),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                playerId.isNotEmpty ? playerId[0].toUpperCase() : '?',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
+          UserAvatar(displayName: playerId, radius: 12),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,26 +204,10 @@ class SubmissionProgressWidget extends StatelessWidget {
     );
   }
 
-  Color _getProgressColor(int submitted, int total) {
-    if (submitted == total) return Colors.green;
-    if (submitted >= total / 2) return Colors.orange;
-    return Colors.red;
-  }
-
-  Color _getAvatarColor(String playerId) {
-    // Generate a consistent color based on player ID
-    final hash = playerId.hashCode;
-    final colors = [
-      Colors.blue,
-      Colors.purple,
-      Colors.pink,
-      Colors.teal,
-      Colors.indigo,
-      Colors.deepOrange,
-      Colors.cyan,
-      Colors.lime,
-    ];
-    return colors[hash % colors.length];
+  Color _getProgressColor(BuildContext context, int submitted, int total) {
+    if (submitted == total) return context.tokens.success;
+    if (submitted >= total / 2) return context.tokens.warning;
+    return Theme.of(context).colorScheme.error;
   }
 
   String _getShortPlayerId(String playerId) {

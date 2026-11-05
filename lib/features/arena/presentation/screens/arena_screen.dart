@@ -58,12 +58,28 @@ class _ArenaView extends StatelessWidget {
           BlocBuilder<ArenaBloc, ArenaState>(
             builder: (context, state) {
               final graded = state is ArenaLoaded ? state.totalGradedByMe : 0;
+              // App-bar action: drawn in the app bar's foreground colour
+              // (white on violet), never body ink.
+              final onBar = Theme.of(context).appBarTheme.foregroundColor ??
+                  Theme.of(context).colorScheme.onPrimary;
               return Padding(
-                padding: const EdgeInsets.only(right: 16),
+                padding: const EdgeInsets.only(right: 12),
                 child: Center(
-                  child: Text(
-                    'graded $graded',
-                    style: Theme.of(context).textTheme.labelMedium,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: onBar.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '✓ $graded graded',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: onBar,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -404,8 +420,8 @@ class _ArenaSkeleton extends StatelessWidget {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Shimmer.fromColors(
-        baseColor: Colors.grey[300]!,
-        highlightColor: Colors.grey[100]!,
+        baseColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        highlightColor: Theme.of(context).colorScheme.surface,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

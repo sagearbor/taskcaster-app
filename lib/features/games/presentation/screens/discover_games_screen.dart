@@ -6,6 +6,7 @@ import '../../../../core/models/game.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
 import 'game_detail_screen.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// Public games gallery — discover games other people have shared and clone
 /// their task list into a fresh game you own ("Play these tasks").
@@ -47,7 +48,7 @@ class DiscoverGamesScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.public_off, size: 56, color: Colors.grey[400]),
+            Icon(Icons.public_off, size: 56, color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text('No public games yet',
                 style: Theme.of(context).textTheme.titleMedium),
@@ -156,7 +157,7 @@ class _PublicGameCard extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.15),
+                      color: context.tokens.warning.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Text('🔥 Popular',

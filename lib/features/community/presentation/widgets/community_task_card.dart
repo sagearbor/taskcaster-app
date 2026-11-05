@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/models/community_task.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class CommunityTaskCard extends StatelessWidget {
   final CommunityTask task;
@@ -32,13 +33,13 @@ class CommunityTaskCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: task.taskType == TaskType.video 
-                        ? Colors.red.withOpacity(0.1)
-                        : Colors.blue.withOpacity(0.1),
+                        ? Theme.of(context).colorScheme.error.withOpacity(0.1)
+                        : context.tokens.info.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: task.taskType == TaskType.video 
-                          ? Colors.red
-                          : Colors.blue,
+                          ? Theme.of(context).colorScheme.error
+                          : context.tokens.info,
                     ),
                   ),
                   child: Row(
@@ -48,16 +49,16 @@ class CommunityTaskCard extends StatelessWidget {
                         task.taskType == TaskType.video ? Icons.videocam : Icons.quiz,
                         size: 16,
                         color: task.taskType == TaskType.video 
-                            ? Colors.red[300]
-                            : Colors.blue[300],
+                            ? Theme.of(context).colorScheme.error
+                            : context.tokens.info,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         task.taskType == TaskType.video ? 'Video' : 'Puzzle',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: task.taskType == TaskType.video 
-                              ? Colors.red[300]
-                              : Colors.blue[300],
+                              ? Theme.of(context).colorScheme.error
+                              : context.tokens.info,
                           fontWeight: FontWeight.w600,
                         ),
                       ),

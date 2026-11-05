@@ -9,6 +9,7 @@ import '../../../tasks/domain/repositories/task_repository.dart';
 import '../bloc/community_bloc.dart';
 import '../widgets/community_task_card.dart';
 import 'submit_task_screen.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class CommunityBrowserScreen extends StatelessWidget {
   /// When set, the "Use" action adds the chosen community task to this game.
@@ -86,12 +87,12 @@ class _CommunityBrowserViewState extends State<CommunityBrowserView> {
       ]);
       messenger.showSnackBar(SnackBar(
         content: Text('Added "${communityTask.title}" to your game'),
-        backgroundColor: Colors.green,
+        backgroundColor: context.tokens.success,
       ));
     } catch (e) {
       messenger.showSnackBar(SnackBar(
         content: Text('Could not add task: $e'),
-        backgroundColor: Colors.red,
+        backgroundColor: Theme.of(context).colorScheme.error,
       ));
     }
   }
@@ -199,7 +200,7 @@ class _CommunityBrowserViewState extends State<CommunityBrowserView> {
                         Icon(
                           Icons.error_outline,
                           size: 64,
-                          color: Colors.grey[400],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -235,7 +236,7 @@ class _CommunityBrowserViewState extends State<CommunityBrowserView> {
                           Icon(
                             Icons.inbox,
                             size: 80,
-                            color: Colors.grey[400],
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                           const SizedBox(height: 24),
                           Text(

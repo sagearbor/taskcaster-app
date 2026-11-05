@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class TaskTimerWidget extends StatefulWidget {
   final int durationSeconds;
@@ -71,11 +72,11 @@ class _TaskTimerWidgetState extends State<TaskTimerWidget> {
     final percentage = _remainingSeconds / widget.durationSeconds;
 
     if (percentage > 0.5) {
-      return Colors.green;
+      return context.tokens.success;
     } else if (percentage > 0.2) {
-      return Colors.orange;
+      return context.tokens.warning;
     } else {
-      return Colors.red;
+      return Theme.of(context).colorScheme.error;
     }
   }
 
@@ -112,7 +113,7 @@ class _TaskTimerWidgetState extends State<TaskTimerWidget> {
                   child: CircularProgressIndicator(
                     value: progress,
                     strokeWidth: 8,
-                    backgroundColor: Colors.grey[200],
+                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                     valueColor: AlwaysStoppedAnimation<Color>(timerColor),
                   ),
                 ),
@@ -130,7 +131,7 @@ class _TaskTimerWidgetState extends State<TaskTimerWidget> {
                       Text(
                         'Hurry!',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.red,
+                              color: Theme.of(context).colorScheme.error,
                               fontWeight: FontWeight.bold,
                             ),
                       ),
@@ -146,22 +147,22 @@ class _TaskTimerWidgetState extends State<TaskTimerWidget> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.error.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.warning,
                       size: 16,
-                      color: Colors.red,
+                      color: Theme.of(context).colorScheme.error,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       'Time\'s up!',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.red,
+                            color: Theme.of(context).colorScheme.error,
                             fontWeight: FontWeight.bold,
                           ),
                     ),

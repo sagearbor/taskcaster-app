@@ -399,7 +399,7 @@ class _PositionPill extends StatelessWidget {
       child: Text(
         '${_fmt(position)} / ${_fmt(end)}',
         style: const TextStyle(
-          fontFamily: 'monospace',
+          fontFeatures: [FontFeature.tabularFigures()],
           fontSize: 12,
           fontWeight: FontWeight.w700,
           color: Colors.white,

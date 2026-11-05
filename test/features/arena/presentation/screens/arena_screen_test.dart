@@ -265,7 +265,7 @@ void main() {
     expect(find.byType(PostCard), findsOneWidget);
     expect(find.text('Grade for: Emotional truth'), findsOneWidget);
     expect(find.byType(GradeBar), findsOneWidget);
-    expect(find.text('graded 0'), findsOneWidget);
+    expect(find.text('✓ 0 graded'), findsOneWidget);
   });
 
   testWidgets('grading advances to the next post and updates the counter',
@@ -280,7 +280,7 @@ void main() {
     await tester.tap(find.text('4'));
     await tester.pump();
 
-    expect(find.text('graded 1'), findsOneWidget);
+    expect(find.text('✓ 1 graded'), findsOneWidget);
   });
 
   testWidgets('Skip advances without grading', (tester) async {
@@ -295,7 +295,7 @@ void main() {
     await tester.pump();
 
     // Skip does not count as a grade.
-    expect(find.text('graded 0'), findsOneWidget);
+    expect(find.text('✓ 0 graded'), findsOneWidget);
     verifyNever(() => mockFeedRepository.gradePost(
           postId: any(named: 'postId'),
           graderId: any(named: 'graderId'),

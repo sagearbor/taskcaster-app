@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class TaskCard extends StatelessWidget {
   final Task task;
@@ -111,11 +112,11 @@ class TaskCard extends StatelessWidget {
 
   Widget _buildTypeBadge(BuildContext context) {
     final color = task.taskType == TaskType.video
-        ? Colors.red[100]
-        : Colors.blue[100];
+        ? Theme.of(context).colorScheme.error
+        : context.tokens.info;
     final textColor = task.taskType == TaskType.video
-        ? Colors.red[900]
-        : Colors.blue[900];
+        ? Theme.of(context).colorScheme.error
+        : context.tokens.info;
 
     // Prefer the library category ("Quick & Silly") over the bare task type —
     // it tells players far more about what they're picking.
