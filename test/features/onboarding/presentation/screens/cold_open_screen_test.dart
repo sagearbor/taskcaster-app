@@ -40,7 +40,6 @@ void main() {
       await tester.pumpWidget(createTestWidget());
 
       expect(find.text('TASKCASTER'), findsOneWidget);
-      expect(find.textContaining('Your first task'), findsOneWidget);
       expect(
         find.text('A vegetable that has just received terrible news'),
         findsOneWidget,
@@ -49,15 +48,23 @@ void main() {
       expect(find.text('Start — 90 s'), findsOneWidget);
     });
 
-    testWidgets('shows the reveal-gating copy and no-account line',
+    testWidgets('says the clock waits for the camera, and needs no account',
         (tester) async {
       await tester.pumpWidget(createTestWidget());
 
       expect(
-        find.textContaining('Post yours to unlock everyone else\'s'),
+        find.textContaining('The clock starts when your camera opens'),
         findsOneWidget,
       );
       expect(find.textContaining('No account needed'), findsOneWidget);
+    });
+
+    testWidgets('says "should you accept it" exactly once (WP-05)',
+        (tester) async {
+      await tester.pumpWidget(createTestWidget());
+
+      expect(find.textContaining('Your first task'), findsNothing);
+      expect(find.textContaining('SHOULD YOU ACCEPT IT'), findsOneWidget);
     });
 
     testWidgets('tapping Start invokes the onStart callback', (tester) async {
@@ -86,6 +93,17 @@ void main() {
       await tester.pumpWidget(createTestWidget());
       expect(find.text('Privacy Policy'), findsOneWidget);
       expect(find.text('Terms'), findsOneWidget);
+    });
+
+    testWidgets('legal links are white at 70%, not violet on violet',
+        (tester) async {
+      await tester.pumpWidget(createTestWidget());
+
+      for (final label in const ['Privacy Policy', 'Terms']) {
+        final context = tester.element(find.text(label));
+        final style = DefaultTextStyle.of(context).style;
+        expect(style.color, Colors.white.withOpacity(0.7), reason: label);
+      }
     });
 
     testWidgets('renders with no overflow at 390x844 @3x', (tester) async {

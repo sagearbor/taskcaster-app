@@ -41,6 +41,10 @@ class _ColdOpenScreenState extends State<ColdOpenScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // "onPrimary at 70%" for this always-violet backdrop. Not
+    // colorScheme.onPrimary: the dark theme sets that to violetDeep, which
+    // would be violet on violet again.
+    final legalLinkColor = Colors.white.withOpacity(0.7);
     return Scaffold(
       backgroundColor: AppTheme.violetDeep,
       body: Container(
@@ -59,19 +63,10 @@ class _ColdOpenScreenState extends State<ColdOpenScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _Wordmark(),
-                        const SizedBox(height: 28),
-                        Text(
-                          'Your first task, should you accept it…',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(
-                                color: Colors.white.withOpacity(0.9),
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                        const SizedBox(height: 18),
+                        // The card's own eyebrow ("YOUR TASK, SHOULD YOU
+                        // ACCEPT IT…") is the only headline: saying it twice
+                        // just pushed Start further down the screen.
+                        const SizedBox(height: 24),
                         Theme(
                           // The reveal card is designed for a light surface;
                           // give it one here rather than adapting its colours
@@ -113,7 +108,7 @@ class _ColdOpenScreenState extends State<ColdOpenScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Post yours to unlock everyone else\'s. '
+                          'The clock starts when your camera opens. '
                           'No account needed.',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -144,12 +139,20 @@ class _ColdOpenScreenState extends State<ColdOpenScreen> {
                         ],
                         const Spacer(),
                         const SizedBox(height: 20),
+                        // The footer's links are TextButtons in the primary
+                        // colour, which is violet on this violet backdrop
+                        // (unreadable). Repaint them onPrimary at 70% here
+                        // rather than changing the shared footer.
                         Theme(
                           data: Theme.of(context).copyWith(
-                            textTheme: Theme.of(context).textTheme.apply(
-                                  bodyColor: Colors.white.withOpacity(0.75),
-                                  displayColor: Colors.white,
+                            colorScheme: Theme.of(context).colorScheme.copyWith(
+                                  onSurfaceVariant: legalLinkColor,
                                 ),
+                            textButtonTheme: TextButtonThemeData(
+                              style: TextButton.styleFrom(
+                                foregroundColor: legalLinkColor,
+                              ),
+                            ),
                           ),
                           child: LegalLinksFooter(openLink: widget.openLink),
                         ),

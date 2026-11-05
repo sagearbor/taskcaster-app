@@ -29,6 +29,7 @@ import '../widgets/crowd_score_badge.dart';
 import '../widgets/late_badge.dart';
 import '../widgets/stamp_sticker.dart';
 import '../widgets/submission_progress_widget.dart';
+import '../widgets/countdown_display.dart';
 import '../widgets/task_countdown.dart';
 import '../widgets/task_reveal_card.dart';
 import '../widgets/task_timer_widget.dart';
@@ -126,11 +127,50 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   // countdown drawn over playback matches what the player saw.
   int? _videoClockOffsetSeconds;
 
+  // Starter flow, WP-05: the player has accepted the task (tapped Start on
+  // the reveal card, or arrived with autoStart) but the clock is not running
+  // yet. It starts on the first Film it / Snap it / keyboard focus.
+  bool _armed = false;
+  // Guards against stamping startedAt twice before the stream catches up.
+  bool _clockStartDispatched = false;
+  final _textEntryFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _armed = widget.autoStart;
+    _textEntryFocus.addListener(_onTextEntryFocus);
+  }
+
   @override
   void dispose() {
     _videoUrlController.dispose();
     _textEntryController.dispose();
+    _textEntryFocus.dispose();
     super.dispose();
+  }
+
+  void _onTextEntryFocus() {
+    if (!_textEntryFocus.hasFocus) return;
+    final state = context.read<TaskExecutionBloc>().state;
+    if (state is TaskExecutionLoaded) _startClockIfNeeded(state);
+  }
+
+  bool _clockRunning(TaskExecutionLoaded state) =>
+      state.userStatus != null &&
+      state.userStatus!.state == TaskPlayerState.in_progress &&
+      state.userStatus!.startedAt != null;
+
+  /// Stamp `startedAt` now — called the moment the camera or the keyboard
+  /// opens, never earlier (WP-05). No-op once the clock is running.
+  void _startClockIfNeeded(TaskExecutionLoaded state) {
+    if (_clockStartDispatched || _clockRunning(state)) return;
+    _clockStartDispatched = true;
+    context.read<TaskExecutionBloc>().add(StartTask(
+          gameId: widget.gameId,
+          taskIndex: widget.taskIndex,
+          userId: widget.userId,
+        ));
   }
 
   void _validateUrl(String url) {
@@ -274,7 +314,13 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             // Auto-dispatch Start for the cold open / Home "next task" /
             // Posted "Next task" flows so the player never has to tap Start
             // twice — only when they genuinely haven't started yet.
+            //
+            // Starter (film / snap / write) tasks are the exception (WP-05):
+            // autoStart only skips the reveal card. Their clock is stamped
+            // when the camera or keyboard actually opens, so nobody is LATE
+            // on task 1 because they spent 30 s finding the props.
             if (widget.autoStart &&
+                !isStarterMedium &&
                 !_autoStartDispatched &&
                 !state.hasUserSubmitted &&
                 (state.userStatus == null ||
@@ -739,11 +785,9 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
 
   Widget _buildStarterTaskFlow(BuildContext context, TaskExecutionLoaded state) {
     final task = state.task;
-    final started = state.userStatus != null &&
-        state.userStatus!.state == TaskPlayerState.in_progress &&
-        state.userStatus!.startedAt != null;
+    final started = _clockRunning(state);
 
-    if (!started) {
+    if (!started && !_armed) {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -796,11 +840,31 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
           Text(task.description, style: theme.textTheme.bodyMedium),
           const SizedBox(height: 16),
           Center(
-            child: TaskCountdown(
-              startedAt: state.userStatus!.startedAt!,
-              durationSeconds: task.durationSeconds ?? 90,
-            ),
+            child: started
+                ? TaskCountdown(
+                    startedAt: state.userStatus!.startedAt!,
+                    durationSeconds: task.durationSeconds ?? 90,
+                  )
+                // Accepted but not running: the full clock, frozen, until
+                // the camera or keyboard opens.
+                : CountdownDisplay(
+                    key: const Key('starter-clock-waiting'),
+                    remainingSeconds: task.durationSeconds ?? 90,
+                    isLate: false,
+                  ),
           ),
+          if (!started) ...[
+            const SizedBox(height: 6),
+            Text(
+              task.submissionType == SubmissionType.text
+                  ? 'The clock starts when you start typing.'
+                  : 'The clock starts when your camera opens.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           TwistBanner(twist: task.twist),
           const SizedBox(height: 28),
@@ -815,12 +879,10 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     );
   }
 
+  /// "Start" on the reveal card: accept the task and show the twist and the
+  /// capture buttons. Deliberately does NOT start the clock (WP-05).
   void _startStarterTask(BuildContext context) {
-    context.read<TaskExecutionBloc>().add(StartTask(
-          gameId: widget.gameId,
-          taskIndex: widget.taskIndex,
-          userId: widget.userId,
-        ));
+    setState(() => _armed = true);
   }
 
   String _currentDisplayName(BuildContext context) {
@@ -920,7 +982,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
         SizedBox(
           height: 52,
           child: OutlinedButton(
-            onPressed: () => _snapIt(context),
+            onPressed: () => _snapIt(context, state),
             child: const Text(
               '\u{1F4F7} Snap it',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -959,7 +1021,9 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     );
   }
 
-  Future<void> _snapIt(BuildContext context) async {
+  Future<void> _snapIt(BuildContext context, TaskExecutionLoaded state) async {
+    // The camera is opening: this is when the clock starts (WP-05).
+    _startClockIfNeeded(state);
     final bytes = await sl<PhotoCapture>().pick(fromCamera: true);
     if (!mounted || bytes == null) return;
     setState(() {
@@ -977,10 +1041,17 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     // the picker: that offset is what lets playback draw the same countdown
     // the player was watching, and what a later server-side splice uses
     // instead of reading the number off the pixels.
-    final startedAt = state.userStatus?.startedAt;
-    final offset = startedAt == null
-        ? null
-        : DateTime.now().difference(startedAt).inSeconds;
+    //
+    // If the clock is not running yet, the recorder opening IS the start
+    // (WP-05): stamp it now and record a zero offset.
+    final startedAt = _clockRunning(state) ? state.userStatus!.startedAt : null;
+    final int? offset;
+    if (startedAt == null) {
+      _startClockIfNeeded(state);
+      offset = 0;
+    } else {
+      offset = DateTime.now().difference(startedAt).inSeconds;
+    }
 
     // The recorder's own maxDuration IS the trim. There is no trim screen.
     final cap = VideoPolicy.clipCapSeconds(state.task.durationSeconds);
@@ -1010,6 +1081,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
         const SizedBox(height: 10),
         TextField(
           controller: _textEntryController,
+          // Focus = the keyboard opening = the clock starting (WP-05).
+          focusNode: _textEntryFocus,
           maxLines: 4,
           decoration: const InputDecoration(
             hintText: 'Type your entry…',

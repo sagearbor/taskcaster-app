@@ -23,14 +23,33 @@ void main() {
     expect(tapped, isTrue);
   });
 
-  testWidgets('allDone mode offers to play with friends', (tester) async {
+  testWidgets('allDone mode: waiting for the crowd, then Challenge friends',
+      (tester) async {
+    var tapped = false;
     await tester.pumpWidget(wrap(NextTaskHeroCard(
       mode: NextTaskHeroMode.allDone,
+      waitingCount: 4,
+      onPrimary: () => tapped = true,
+    )));
+
+    expect(find.text('Waiting for the crowd: 4'), findsOneWidget);
+    expect(find.textContaining('All ten done'), findsOneWidget);
+    // No more Play here: Play lives behind the app bar's "+" (WP-05).
+    expect(find.text('Play'), findsNothing);
+    await tester.tap(find.text('Challenge friends'));
+    expect(tapped, isTrue);
+  });
+
+  testWidgets('allDone with nothing left to grade says the crowd has spoken',
+      (tester) async {
+    await tester.pumpWidget(wrap(NextTaskHeroCard(
+      mode: NextTaskHeroMode.allDone,
+      waitingCount: 0,
       onPrimary: () {},
     )));
 
-    expect(find.textContaining('done all ten'), findsOneWidget);
-    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('The crowd has spoken.'), findsOneWidget);
+    expect(find.text('Challenge friends'), findsOneWidget);
   });
 
   testWidgets('noStarterGame mode invites the user to start', (tester) async {

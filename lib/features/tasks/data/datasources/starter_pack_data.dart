@@ -66,34 +66,28 @@ class StarterPackData {
   }
 
   /// The ten tasks, in play order.
+  ///
+  /// **The order is the onboarding (WP-05).** Task 1 must be doable in the
+  /// next 30 seconds with nothing but a face (the oven selfie), task 2 is a
+  /// sit-still text joke, task 3 a photo; anything that needs props or a walk
+  /// (the egg on a spoon) waits until task 6+. Ids are deliberately NOT
+  /// renumbered when the order changes: posts, montages and the server's
+  /// STARTER_TASK_IDS (functions/src/contract.js) key on the id, so only the
+  /// position moves. Starter games already created keep their old order.
   static List<Task> tasks() => [
         _t(
-          id: 'starter-01-v2',
-          title: 'Egg on a spoon, to the far wall and back',
+          id: 'starter-09-v2',
+          title: 'The face of someone who has just remembered the oven is on '
+              '— in another country',
           description:
-              'Put an egg (or the roundest thing in your kitchen) on a spoon. '
-              'Walk to the farthest wall in the room and back without touching '
-              'the egg. Film the whole trip; end on the egg, wherever it ends '
-              'up.',
-          twist: 'You must narrate it like a nature documentary.',
-          rubric: 'Distance covered before disaster, then narration.',
+              'Selfie video. You have just remembered that you left the oven '
+              'on. You are currently in a different country. It is 3 a.m. '
+              'there. Show us every layer of that realisation arriving, one at '
+              'a time.',
+          twist: 'No hands in the shot, and you may say exactly one word.',
+          rubric: 'Number of distinct regrets visible, then the word.',
           submissionType: SubmissionType.video,
           durationSeconds: 30,
-        ),
-        _t(
-          id: 'starter-02-v2',
-          title:
-              'The tallest tower of things that were never meant to be stacked',
-          description:
-              'Build the tallest freestanding tower you can from objects that '
-              'have no business being stacked. Film the last three objects '
-              'going on. A shoe must be involved somewhere.',
-          twist:
-              'The final object goes on with one hand, on camera, and you must '
-              'say "and that\'s the tower" before you let go.',
-          rubric: 'Height x how long it stands after you let go.',
-          submissionType: SubmissionType.video,
-          durationSeconds: 60,
         ),
         _t(
           id: 'starter-03',
@@ -121,17 +115,17 @@ class StarterPackData {
           durationSeconds: 120,
         ),
         _t(
-          id: 'starter-05-v2',
-          title:
-              'The worst sandwich that is still technically food — and one bite',
+          id: 'starter-10-v2',
+          title: 'Your autobiography: the trailer',
           description:
-              'Assemble the worst sandwich you can from what is in your '
-              'kitchen. Every ingredient must be edible. Film the assembly, '
-              'then take exactly one bite. The clip ends on your face.',
-          twist: 'Name every ingredient out loud as it goes on.',
-          rubric: 'Horror of the sandwich, then the face.',
+              'Hold up the cover of your autobiography. The title is the last '
+              'thing you said out loud today. Read the first line of the book '
+              'in a movie-trailer voice.',
+          twist:
+              'The cover must include a review quote from a household object.',
+          rubric: 'Would you watch it.',
           submissionType: SubmissionType.video,
-          durationSeconds: 90,
+          durationSeconds: 30,
         ),
         _t(
           id: 'starter-06',
@@ -147,6 +141,19 @@ class StarterPackData {
           durationSeconds: 180,
         ),
         _t(
+          id: 'starter-01-v2',
+          title: 'Egg on a spoon, to the far wall and back',
+          description:
+              'Put an egg (or the roundest thing in your kitchen) on a spoon. '
+              'Walk to the farthest wall in the room and back without touching '
+              'the egg. Film the whole trip; end on the egg, wherever it ends '
+              'up.',
+          twist: 'You must narrate it like a nature documentary.',
+          rubric: 'Distance covered before disaster, then narration.',
+          submissionType: SubmissionType.video,
+          durationSeconds: 30,
+        ),
+        _t(
           id: 'starter-07',
           title: 'A three-line horror story about your fridge',
           description:
@@ -156,6 +163,34 @@ class StarterPackData {
           twist: 'The last line must be a single word.',
           rubric: 'Chills, then the word.',
           submissionType: SubmissionType.text,
+          durationSeconds: 90,
+        ),
+        _t(
+          id: 'starter-02-v2',
+          title:
+              'The tallest tower of things that were never meant to be stacked',
+          description:
+              'Build the tallest freestanding tower you can from objects that '
+              'have no business being stacked. Film the last three objects '
+              'going on. A shoe must be involved somewhere.',
+          twist:
+              'The final object goes on with one hand, on camera, and you must '
+              'say "and that\'s the tower" before you let go.',
+          rubric: 'Height x how long it stands after you let go.',
+          submissionType: SubmissionType.video,
+          durationSeconds: 60,
+        ),
+        _t(
+          id: 'starter-05-v2',
+          title:
+              'The worst sandwich that is still technically food — and one bite',
+          description:
+              'Assemble the worst sandwich you can from what is in your '
+              'kitchen. Every ingredient must be edible. Film the assembly, '
+              'then take exactly one bite. The clip ends on your face.',
+          twist: 'Name every ingredient out loud as it goes on.',
+          rubric: 'Horror of the sandwich, then the face.',
+          submissionType: SubmissionType.video,
           durationSeconds: 90,
         ),
         _t(
@@ -169,33 +204,6 @@ class StarterPackData {
           rubric: 'Number of things x your dignity when they go.',
           submissionType: SubmissionType.video,
           durationSeconds: 60,
-        ),
-        _t(
-          id: 'starter-09-v2',
-          title: 'The face of someone who has just remembered the oven is on '
-              '— in another country',
-          description:
-              'Selfie video. You have just remembered that you left the oven '
-              'on. You are currently in a different country. It is 3 a.m. '
-              'there. Show us every layer of that realisation arriving, one at '
-              'a time.',
-          twist: 'No hands in the shot, and you may say exactly one word.',
-          rubric: 'Number of distinct regrets visible, then the word.',
-          submissionType: SubmissionType.video,
-          durationSeconds: 30,
-        ),
-        _t(
-          id: 'starter-10-v2',
-          title: 'Your autobiography: the trailer',
-          description:
-              'Hold up the cover of your autobiography. The title is the last '
-              'thing you said out loud today. Read the first line of the book '
-              'in a movie-trailer voice.',
-          twist:
-              'The cover must include a review quote from a household object.',
-          rubric: 'Would you watch it.',
-          submissionType: SubmissionType.video,
-          durationSeconds: 30,
         ),
       ];
 

@@ -68,6 +68,22 @@ class ArenaLoaded extends ArenaState {
   List<Object?> get props => [queue, index, gradedThisSession, totalGradedByMe];
 }
 
+/// The Arena for a viewer who has not posted anything yet (WP-05): instead of
+/// an empty "post yours to unlock" wall, show the finale and the top entries
+/// for [taskId] (Starter Pack task 1) — watchable, NOT gradeable — with a
+/// "Your turn" bar that starts that task. Grading stays gated on posting.
+class ArenaTeaser extends ArenaState {
+  final String taskId;
+
+  /// Up to [ArenaBloc.teaserSize] entries, best-graded first. May be empty.
+  final List<FeedPost> posts;
+
+  const ArenaTeaser({required this.taskId, required this.posts});
+
+  @override
+  List<Object?> get props => [taskId, posts];
+}
+
 class ArenaEmpty extends ArenaState {
   /// True when the viewer has not submitted anything yet, so there is nothing
   /// they are allowed to see: "Post yours to unlock everyone else's."
