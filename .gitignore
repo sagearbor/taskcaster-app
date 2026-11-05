@@ -68,3 +68,6 @@ console-errors.txt
 
 # Firebase CLI deploy cache (local state, differs per machine)
 .firebase/
+
+# Claude Code agent worktrees
+.claude/

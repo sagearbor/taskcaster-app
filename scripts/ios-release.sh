@@ -15,8 +15,13 @@ AUTH=(-allowProvisioningUpdates
   -authenticationKeyID "$EXPO_ASC_KEY_ID"
   -authenticationKeyIssuerID "$EXPO_ASC_ISSUER_ID")
 
+# Public build-time keys (e.g. REVENUECAT_IOS_KEY) live outside the repo.
+DEFINES=~/.config/taskcaster/dart-defines.env
+DEFINE_ARGS=()
+[[ -f $DEFINES ]] && DEFINE_ARGS=(--dart-define-from-file="$DEFINES")
+
 if [[ $STEP == archive || $STEP == all ]]; then
-  "$FLUTTER" build ios --release --config-only
+  "$FLUTTER" build ios --release --config-only "${DEFINE_ARGS[@]}"
   (cd ios && pod install)
   xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
     -configuration Release -destination 'generic/platform=iOS' \

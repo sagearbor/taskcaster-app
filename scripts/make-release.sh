@@ -13,6 +13,10 @@ if ! flutter config --list 2>/dev/null | grep -q 'jdk-dir'; then
   exit 1
 fi
 
-flutter build appbundle --release
+# Public build-time keys (e.g. REVENUECAT_ANDROID_KEY) live outside the repo.
+DEFINES=~/.config/taskcaster/dart-defines.env
+DEFINE_ARGS=()
+[[ -f $DEFINES ]] && DEFINE_ARGS=(--dart-define-from-file="$DEFINES")
+flutter build appbundle --release "${DEFINE_ARGS[@]}"
 echo ""
 echo "AAB ready: build/app/outputs/bundle/release/app-release.aab"
