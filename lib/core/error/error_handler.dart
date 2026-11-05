@@ -38,9 +38,11 @@ class ErrorHandler {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: error.severity == ErrorSeverity.critical 
-            ? Colors.red 
-            : Colors.orange,
+        // Critical errors use the theme's error colour; everything else
+        // keeps the theme's (high-contrast) default snackbar surface.
+        backgroundColor: error.severity == ErrorSeverity.critical
+            ? Theme.of(context).colorScheme.error
+            : null,
         action: error.canRetry 
             ? SnackBarAction(
                 label: 'Retry',
@@ -220,7 +222,7 @@ class _DefaultErrorWidget extends StatelessWidget {
               Icon(
                 Icons.error_outline,
                 size: 64,
-                color: Colors.red[400],
+                color: Theme.of(context).colorScheme.error,
               ),
               const SizedBox(height: 16),
               Text(
@@ -238,15 +240,12 @@ class _DefaultErrorWidget extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.grey[100],
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     error.message,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(fontSize: 12),
                   ),
                 ),
               ],

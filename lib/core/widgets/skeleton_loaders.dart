@@ -3,21 +3,26 @@ import 'package:shimmer/shimmer.dart';
 
 /// Collection of skeleton loading widgets for consistent loading states
 class SkeletonLoaders {
-  static final _baseShimmerGradient = LinearGradient(
-    begin: Alignment(-1.0, -0.3),
-    end: Alignment(1.0, 0.3),
-    colors: [
-      Colors.grey[300]!,
-      Colors.grey[100]!,
-      Colors.grey[300]!,
-    ],
-    stops: const [0.0, 0.5, 1.0],
-  );
+  /// Theme-aware shimmer: a soft sweep across the surface-container tone, so
+  /// skeletons read as placeholders in light AND dark (fixed light greys
+  /// glowed on the dark theme). The white child boxes are only masks.
+  static LinearGradient _shimmer(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final base = scheme.surfaceContainerHighest;
+    final hi =
+        Color.alphaBlend(scheme.onSurface.withOpacity(0.04), scheme.surface);
+    return LinearGradient(
+      begin: const Alignment(-1.0, -0.3),
+      end: const Alignment(1.0, 0.3),
+      colors: [base, hi, base],
+      stops: const [0.0, 0.5, 1.0],
+    );
+  }
 
   /// Skeleton for a game card in the games list
   static Widget gameCardSkeleton(BuildContext context) {
     return Shimmer(
-      gradient: _baseShimmerGradient,
+      gradient: _shimmer(context),
       child: Card(
         elevation: 0,
         child: Padding(
@@ -68,7 +73,7 @@ class SkeletonLoaders {
   /// Skeleton for game detail screen
   static Widget gameDetailSkeleton(BuildContext context) {
     return Shimmer(
-      gradient: _baseShimmerGradient,
+      gradient: _shimmer(context),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -159,7 +164,7 @@ class SkeletonLoaders {
   /// Skeleton for task execution screen
   static Widget taskExecutionSkeleton(BuildContext context) {
     return Shimmer(
-      gradient: _baseShimmerGradient,
+      gradient: _shimmer(context),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -232,7 +237,7 @@ class SkeletonLoaders {
   /// Skeleton for task browser screen
   static Widget taskBrowserSkeleton(BuildContext context) {
     return Shimmer(
-      gradient: _baseShimmerGradient,
+      gradient: _shimmer(context),
       child: Column(
         children: [
           // Category tabs skeleton
@@ -280,7 +285,7 @@ class SkeletonLoaders {
   /// Skeleton for judging/submission review screen
   static Widget judgingSkeleton(BuildContext context) {
     return Shimmer(
-      gradient: _baseShimmerGradient,
+      gradient: _shimmer(context),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -332,23 +337,24 @@ class SkeletonLoaders {
     double itemHeight = 80,
     EdgeInsets padding = const EdgeInsets.all(16),
   }) {
-    return Shimmer(
-      gradient: _baseShimmerGradient,
-      child: ListView.builder(
-        padding: padding,
-        itemCount: itemCount,
-        itemBuilder: (context, index) => Padding(
-          padding: const EdgeInsets.only(bottom: 12.0),
-          child: Container(
-            height: itemHeight,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-      ),
-    );
+    return Builder(
+        builder: (context) => Shimmer(
+              gradient: _shimmer(context),
+              child: ListView.builder(
+                padding: padding,
+                itemCount: itemCount,
+                itemBuilder: (context, index) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Container(
+                    height: itemHeight,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ));
   }
 
   /// Skeleton for a single line of text
@@ -356,16 +362,17 @@ class SkeletonLoaders {
     double width = 200,
     double height = 20,
   }) {
-    return Shimmer(
-      gradient: _baseShimmerGradient,
-      child: Container(
-        height: height,
-        width: width,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(4),
-        ),
-      ),
-    );
+    return Builder(
+        builder: (context) => Shimmer(
+              gradient: _shimmer(context),
+              child: Container(
+                height: height,
+                width: width,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ));
   }
 }
