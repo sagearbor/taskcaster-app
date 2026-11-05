@@ -320,3 +320,53 @@ describe('storage.rules — montages/{gameId}/{taskId}/{file}', function () {
     );
   });
 });
+
+// WP-08: poster frames written by the transcode function (Admin SDK).
+describe('storage.rules — transcoded/{uid}/{day}/{file}', function () {
+  this.timeout(180000);
+  let testEnv;
+
+  before(async () => {
+    testEnv = await makeTestEnv();
+  });
+
+  afterEach(async () => {
+    await clearStorageDeep(testEnv);
+  });
+
+  after(async () => {
+    await testEnv.cleanup();
+  });
+
+  const POSTER = 'transcoded/u1/20261105/0.jpg';
+
+  it('anyone, even unauthenticated, can get a poster by its path', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), POSTER), bytes(1024), { contentType: 'image/jpeg' });
+    });
+    const anon = testEnv.unauthenticatedContext().storage();
+    await assertSucceeds(getBytes(ref(anon, POSTER)));
+  });
+
+  it('nobody can list transcoded/ prefixes', async () => {
+    const storage = testEnv.authenticatedContext('u1').storage();
+    await assertFails(listAll(ref(storage, 'transcoded/u1/20261105')));
+    await assertFails(listAll(ref(storage, 'transcoded/u1')));
+  });
+
+  it('no client may write or delete a poster, not even its own uid', async () => {
+    const storage = testEnv.authenticatedContext('u1').storage();
+    await assertFails(
+      uploadBytes(ref(storage, POSTER), bytes(1024), { contentType: 'image/jpeg' })
+    );
+    await assertFails(
+      uploadBytes(ref(storage, 'transcoded/u1/20261105/0.mp4'), bytes(1024), {
+        contentType: 'video/mp4',
+      })
+    );
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), POSTER), bytes(1024), { contentType: 'image/jpeg' });
+    });
+    await assertFails(deleteObject(ref(storage, POSTER)));
+  });
+});

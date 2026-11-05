@@ -26,6 +26,10 @@ class ArenaVideo extends StatefulWidget {
   /// The clip's https download URL.
   final String? url;
 
+  /// A poster frame (JPEG) shown behind the spinner while [url] loads. Null
+  /// shows the plain brand gradient.
+  final String? posterUrl;
+
   /// The clip's duration, when the post knows it. Null plays to the cap.
   final double? durationSeconds;
 
@@ -52,6 +56,7 @@ class ArenaVideo extends StatefulWidget {
   const ArenaVideo({
     super.key,
     required this.url,
+    this.posterUrl,
     this.durationSeconds,
     this.timerSeconds,
     this.clockOffsetSeconds,
@@ -226,17 +231,35 @@ class ArenaVideoState extends State<ArenaVideo> {
 
     final controller = _controller;
     if (!_ready || controller == null) {
+      const spinner = SizedBox(
+        width: 28,
+        height: 28,
+        child: CircularProgressIndicator(
+          strokeWidth: 2.5,
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        ),
+      );
+      final poster = widget.posterUrl;
       return Container(
         decoration: const BoxDecoration(gradient: AppTheme.heroGradient),
         alignment: Alignment.center,
-        child: const SizedBox(
-          width: 28,
-          height: 28,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.5,
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-          ),
-        ),
+        child: poster == null || poster.isEmpty
+            ? spinner
+            : Stack(
+                fit: StackFit.expand,
+                alignment: Alignment.center,
+                children: [
+                  Image.network(
+                    poster,
+                    key: const ValueKey('arena-video-poster'),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    // A poster that will not load just leaves the gradient.
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                  const Center(child: spinner),
+                ],
+              ),
       );
     }
 

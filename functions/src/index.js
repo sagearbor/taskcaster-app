@@ -28,6 +28,7 @@ const {getMessaging} = require('firebase-admin/messaging');
 const {getStorage} = require('firebase-admin/storage');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {onDocumentCreated} = require('firebase-functions/v2/firestore');
+const {onObjectFinalized} = require('firebase-functions/v2/storage');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
 const {onCall, HttpsError} = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
@@ -49,6 +50,7 @@ const {
 } = require('./contract');
 const {requireAdmin} = require('./guards');
 const pipeline = require('./pipeline');
+const transcode = require('./transcode');
 
 initializeApp();
 
@@ -77,6 +79,37 @@ const PUSH_OPTS = {
   maxInstances: 5,
   secrets: ['VAPID_PRIVATE_KEY'],
 };
+
+/**
+ * Clip transcode shape (WP-08): one 720p H.264 encode of a <= 30 s clip.
+ * 1 GiB + 1 vCPU is the cheapest shape that decodes a 4K HEVC source in time;
+ * ffmpeg threads are capped at 2 in transcode.js to keep memory inside it.
+ * concurrency 1: two encodes on one vCPU would just run twice as slow.
+ */
+const TRANSCODE_OPTS = {
+  region: REGION,
+  bucket: defaultBucketName(),
+  memory: '1GiB',
+  cpu: 1,
+  timeoutSeconds: 300,
+  maxInstances: 3,
+  concurrency: 1,
+};
+
+/**
+ * The project's default bucket. Deployed functions get it from FIREBASE_CONFIG;
+ * the fallback is the production bucket (named in storage.rules), so loading
+ * this module in a unit test does not throw.
+ */
+function defaultBucketName() {
+  try {
+    const bucketName = JSON.parse(process.env.FIREBASE_CONFIG || '{}').storageBucket;
+    if (bucketName) return bucketName;
+  } catch {
+    /* fall through */
+  }
+  return 'taskmaster-app-3d480.firebasestorage.app';
+}
 
 const MONTAGES = 'montages';
 const FEED_POSTS = 'feed_posts';
@@ -107,6 +140,14 @@ exports.onFeedPostCreated = onDocumentCreated(
     const snap = event.data;
     if (!snap) return;
     const post = {id: event.params.postId, ...snap.data()};
+
+    // WP-08: a post created AFTER its clip finished transcoding gets the
+    // playback/poster URLs here (earlier posts are patched by the transcode).
+    try {
+      await transcode.applyClipToPost(post, {store: clipStore()});
+    } catch (err) {
+      logger.warn('transcode: could not apply clip to new post', {postId: post.id, error: err.message});
+    }
 
     const result = await pipeline.handleNewPost(post, {db: db(), render});
     logger.info(result.queued ? 'montage: post queued' : 'montage: post not queued', {
@@ -199,6 +240,71 @@ exports.onGradeCreated = onDocumentCreated(
     });
   },
 );
+
+/**
+ * WP-08 universal playback: every player clip under
+ * submissions/{uid}/{day}/{slot} is re-encoded to 720p H.264 SDR (HDR
+ * tone-mapped) in place, plus a poster at transcoded/{uid}/{day}/{slot}.jpg.
+ * Fires for every object in the bucket; transcode.shouldTranscode drops
+ * everything else (including our own output) before any I/O. See
+ * transcode.js for the layout, the clips/{id} metadata and the
+ * never-twice guarantees.
+ */
+exports.onClipUploaded = onObjectFinalized(TRANSCODE_OPTS, async (event) => {
+  const object = event.data;
+  const result = await transcode.handleFinalized(object, {
+    store: clipStore(),
+    storage: gcsClipStorage(),
+    logger,
+  });
+  if (result.status !== 'skipped' || result.reason !== 'not-a-submission') {
+    logger.info('transcode: done', {path: object && object.name, ...result});
+  }
+});
+
+const clipStore = () => transcode.firestoreClipStore({db: db(), FieldValue, feedPosts: FEED_POSTS});
+
+/** The Storage side of a transcode, over the Admin SDK (bypasses rules). */
+function gcsClipStorage() {
+  return {
+    async download(objectPath, destination, generation) {
+      const opts = generation ? {generation: Number(generation)} : {};
+      await bucket().file(objectPath, opts).download({destination});
+    },
+    async uploadPoster(localPath, objectPath) {
+      await bucket().upload(localPath, {
+        destination: objectPath,
+        resumable: false,
+        metadata: {
+          contentType: 'image/jpeg',
+          cacheControl: 'public,max-age=86400',
+          metadata: {[transcode.MARKER]: '1'},
+        },
+      });
+    },
+    /**
+     * Overwrite the original with the mp4, only if it is still the generation
+     * we transcoded. Keeps the original's custom metadata, including
+     * firebaseStorageDownloadTokens, so every existing download URL (feed
+     * posts, game docs, shipped app builds) keeps working.
+     */
+    async replaceInPlace(objectPath, localPath, {ifGenerationMatch, metadata}) {
+      const [current] = await bucket().file(objectPath).getMetadata();
+      const [file] = await bucket().upload(localPath, {
+        destination: objectPath,
+        resumable: false,
+        preconditionOpts: {ifGenerationMatch: Number(ifGenerationMatch)},
+        metadata: {
+          contentType: 'video/mp4',
+          cacheControl: 'public,max-age=3600',
+          metadata: {...(current.metadata || {}), ...metadata},
+        },
+      });
+      return {generation: file.metadata && file.metadata.generation};
+    },
+    publicUrl: (objectPath) => publicUrl(bucket().name, objectPath),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Render

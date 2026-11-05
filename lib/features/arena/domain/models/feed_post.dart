@@ -66,6 +66,19 @@ class FeedPost extends Equatable {
   /// that a player's path starts with their own `submissions/<uid>/` prefix.
   final String? videoStoragePath;
 
+  /// Video posts only: the server's 720p H.264 SDR re-encode of the clip
+  /// (audit WP-08), set by the `onClipUploaded` Cloud Function once the
+  /// transcode finishes. Plays on every browser and phone, unlike an iPhone
+  /// HEVC/HDR original. Null while transcoding, and on posts from before
+  /// WP-08 — playback then falls back to [videoUrl]. Server-owned: the
+  /// Firestore rules refuse it on a client create or update, and [toMap]
+  /// never writes a null one.
+  final String? playbackUrl;
+
+  /// Video posts only: a JPEG poster frame of the transcoded clip, shown
+  /// while the video loads. Server-owned, like [playbackUrl].
+  final String? posterUrl;
+
   /// Video posts only: uploaded size in bytes.
   final int? videoBytes;
 
@@ -150,6 +163,8 @@ class FeedPost extends Equatable {
     this.tapCount = 0,
     this.tapSeconds = const {},
     this.videoStoragePath,
+    this.playbackUrl,
+    this.posterUrl,
     this.videoBytes,
     this.videoContentType,
     this.videoDurationSeconds,
@@ -195,6 +210,8 @@ class FeedPost extends Equatable {
       // written before in-app video existed.
       tapSeconds: _tapSeconds(map['tapSeconds']),
       videoStoragePath: _string(map['videoStoragePath']),
+      playbackUrl: _string(map['playbackUrl']),
+      posterUrl: _string(map['posterUrl']),
       videoBytes: _int(map['videoBytes']),
       videoContentType: _string(map['videoContentType']),
       videoDurationSeconds: map['videoDurationSeconds'] is num
@@ -263,6 +280,10 @@ class FeedPost extends Equatable {
       'tapCount': tapCount,
       'tapSeconds': tapSeconds,
       'videoStoragePath': videoStoragePath,
+      // Server-owned (WP-08): only ever round-tripped, never created by the
+      // app — the create rule denies the keys outright, even as null.
+      if (playbackUrl != null) 'playbackUrl': playbackUrl,
+      if (posterUrl != null) 'posterUrl': posterUrl,
       'videoBytes': videoBytes,
       'videoContentType': videoContentType,
       'videoDurationSeconds': videoDurationSeconds,
@@ -296,6 +317,8 @@ class FeedPost extends Equatable {
     int? tapCount,
     Map<String, int>? tapSeconds,
     String? videoStoragePath,
+    String? playbackUrl,
+    String? posterUrl,
     int? videoBytes,
     String? videoContentType,
     double? videoDurationSeconds,
@@ -327,6 +350,8 @@ class FeedPost extends Equatable {
       tapCount: tapCount ?? this.tapCount,
       tapSeconds: tapSeconds ?? this.tapSeconds,
       videoStoragePath: videoStoragePath ?? this.videoStoragePath,
+      playbackUrl: playbackUrl ?? this.playbackUrl,
+      posterUrl: posterUrl ?? this.posterUrl,
       videoBytes: videoBytes ?? this.videoBytes,
       videoContentType: videoContentType ?? this.videoContentType,
       videoDurationSeconds: videoDurationSeconds ?? this.videoDurationSeconds,
@@ -334,6 +359,15 @@ class FeedPost extends Equatable {
       timerSeconds: timerSeconds ?? this.timerSeconds,
       graderIds: graderIds ?? this.graderIds,
     );
+  }
+
+  /// What a video post actually plays: the server's H.264 transcode once it
+  /// exists, the uploaded original until then (and on posts from before
+  /// WP-08).
+  String? get playableVideoUrl {
+    final transcoded = playbackUrl;
+    if (transcoded != null && transcoded.isNotEmpty) return transcoded;
+    return videoUrl;
   }
 
   /// Mean crowd grade (1..5), or null while nobody has graded it.
@@ -377,6 +411,8 @@ class FeedPost extends Equatable {
         tapCount,
         tapSeconds,
         videoStoragePath,
+        playbackUrl,
+        posterUrl,
         videoBytes,
         videoContentType,
         videoDurationSeconds,
