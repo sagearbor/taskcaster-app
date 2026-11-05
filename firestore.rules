@@ -74,6 +74,15 @@ service cloud.firestore {
       }
     }
 
+    // ---- Private profile ----
+    // users/{uid} above is readable by any signed-in user (display name and
+    // avatar are public). Personal fields (today: the email address) live in
+    // users/{uid}/private/{doc} instead, which only the owner can read or
+    // write. Rules do not cascade, so the users block grants nothing here.
+    match /users/{userId}/private/{docId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
     // ---- Invites ----
     // One-tap game invites. Anyone signed in may create an invite, but only as
     // themselves (they can't forge another user as the inviter).
