@@ -12,19 +12,50 @@ import 'arena_video.dart';
 /// Renders NOTHING until a montage exists and is `ready`, so the Arena looks
 /// exactly as it does today for tasks that have no render behind them. The
 /// countdown is burned into the montage's pixels, so no overlay is drawn.
-class FinaleCard extends StatelessWidget {
+///
+/// Stateful so the montage listener is opened once (and again only when the
+/// task changes) rather than on every rebuild of the Arena.
+class FinaleCard extends StatefulWidget {
   final String gameId;
   final String taskId;
 
   const FinaleCard({super.key, required this.gameId, required this.taskId});
 
   @override
-  Widget build(BuildContext context) {
+  State<FinaleCard> createState() => _FinaleCardState();
+}
+
+class _FinaleCardState extends State<FinaleCard> {
+  Stream<Montage?>? _montage;
+
+  @override
+  void initState() {
+    super.initState();
+    _montage = _open();
+  }
+
+  @override
+  void didUpdateWidget(FinaleCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.gameId != widget.gameId ||
+        oldWidget.taskId != widget.taskId) {
+      _montage = _open();
+    }
+  }
+
+  Stream<Montage?>? _open() {
     // House entries carry no game, so they can never have a finale.
-    if (gameId.isEmpty || taskId.isEmpty) return const SizedBox.shrink();
+    if (widget.gameId.isEmpty || widget.taskId.isEmpty) return null;
+    return sl<MontageRepository>().watchMontage(widget.gameId, widget.taskId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final montageStream = _montage;
+    if (montageStream == null) return const SizedBox.shrink();
 
     return StreamBuilder<Montage?>(
-      stream: sl<MontageRepository>().watchMontage(gameId, taskId),
+      stream: montageStream,
       builder: (context, snapshot) {
         final montage = snapshot.data;
         if (montage == null || !montage.isReady) {

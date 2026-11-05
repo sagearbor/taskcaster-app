@@ -1,3 +1,18 @@
+/// Firestore's cap on the number of values in one `whereIn` filter.
+const int whereInLimit = 10;
+
+/// One read of the grading queue.
+class QueuePage {
+  /// Raw post documents, each with its `id`.
+  final List<Map<String, dynamic>> rows;
+
+  /// True when at least one chunk came back full, i.e. a bigger limit could
+  /// return more rows.
+  final bool hasMore;
+
+  const QueuePage(this.rows, {required this.hasMore});
+}
+
 /// Map-based transport for the Arena's `feed_posts` collection, mirroring the
 /// shape of `GameRemoteDataSource`: raw documents in, raw documents out, with
 /// every model concern left to `FeedRepositoryImpl`.
@@ -6,13 +21,19 @@ abstract class FeedRemoteDataSource {
   /// the store picks one. Returns the id actually written.
   Future<String> createPost(Map<String, dynamic> data);
 
-  /// The newest [limit] posts. The repository applies the reveal gate, the
-  /// own-post/already-graded exclusions and the queue ordering client-side —
-  /// which is also what keeps this a single-field query with no composite
-  /// index.
-  Stream<List<Map<String, dynamic>>> watchRecentPosts({int limit = 30});
+  /// The grading queue's raw rows: posts whose `taskId` is in [taskIds],
+  /// ordered fewest grades first, then newest, at most [limit] per chunk of
+  /// [whereInLimit] task ids (Firestore's `whereIn` cap). The repository
+  /// applies the own-post/already-graded exclusions and the final ordering
+  /// client-side, and asks for a bigger [limit] when those exclusions leave
+  /// the page short and [QueuePage.hasMore] says there is more to read.
+  Stream<QueuePage> watchQueuePage({
+    required List<String> taskIds,
+    required int limit,
+  });
 
-  /// Every post for one task of one game.
+  /// Every post for one task of one game (`gameId` AND `taskId` filtered
+  /// server-side).
   Stream<List<Map<String, dynamic>>> watchPostsForTask(
     String gameId,
     String taskId,
@@ -44,5 +65,10 @@ abstract class FeedRemoteDataSource {
 
   /// Write the seeded house entries. Each map carries its own deterministic
   /// `id`, so re-running this is a no-op rather than a duplicate.
+  ///
+  /// In-memory only: on Firestore the rules deny every client write to a
+  /// house post, and they are seeded with the Admin SDK instead
+  /// (`functions/scripts/seed_house_posts.js`), so the Firestore source
+  /// implements this as a no-op.
   Future<void> ensureHouseEntries(List<Map<String, dynamic>> posts);
 }

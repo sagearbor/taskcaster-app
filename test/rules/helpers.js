@@ -10,18 +10,26 @@ const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
 const PROJECT_ID = 'taskmaster-app-3d480';
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
+// host:port from an emulator env var (set by `firebase emulators:exec`, or by
+// hand when running against emulators started on non-default ports, e.g. two
+// suites in parallel), else the firebase.json defaults.
+function emulatorAt(envVar, defaultPort) {
+  const value = process.env[envVar];
+  if (!value) return { host: '127.0.0.1', port: defaultPort };
+  const i = value.lastIndexOf(':');
+  return { host: value.slice(0, i), port: Number(value.slice(i + 1)) };
+}
+
 async function makeTestEnv() {
   return initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
       rules: fs.readFileSync(path.join(REPO_ROOT, 'firestore.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
+      ...emulatorAt('FIRESTORE_EMULATOR_HOST', 8080),
     },
     storage: {
       rules: fs.readFileSync(path.join(REPO_ROOT, 'storage.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 9199,
+      ...emulatorAt('FIREBASE_STORAGE_EMULATOR_HOST', 9199),
     },
   });
 }

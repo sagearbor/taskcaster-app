@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:equatable/equatable.dart';
 
 import '../../../../core/models/submission.dart';
@@ -157,52 +158,84 @@ class FeedPost extends Equatable {
     this.graderIds = const [],
   });
 
+  /// Parses a stored post. Defensive by design: one bad document must never
+  /// take down the Arena stream for every viewer, so every field is read by
+  /// type and a field of the wrong type falls back to its default rather than
+  /// throwing. `createdAt` accepts a Firestore `Timestamp` (what new posts
+  /// carry — the server stamps it), a legacy ISO-8601 string, a `DateTime` or
+  /// epoch milliseconds.
   factory FeedPost.fromMap(Map<String, dynamic> map) {
     return FeedPost(
-      id: map['id'] as String? ?? '',
-      gameId: map['gameId'] as String? ?? '',
-      taskId: map['taskId'] as String? ?? '',
-      taskTitle: map['taskTitle'] as String? ?? '',
-      rubric: map['rubric'] as String?,
-      userId: map['userId'] as String? ?? '',
-      displayName: map['displayName'] as String? ?? '',
+      id: _string(map['id']) ?? '',
+      gameId: _string(map['gameId']) ?? '',
+      taskId: _string(map['taskId']) ?? '',
+      taskTitle: _string(map['taskTitle']) ?? '',
+      rubric: _string(map['rubric']),
+      userId: _string(map['userId']) ?? '',
+      displayName: _string(map['displayName']) ?? '',
       mediaType: SubmissionMediaType.values.firstWhere(
         (e) => e.name == map['mediaType'],
         orElse: () => SubmissionMediaType.link,
       ),
-      photoData: map['photoData'] as String?,
-      text: map['text'] as String?,
-      videoUrl: map['videoUrl'] as String?,
-      caption: map['caption'] as String?,
-      stamp: map['stamp'] as String?,
-      isLate: map['isLate'] as bool? ?? false,
-      isHouse: map['isHouse'] as bool? ?? false,
-      createdAt: map['createdAt'] != null
-          ? DateTime.parse(map['createdAt'] as String)
-          : DateTime.fromMillisecondsSinceEpoch(0),
-      elapsedSeconds: map['elapsedSeconds'] as int?,
-      gradeCount: map['gradeCount'] as int? ?? 0,
-      gradeSum: map['gradeSum'] as int? ?? 0,
-      boosted: map['boosted'] as bool? ?? false,
-      tapCount: map['tapCount'] as int? ?? 0,
+      photoData: _string(map['photoData']),
+      text: _string(map['text']),
+      videoUrl: _string(map['videoUrl']),
+      caption: _string(map['caption']),
+      stamp: _string(map['stamp']),
+      isLate: _bool(map['isLate']),
+      isHouse: _bool(map['isHouse']),
+      createdAt: parseCreatedAt(map['createdAt']),
+      elapsedSeconds: _int(map['elapsedSeconds']),
+      gradeCount: _int(map['gradeCount']) ?? 0,
+      gradeSum: _int(map['gradeSum']) ?? 0,
+      boosted: _bool(map['boosted']),
+      tapCount: _int(map['tapCount']) ?? 0,
       // Written by `FieldValue.increment` on dotted `tapSeconds.<n>` keys, so
       // Firestore hands it back as a nested map. Absent on every document
       // written before in-app video existed.
-      tapSeconds: (map['tapSeconds'] as Map<dynamic, dynamic>?)?.map(
-            (k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0),
-          ) ??
-          const {},
-      videoStoragePath: map['videoStoragePath'] as String?,
-      videoBytes: map['videoBytes'] as int?,
-      videoContentType: map['videoContentType'] as String?,
-      videoDurationSeconds: (map['videoDurationSeconds'] as num?)?.toDouble(),
-      clockOffsetSeconds: map['clockOffsetSeconds'] as int?,
-      timerSeconds: map['timerSeconds'] as int?,
-      graderIds: (map['graderIds'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          const [],
+      tapSeconds: _tapSeconds(map['tapSeconds']),
+      videoStoragePath: _string(map['videoStoragePath']),
+      videoBytes: _int(map['videoBytes']),
+      videoContentType: _string(map['videoContentType']),
+      videoDurationSeconds: map['videoDurationSeconds'] is num
+          ? (map['videoDurationSeconds'] as num).toDouble()
+          : null,
+      clockOffsetSeconds: _int(map['clockOffsetSeconds']),
+      timerSeconds: _int(map['timerSeconds']),
+      graderIds: map['graderIds'] is List
+          ? (map['graderIds'] as List).whereType<String>().toList()
+          : const [],
     );
+  }
+
+  /// The epoch, for a post whose `createdAt` is missing or unreadable — it
+  /// sorts last by recency instead of breaking the list. A post written with
+  /// `FieldValue.serverTimestamp()` also reads as null for the instant before
+  /// the server confirms it.
+  static final DateTime unknownCreatedAt =
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
+  /// `createdAt` in any shape the collection has ever held it.
+  static DateTime parseCreatedAt(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value) ?? unknownCreatedAt;
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    return unknownCreatedAt;
+  }
+
+  static String? _string(Object? v) => v is String ? v : null;
+
+  static bool _bool(Object? v) => v is bool ? v : false;
+
+  static int? _int(Object? v) => v is num ? v.toInt() : null;
+
+  static Map<String, int> _tapSeconds(Object? v) {
+    if (v is! Map) return const {};
+    return {
+      for (final e in v.entries)
+        if (e.value is num) '${e.key}': (e.value as num).toInt(),
+    };
   }
 
   Map<String, dynamic> toMap() {

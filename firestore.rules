@@ -103,47 +103,89 @@ service cloud.firestore {
     // people's attempts. Read is open to any signed-in user (incl. anonymous
     // guests — grading is explicitly a guest-friendly action); the reveal gate
     // itself is a product rule applied client-side, not a privacy boundary.
+    //
+    // The crowd counters (gradeCount/gradeSum) turn into game points
+    // (CrowdScoreApplier), so every write path below pins them down exactly:
+    //   create — counters start at zero, createdAt is the server's clock;
+    //   owner  — may edit only caption/text and switch boosted false -> true;
+    //   grade  — +1 count, +score sum, +own uid, only together with a NEW
+    //            grades/{uid} doc in the same commit, never on your own post;
+    //   tap    — tapCount moves forward 1..50, and at most one tapSeconds
+    //            bucket (named by lastTapSecond) moves by the same amount.
+    // House posts (userId 'house') are seeded with the Admin SDK
+    // (functions/scripts/seed_house_posts.js); no client may create, rewrite
+    // or delete them — only grade and tap them like any other post.
     match /feed_posts/{postId} {
-      // Only these keys may be touched by someone who doesn't own the post.
-      // 'tapSeconds' is the per-second tap histogram for video posts (§2.5)
-      // — a map, never a scalar rewrite of the whole post.
-      function crowdKeysOnly() {
-        return request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['gradeCount', 'gradeSum', 'graderIds', 'boosted',
-                           'tapCount', 'tapSeconds']);
+      function postPath() {
+        return /databases/$(database)/documents/feed_posts/$(postId);
       }
 
-      // A grade: exactly one more grade, worth 1..5 points.
+      function gradePath(uid) {
+        return /databases/$(database)/documents/feed_posts/$(postId)/grades/$(uid);
+      }
+
+      function affected() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
+
+      // A grade: exactly one more grade, by a NEW grader who is not the
+      // author, whose grades/{uid} doc is created in the same commit and
+      // whose score is exactly what gradeSum moves by.
       function gradeBump() {
-        return request.resource.data.gradeCount == resource.data.gradeCount + 1 &&
-               request.resource.data.gradeSum >= resource.data.gradeSum + 1 &&
-               request.resource.data.gradeSum <= resource.data.gradeSum + 5 &&
-               request.resource.data.tapCount == resource.data.tapCount &&
-               request.resource.data.boosted == resource.data.boosted;
+        let uid = request.auth.uid;
+        let oldGraders = resource.data.get('graderIds', []);
+        return affected().hasOnly(['gradeCount', 'gradeSum', 'graderIds']) &&
+               uid != resource.data.userId &&
+               !(uid in oldGraders) &&
+               !exists(gradePath(uid)) &&
+               existsAfter(gradePath(uid)) &&
+               request.resource.data.graderIds == oldGraders.concat([uid]) &&
+               request.resource.data.gradeCount ==
+                 resource.data.get('gradeCount', 0) + 1 &&
+               request.resource.data.gradeSum ==
+                 resource.data.get('gradeSum', 0) +
+                   getAfter(gradePath(uid)).data.score;
+      }
+
+      // The one tapSeconds bucket [key] moved by exactly [delta] and no other
+      // bucket changed.
+      function oneBucketMoved(key, delta) {
+        let before = resource.data.get('tapSeconds', {});
+        let after = request.resource.data.get('tapSeconds', null);
+        return key is string &&
+               after is map &&
+               after.diff(before).affectedKeys().hasOnly([key]) &&
+               after[key] == before.get(key, 0) + delta;
+      }
+
+      function tapsMovedBy(delta) {
+        return delta >= 1 && delta <= 50 &&
+               (
+                 // A tap with no timeline: the histogram is untouched.
+                 !affected().hasAny(['tapSeconds', 'lastTapSecond']) ||
+                 // A timed tap: one bucket, named by lastTapSecond, moves by
+                 // the same amount as tapCount.
+                 oneBucketMoved(request.resource.data.get('lastTapSecond', null), delta)
+               );
       }
 
       // Viewer "that's funny" taps — a sane burst, never a counter rewrite.
-      // tapCount must always move forward by a plausible amount; tapSeconds
-      // (the per-second histogram for video posts, §2.5) may ride along in
-      // the same write but is never sufficient on its own — a write that
-      // only touches tapSeconds without bumping tapCount is rejected, and so
-      // is one that touches any other key.
       function tapBump() {
-        return request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['tapCount', 'tapSeconds']) &&
-               request.resource.data.tapCount >= resource.data.tapCount + 1 &&
-               request.resource.data.tapCount <= resource.data.tapCount + 50 &&
-               (!('tapSeconds' in request.resource.data.diff(resource.data).affectedKeys()) ||
-                request.resource.data.tapSeconds is map);
+        return affected().hasOnly(['tapCount', 'tapSeconds', 'lastTapSecond']) &&
+               tapsMovedBy(request.resource.data.tapCount -
+                           resource.data.get('tapCount', 0));
       }
 
-      // Grade-to-get-graded boost.
-      function boostOnly() {
-        return request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['boosted']);
+      // The author's own edits: the free-text fields, plus the
+      // grade-to-get-graded boost, which only ever switches on. Counters,
+      // identity, media pointers and timestamps are immutable.
+      function ownerEdit() {
+        return request.auth.uid == resource.data.userId &&
+               affected().hasOnly(['caption', 'text', 'boosted']) &&
+               (!affected().hasAny(['boosted']) ||
+                (resource.data.get('boosted', false) == false &&
+                 request.resource.data.boosted == true));
       }
-
-      allow read: if isSignedIn();
 
       // A video post's Storage object must actually live under the poster's
       // own uid — request.resource.data.videoStoragePath is the app's pointer
@@ -151,60 +193,55 @@ service cloud.firestore {
       // the write there; this is what stops a player from posting a Firestore
       // doc that *claims* someone else's already-uploaded clip).
       function ownVideoPathOk() {
-        return request.resource.data.mediaType != 'video' ||
-               (request.resource.data.videoStoragePath is string &&
+        return request.resource.data.get('mediaType', null) != 'video' ||
+               (request.resource.data.get('videoStoragePath', null) is string &&
                 request.resource.data.videoStoragePath
                   .matches('^submissions/' + request.auth.uid + '/.*'));
       }
 
-      // A house video post's Storage object must live under the bucket's
-      // seeded house/ prefix (storage.rules denies client writes there
-      // entirely — these clips are placed out-of-band, never by an app
-      // user), never under a real uid's submissions/ folder.
-      function houseVideoPathOk() {
-        return request.resource.data.mediaType != 'video' ||
-               (request.resource.data.videoStoragePath is string &&
-                request.resource.data.videoStoragePath.matches('^house/.*'));
+      // A fresh post: every crowd counter at zero and the server's clock as
+      // createdAt (so nobody can pin a post to the top with a far-future
+      // date). The client writes createdAt as FieldValue.serverTimestamp().
+      function freshCounters() {
+        let d = request.resource.data;
+        return d.gradeCount == 0 &&
+               d.gradeSum == 0 &&
+               d.graderIds == [] &&
+               d.tapCount == 0 &&
+               d.boosted == false &&
+               d.get('tapSeconds', {}) == {} &&
+               !d.keys().hasAny(['lastTapSecond']) &&
+               d.createdAt == request.time;
       }
 
-      // You may post as yourself, with a video only when it's provably your
-      // own upload. The seeded "house" entries are the one exception: any
-      // signed-in user may write them, but only as the 'house' author, never
-      // with an inline photo, and with a video only when it points at the
-      // seeded house/ prefix (never a real uid's submissions/ path).
-      allow create: if isSignedIn() && (
-        (request.resource.data.userId == request.auth.uid && ownVideoPathOk()) ||
-        (request.resource.data.isHouse == true &&
-         request.resource.data.userId == 'house' &&
-         request.resource.data.photoData == null &&
-         houseVideoPathOk())
-      );
+      allow read: if isSignedIn();
 
-      // The owner may rewrite their own post. Everyone else may only move the
-      // crowd counters, and only by a plausible amount.
-      allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.userId ||
-        // Re-seeding a house entry (idempotent, same deterministic doc id).
-        (resource.data.userId == 'house' &&
-         request.resource.data.userId == 'house') ||
-        (crowdKeysOnly() && (gradeBump() || tapBump() || boostOnly()))
-      );
+      // Post as yourself only — never as the house, never as someone else.
+      allow create: if isSignedIn() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.get('isHouse', false) == false &&
+                       ownVideoPathOk() &&
+                       freshCounters();
 
-      // Only the author can delete their post.
+      allow update: if isSignedIn() && (ownerEdit() || gradeBump() || tapBump());
+
+      // Only the author can delete their post (house posts: nobody).
       allow delete: if isSignedIn() && request.auth.uid == resource.data.userId;
 
       // One grade per user per post, written under the grader's own uid, never
-      // on your own post, and never edited or withdrawn afterwards.
+      // on your own post, never edited or withdrawn afterwards, and only in
+      // the same commit as the matching counter bump on the post.
       match /grades/{graderUid} {
         allow read: if isSignedIn();
         allow create: if isSignedIn() &&
                          request.auth.uid == graderUid &&
-                         request.auth.uid !=
-                           get(/databases/$(database)/documents/feed_posts/$(postId))
-                             .data.userId &&
+                         request.auth.uid != get(postPath()).data.userId &&
+                         request.resource.data.keys().hasOnly(['score', 'createdAt']) &&
                          request.resource.data.score is int &&
                          request.resource.data.score >= 1 &&
-                         request.resource.data.score <= 5;
+                         request.resource.data.score <= 5 &&
+                         !(request.auth.uid in get(postPath()).data.get('graderIds', [])) &&
+                         request.auth.uid in getAfter(postPath()).data.get('graderIds', []);
         allow update, delete: if false;
       }
     }
@@ -235,23 +272,58 @@ service cloud.firestore {
     }
 
     // ---- Community tasks ----
+    // upvotes is a public tally, so it moves only by +1 and only alongside a
+    // NEW community_tasks/{taskId}/votes/{uid} doc in the same commit: one
+    // vote per user, never withdrawn, never set wholesale — not even by the
+    // author.
     match /community_tasks/{taskId} {
+      function taskPath() {
+        return /databases/$(database)/documents/community_tasks/$(taskId);
+      }
+
+      function votePath(uid) {
+        return /databases/$(database)/documents/community_tasks/$(taskId)/votes/$(uid);
+      }
+
+      function upvoteBump() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['upvotes']) &&
+               request.resource.data.upvotes ==
+                 resource.data.get('upvotes', 0) + 1 &&
+               !exists(votePath(request.auth.uid)) &&
+               existsAfter(votePath(request.auth.uid));
+      }
+
       allow read: if isSignedIn();
 
-      // A user may only submit a task under their own UID.
+      // A user may only submit a task under their own UID, starting at zero.
       allow create: if isSignedIn() &&
-                       request.resource.data.submittedBy == request.auth.uid;
+                       request.resource.data.submittedBy == request.auth.uid &&
+                       request.resource.data.get('upvotes', 0) == 0;
 
-      // The author can edit their own task fully. Any other signed-in user may
-      // change ONLY the upvote count (so upvoting works without granting the
-      // ability to rewrite or vandalise someone else's submission).
+      // The author may edit their task's content (never its author or its
+      // tally). Anyone signed in may cast one upvote.
       allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.submittedBy ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes'])
+        (request.auth.uid == resource.data.submittedBy &&
+         !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['upvotes', 'submittedBy'])) ||
+        upvoteBump()
       );
 
       // Only the author can delete their task.
       allow delete: if isSignedIn() && request.auth.uid == resource.data.submittedBy;
+
+      // One vote per user per task, under the voter's own uid, written in the
+      // same commit as the +1 on the task.
+      match /votes/{voterUid} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+                         request.auth.uid == voterUid &&
+                         request.resource.data.keys().hasOnly(['createdAt']) &&
+                         getAfter(taskPath()).data.get('upvotes', 0) ==
+                           get(taskPath()).data.get('upvotes', 0) + 1;
+        allow update, delete: if false;
+      }
     }
   }
 }

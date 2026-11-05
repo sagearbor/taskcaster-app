@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
@@ -28,6 +32,36 @@ class FeedRepositoryImpl implements FeedRepository {
     return remoteDataSource.createPost(data);
   }
 
+  /// The most raw rows per task-id chunk the queue will read while looking
+  /// for [limit] postable entries before giving up and showing what it has.
+  static const int maxQueueFetch = 300;
+
+  /// Parse rows, dropping (and logging) any that will not parse, so one
+  /// malformed document can never error the stream for every viewer.
+  static List<FeedPost> parseRows(Iterable<Map<String, dynamic>> rows) {
+    final posts = <FeedPost>[];
+    for (final row in rows) {
+      final post = tryParse(row);
+      if (post != null) posts.add(post);
+    }
+    return posts;
+  }
+
+  /// One row, or null when it will not parse.
+  static FeedPost? tryParse(Map<String, dynamic> row) {
+    try {
+      return FeedPost.fromMap(row);
+    } catch (e) {
+      debugPrint('FeedRepository: skipping unreadable post ${row['id']}: $e');
+      return null;
+    }
+  }
+
+  /// Paged: the server returns the unlocked tasks' posts fewest-grades-first
+  /// (so old ungraded entries are never buried under newer graded ones), and
+  /// when the own-post/already-graded exclusions leave fewer than [limit]
+  /// entries while more rows exist, the read is reopened [limit] rows larger,
+  /// up to [maxQueueFetch].
   @override
   Stream<List<FeedPost>> watchQueue({
     required String viewerId,
@@ -37,19 +71,43 @@ class FeedRepositoryImpl implements FeedRepository {
     if (unlockedTaskIds.isEmpty) {
       return Stream.value(const <FeedPost>[]);
     }
-    return remoteDataSource.watchRecentPosts(limit: limit).map((rows) {
-      final posts = rows.map(FeedPost.fromMap).where((p) {
-        // REVEAL GATING: you only see a task's entries once you've posted yours.
-        if (!unlockedTaskIds.contains(p.taskId)) return false;
-        // Never your own post, never one you've already graded.
-        if (p.userId == viewerId) return false;
-        if (p.graderIds.contains(viewerId)) return false;
-        return true;
-      }).toList();
+    final taskIds = unlockedTaskIds.toList()..sort();
 
-      posts.sort(_queueOrder);
-      return posts;
-    });
+    late final StreamController<List<FeedPost>> controller;
+    StreamSubscription<QueuePage>? sub;
+    var fetch = limit;
+
+    void open() {
+      sub?.cancel();
+      sub = remoteDataSource
+          .watchQueuePage(taskIds: taskIds, limit: fetch)
+          .listen((page) {
+        final posts = parseRows(page.rows).where((p) {
+          // REVEAL GATING: you only see a task's entries once you've posted
+          // yours (the query already filters on taskId; this is a backstop).
+          if (!unlockedTaskIds.contains(p.taskId)) return false;
+          // Never your own post, never one you've already graded.
+          if (p.userId == viewerId) return false;
+          if (p.graderIds.contains(viewerId)) return false;
+          return true;
+        }).toList()
+          ..sort(_queueOrder);
+
+        if (posts.length < limit && page.hasMore && fetch < maxQueueFetch) {
+          // Short page with more behind it: read the next page too.
+          fetch = (fetch + limit).clamp(0, maxQueueFetch);
+          open();
+          return;
+        }
+        controller.add(posts.take(limit).toList());
+      }, onError: controller.addError);
+    }
+
+    controller = StreamController<List<FeedPost>>(
+      onListen: open,
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
   }
 
   /// Boosted first, then fewest grades, then most taps, then newest.
@@ -68,7 +126,7 @@ class FeedRepositoryImpl implements FeedRepository {
     required String taskId,
   }) {
     return remoteDataSource.watchPostsForTask(gameId, taskId).map((rows) {
-      final posts = rows.map(FeedPost.fromMap).toList();
+      final posts = parseRows(rows);
       // Playback order: oldest first, newest last.
       posts.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       return posts;
@@ -86,7 +144,8 @@ class FeedRepositoryImpl implements FeedRepository {
     return remoteDataSource
         .watchPostsByUser(userId)
         .map((rows) => rows
-            .map((r) => r['taskId'] as String? ?? '')
+            .map((r) => r['taskId'])
+            .whereType<String>()
             .where((id) => id.isNotEmpty)
             .toSet());
   }
@@ -111,13 +170,13 @@ class FeedRepositoryImpl implements FeedRepository {
   Stream<FeedPost?> watchPost(String postId) {
     return remoteDataSource
         .watchPost(postId)
-        .map((row) => row == null ? null : FeedPost.fromMap(row));
+        .map((row) => row == null ? null : tryParse(row));
   }
 
   @override
   Stream<List<FeedPost>> watchPostsByUser(String userId) {
     return remoteDataSource.watchPostsByUser(userId).map((rows) {
-      final posts = rows.map(FeedPost.fromMap).toList();
+      final posts = parseRows(rows);
       posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return posts;
     });
@@ -131,6 +190,9 @@ class FeedRepositoryImpl implements FeedRepository {
   Future<void> boostPostsOf(String userId) =>
       remoteDataSource.boostPostsOf(userId, belowGradeCount: boostBelowGrades);
 
+  /// Seeds the in-memory store (mock mode, tests). On Firestore this is a
+  /// no-op: house posts are seeded with the Admin SDK
+  /// (functions/scripts/seed_house_posts.js).
   @override
   Future<void> ensureHouseEntries() {
     return remoteDataSource.ensureHouseEntries(houseEntryPosts());

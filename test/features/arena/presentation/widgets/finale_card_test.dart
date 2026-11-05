@@ -39,6 +39,37 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets('opens ONE montage listener across rebuilds, a new one per task',
+      (tester) async {
+    final counting = _CountingMontageRepository(montages);
+    await sl.reset();
+    sl.registerLazySingleton<MontageRepository>(() => counting);
+
+    late StateSetter rebuild;
+    var taskId = 'starter-01';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(builder: (context, setState) {
+            rebuild = setState;
+            return FinaleCard(gameId: 'game-1', taskId: taskId);
+          }),
+        ),
+      ),
+    );
+    expect(counting.calls, 1);
+
+    for (var i = 0; i < 5; i++) {
+      rebuild(() {});
+      await tester.pump();
+    }
+    expect(counting.calls, 1, reason: 'rebuilds must reuse the stream');
+
+    rebuild(() => taskId = 'starter-02');
+    await tester.pump();
+    expect(counting.calls, 2, reason: 'a new task opens a new listener');
+  });
+
   testWidgets('renders nothing when no montage exists', (tester) async {
     await pump(tester);
     expect(find.byKey(const Key('arena-finale-card')), findsNothing);
@@ -101,4 +132,17 @@ void main() {
     await pump(tester, gameId: '');
     expect(find.byKey(const Key('arena-finale-card')), findsNothing);
   });
+}
+
+class _CountingMontageRepository implements MontageRepository {
+  final MontageRepository inner;
+  int calls = 0;
+
+  _CountingMontageRepository(this.inner);
+
+  @override
+  Stream<Montage?> watchMontage(String gameId, String taskId) {
+    calls++;
+    return inner.watchMontage(gameId, taskId);
+  }
 }

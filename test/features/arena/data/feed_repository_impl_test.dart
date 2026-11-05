@@ -143,6 +143,77 @@ void main() {
     });
   });
 
+  group('watchQueue paging', () {
+    test('40 posts where the newest 30 are graded: the 10 older ungraded show',
+        () async {
+      for (var i = 0; i < 40; i++) {
+        final graded = i < 30; // minutesOld 0..29 are the newest 30
+        await repo.createPost(makePost(
+          id: 'p$i',
+          userId: 'author-$i',
+          minutesOld: i,
+          gradeCount: graded ? 1 : 0,
+          gradeSum: graded ? 3 : 0,
+        ));
+      }
+      final queue = await repo
+          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
+          .first;
+      expect(queue.take(10).map((p) => p.id).toSet(),
+          {for (var i = 30; i < 40; i++) 'p$i'});
+    });
+
+    test('pages past posts the viewer already graded', () async {
+      // 5 newest already graded by the viewer, 2 older ones not.
+      for (var i = 0; i < 7; i++) {
+        final id = await repo.createPost(
+            makePost(id: 'p$i', userId: 'author-$i', minutesOld: i));
+        if (i < 5) await repo.gradePost(postId: id, graderId: 'me', score: 3);
+      }
+      // The graded ones now have gradeCount 1 and sink; make the ungraded
+      // ones the ones a 2-row page must still find.
+      final queue = await repo
+          .watchQueue(
+            viewerId: 'me',
+            unlockedTaskIds: const {'starter-01-v2'},
+            limit: 2,
+          )
+          .first;
+      expect(queue.map((p) => p.id), ['p5', 'p6']);
+    });
+
+    test('pages past the viewer\'s own ungraded posts', () async {
+      for (var i = 0; i < 6; i++) {
+        await repo.createPost(makePost(
+            id: 'p$i', userId: i < 4 ? 'me' : 'other-$i', minutesOld: i));
+      }
+      final queue = await repo
+          .watchQueue(
+            viewerId: 'me',
+            unlockedTaskIds: const {'starter-01-v2'},
+            limit: 2,
+          )
+          .first;
+      expect(queue.map((p) => p.id), ['p4', 'p5']);
+    });
+
+    test('skips a row that cannot be parsed instead of erroring', () async {
+      await repo.createPost(makePost(id: 'good', userId: 'other'));
+      await source.createPost({
+        'id': 'junk',
+        'taskId': 'starter-01-v2',
+        'userId': 'other',
+        'createdAt': 3.14,
+        'gradeCount': 'many',
+        'graderIds': 'x',
+      });
+      final queue = await repo
+          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
+          .first;
+      expect(queue.map((p) => p.id), containsAll(['good', 'junk']));
+    });
+  });
+
   group('watchQueue ordering', () {
     test('boosted first, then fewest grades, then taps, then newest', () async {
       // Deliberately inserted in the wrong order.
