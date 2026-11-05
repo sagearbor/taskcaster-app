@@ -8,6 +8,8 @@ import '../../domain/repositories/game_repository.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/services/plans/plan_repository.dart';
+import '../../../../core/services/plans/plans.dart';
 import '../../../../core/services/video/video_policy.dart';
 import '../../../../core/services/video/video_uploader.dart';
 import '../../../arena/domain/auto_edit.dart';
@@ -29,6 +31,12 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
   /// null uploader simply means a clip submission is refused politely.
   final VideoUploader? videoUploader;
 
+  /// The player's plan (WP-11): which Storage slots to try, the clip-length
+  /// cap and the upload size cap. Nullable so every existing test works
+  /// without one — null means the free plan, which is also what the Storage
+  /// rules assume for anyone without the server-owned Pro fields.
+  final PlanRepository? planRepository;
+
   final Uuid _uuid = const Uuid();
 
   /// Largest inline photo we will store on a post, in bytes of base64. Above
@@ -43,6 +51,7 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
     required this.gameRepository,
     this.feedRepository,
     this.videoUploader,
+    this.planRepository,
   }) : super(TaskExecutionInitial()) {
     on<LoadTask>(_onLoadTask);
     on<StartTask>(_onStartTask);
@@ -226,7 +235,12 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
       int? clipBytes;
       String? clipContentType;
       if (clip != null) {
-        final reject = VideoPolicy.rejectReason(bytes: clip.byteCount);
+        final plan = await planRepository?.currentPlan() ?? UserPlan.free;
+        final limits = plan.limits;
+        final reject = VideoPolicy.rejectReason(
+          bytes: clip.byteCount,
+          maxBytes: limits.maxUploadBytes,
+        );
         if (reject != null) {
           emit(TaskExecutionError(message: reject));
           return;
@@ -240,7 +254,10 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
           return;
         }
 
-        final capSeconds = VideoPolicy.clipCapSeconds(timerSeconds);
+        final capSeconds = VideoPolicy.clipCapSeconds(
+          timerSeconds,
+          planCapSeconds: limits.clipSeconds,
+        );
         emit(TaskExecutionUploading(progress: 0, task: task));
 
         var lastEmitted = 0.0;
@@ -250,6 +267,7 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
             bytes: clip.bytes,
             contentType: clip.contentType,
             when: now,
+            limits: limits,
             // Everything a later server-side splice needs to rebuild the task
             // clock over this clip without reading pixels.
             metadata: {
@@ -278,7 +296,17 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
           clipBytes = upload.bytes;
           clipContentType = clip.contentType;
         } on DailyVideoLimitReached catch (e) {
-          emit(TaskExecutionError(message: e.message));
+          // Not an error screen: back to the task (the filmed clip is still
+          // there) with the upgrade prompt on top, whose first option is
+          // posting a photo instead. See TaskExecutionPlanLimitReached.
+          emit(TaskExecutionPlanLimitReached(
+            tier: e.tier,
+            task: currentState.task,
+            userStatus: currentState.userStatus,
+            allPlayerStatuses: currentState.allPlayerStatuses,
+            taskNumber: currentState.taskNumber,
+            totalTasks: currentState.totalTasks,
+          ));
           return;
         } catch (e) {
           debugPrint('TaskExecutionBloc clip upload failed: $e');

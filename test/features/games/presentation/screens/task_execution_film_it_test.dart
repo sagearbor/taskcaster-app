@@ -178,8 +178,9 @@ void main() {
 
     expect(find.textContaining('Film it'), findsOneWidget);
     expect(find.textContaining('Snap it'), findsOneWidget);
-    // The cap is shown so the player knows how long they get.
-    expect(find.text('up to 30 s'), findsOneWidget);
+    // The cap is shown so the player knows how long they get: the free
+    // plan's 20 s (WP-11), shorter than the 30 s task.
+    expect(find.text('up to 20 s'), findsOneWidget);
   });
 
   testWidgets('a photo task also leads with Film it — video is the default',
@@ -191,16 +192,16 @@ void main() {
 
     expect(find.textContaining('Film it'), findsOneWidget);
     expect(find.textContaining('Snap it'), findsOneWidget);
-    // min(task timer, 30 s): a 120 s task still only gets a 30 s clip.
-    expect(find.text('up to 30 s'), findsOneWidget);
+    // min(task timer, plan cap): a 120 s task still only gets a free 20 s.
+    expect(find.text('up to 20 s'), findsOneWidget);
   });
 
   testWidgets('a short task shortens the clip cap', (tester) async {
     await pumpStartedTask(tester, starterTask(
       submissionType: SubmissionType.video,
-      durationSeconds: 20,
+      durationSeconds: 15,
     ));
-    expect(find.text('up to 20 s'), findsOneWidget);
+    expect(find.text('up to 15 s'), findsOneWidget);
   });
 
   testWidgets('a text task shows Write it and neither camera button',
@@ -227,7 +228,7 @@ void main() {
 
     // The recorder's own maxDuration IS the trim.
     expect(videoCapture.calls.single.fromCamera, isTrue);
-    expect(videoCapture.calls.single.maxSeconds, 30);
+    expect(videoCapture.calls.single.maxSeconds, 20);
 
     expect(find.byType(ClipPreview), findsOneWidget);
     expect(find.text('Retake'), findsOneWidget);

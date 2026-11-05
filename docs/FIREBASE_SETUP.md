@@ -318,6 +318,17 @@ Default Firebase Storage bucket: `gs://taskmaster-app-3d480.firebasestorage.app`
 (US-CENTRAL1). `storageBucket` in `lib/firebase_options.dart` already points
 at it.
 
+> **WP-11 update (2026-11-05).** The caps below are now per plan, read from
+> the server-owned `users/{uid}.plan` (cross-service `firestore.get`): guest
+> `submissions/{uid}/guest/{0-4}` (5 clips ever), free
+> `submissions/{uid}/{today}/{0-2}` up to 32 MiB, Pro `{0-9,a-e}` up to
+> 96 MiB. Clip length is trimmed server-side to 20 s (guest/free) or 60 s
+> (Pro). Retention is **no longer indefinite**: the `sweepClipRetention`
+> function deletes free clips after 90 days (favorites after a year) and a
+> lapsed Pro user's clips within a year of the lapse. Where this section says
+> "10/day", "single digit" or "indefinite", read docs/MONETIZATION.md, which
+> is current.
+
 ### Rules summary (`storage.rules`)
 
 Player clips live at `submissions/{uid}/{yyyyMMdd}/{slot}`, `slot` a single
@@ -342,9 +353,8 @@ this file mirrors):
 - **Delete is denied to clients** (WP-04): an owner delete freed the slot for
   another upload the same day, which made the cap unbounded. Clips are
   removed only through the Admin SDK (the account-deletion Cloud Function) or
-  by the owner from the console. Retention is otherwise **indefinite** by the
-  owner's decision ("maybe just not deleting now"); there is no lifecycle
-  rule that ages out a live clip.
+  by the owner from the console, plus (since WP-11) the server's retention
+  sweep, which ages clips out per plan (see docs/MONETIZATION.md).
 - `house/{file}` and `montages/{gameId}/{taskId}/{file}` are public-read,
   no-client-write (see "Other bucket prefixes" below).
 - Everything else in the bucket denies both read and write.

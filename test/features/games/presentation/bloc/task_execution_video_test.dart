@@ -8,6 +8,8 @@ import 'package:taskcaster_app/core/models/player.dart';
 import 'package:taskcaster_app/core/models/player_task_status.dart';
 import 'package:taskcaster_app/core/models/submission.dart';
 import 'package:taskcaster_app/core/models/task.dart';
+import 'package:taskcaster_app/core/services/plans/plan_repository.dart';
+import 'package:taskcaster_app/core/services/plans/plans.dart';
 import 'package:taskcaster_app/core/services/video/video_capture.dart';
 import 'package:taskcaster_app/core/services/video/video_policy.dart';
 import 'package:taskcaster_app/core/services/video/video_uploader.dart';
@@ -102,6 +104,7 @@ void main() {
     Game game,
     SubmitTask event, {
     VideoUploader? uploader,
+    PlanRepository? plans,
   }) async {
     when(() => gameRepository.getGameStream('game-1'))
         .thenAnswer((_) => Stream.value(game));
@@ -109,6 +112,7 @@ void main() {
       gameRepository: gameRepository,
       feedRepository: feedRepository,
       videoUploader: uploader,
+      planRepository: plans,
     );
     bloc.add(const LoadTask(gameId: 'game-1', taskIndex: 0, userId: userId));
     await bloc.stream.firstWhere((s) => s is TaskExecutionLoaded);
@@ -117,13 +121,69 @@ void main() {
     final sub = bloc.stream.listen(seen.add);
     bloc.add(event);
     await bloc.stream.firstWhere(
-      (s) => s is TaskExecutionSubmitted || s is TaskExecutionError,
+      (s) =>
+          s is TaskExecutionSubmitted ||
+          s is TaskExecutionError ||
+          s is TaskExecutionPlanLimitReached,
     );
     await sub.cancel();
     return seen;
   }
 
   group('video submissions', () {
+    test('WP-11: a Pro player uploads with the Pro slots and the 60 s cap',
+        () async {
+      final uploader = FakeVideoUploader();
+      await submit(
+        buildGame(status: startedSecondsAgo(11), durationSeconds: 90),
+        SubmitTask(
+          gameId: 'game-1',
+          taskIndex: 0,
+          userId: userId,
+          video: clipOf(40 * 1024 * 1024),
+          displayName: 'Alice',
+        ),
+        uploader: uploader,
+        plans: MockPlanRepository(initial: const UserPlan(tier: PlanTier.pro)),
+      );
+      final call = uploader.calls.single;
+      expect(call.limits, PlanLimits.pro);
+      expect(call.metadata, containsPair('clipCapSeconds', '60'));
+    });
+
+    test('WP-11: a guest uploads into the guest folder slots', () async {
+      final uploader = FakeVideoUploader();
+      await submit(
+        buildGame(status: startedSecondsAgo(3)),
+        SubmitTask(
+          gameId: 'game-1',
+          taskIndex: 0,
+          userId: userId,
+          video: clipOf(1024),
+          displayName: 'Guest',
+        ),
+        uploader: uploader,
+        plans: MockPlanRepository(initial: UserPlan.guest),
+      );
+      expect(uploader.calls.single.limits, PlanLimits.guest);
+    });
+
+    test('WP-11: a 40 MiB clip is over the free cap but fine for Pro',
+        () async {
+      final states = await submit(
+        buildGame(status: startedSecondsAgo(3)),
+        SubmitTask(
+          gameId: 'game-1',
+          taskIndex: 0,
+          userId: userId,
+          video: clipOf(40 * 1024 * 1024),
+          displayName: 'Alice',
+        ),
+        uploader: FakeVideoUploader(),
+      );
+      expect((states.last as TaskExecutionError).message, contains('too big'));
+    });
+
     test('upload, then a video post and a mirrored submission', () async {
       final uploader = FakeVideoUploader(
         result: const VideoUploadResult(
@@ -202,7 +262,9 @@ void main() {
       expect(call.metadata, containsPair('timerSeconds', '60'));
       expect(call.metadata, containsPair('clockOffsetSeconds', '9'));
       expect(call.metadata, containsPair('isLate', 'false'));
-      expect(call.metadata, containsPair('clipCapSeconds', '30'));
+      // The free plan's 20 s (WP-11), shorter than the 60 s timer.
+      expect(call.metadata, containsPair('clipCapSeconds', '20'));
+      expect(call.limits, PlanLimits.free);
       expect(call.metadata!['elapsedSeconds'], isNotNull);
     });
 
@@ -270,7 +332,8 @@ void main() {
       expect((states.last as TaskExecutionError).message, contains('empty'));
     });
 
-    test('the daily cap surfaces its own player-facing message', () async {
+    test('the plan cap is not an error: back to the task + the upgrade prompt',
+        () async {
       final states = await submit(
         buildGame(status: startedSecondsAgo(3)),
         SubmitTask(
@@ -280,12 +343,16 @@ void main() {
           video: clipOf(1024),
           displayName: 'Alice',
         ),
-        uploader: FakeVideoUploader(error: const DailyVideoLimitReached()),
+        uploader: FakeVideoUploader(
+            error: const DailyVideoLimitReached(tier: PlanTier.guest)),
       );
 
-      final error = states.last as TaskExecutionError;
-      expect(error.message, contains('clips today'));
-      expect(error.message, contains('snap a photo'));
+      // Still a loaded task (the filmed clip stays on screen), flagged so
+      // the screen shows the prompt whose first option is a photo post.
+      final limit = states.last as TaskExecutionPlanLimitReached;
+      expect(limit, isA<TaskExecutionLoaded>());
+      expect(limit.tier, PlanTier.guest);
+      expect(states.whereType<TaskExecutionError>(), isEmpty);
       expect(written, isEmpty);
     });
 

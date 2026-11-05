@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/services/plans/plans.dart';
 import 'package:taskcaster_app/core/services/video/video_policy.dart';
 import 'package:taskcaster_app/core/services/video/video_uploader.dart';
 
@@ -42,13 +43,13 @@ void main() {
         byteCount: 10,
         attempt: (path) async {
           tried.add(path);
-          if (tried.length <= 3) throw _denied();
+          if (tried.length <= 2) throw _denied();
           return 'https://cdn.test/ok';
         },
       );
 
-      expect(tried, [pathFor(0), pathFor(1), pathFor(2), pathFor(3)]);
-      expect(result.storagePath, pathFor(3));
+      expect(tried, [pathFor(0), pathFor(1), pathFor(2)]);
+      expect(result.storagePath, pathFor(2));
     });
 
     test("treats 'permission-denied' as a taken slot too", () async {
@@ -81,15 +82,59 @@ void main() {
         ),
         throwsA(isA<DailyVideoLimitReached>()),
       );
-      // Exactly the daily cap's worth of attempts, no more.
+      // Exactly the free plan's daily slots, no more.
+      expect(calls, PlanLimits.free.clipCount);
       expect(calls, VideoPolicy.maxUploadsPerDay);
     });
 
     test('the daily-limit message tells the player what to do instead', () {
       const e = DailyVideoLimitReached();
-      expect(e.message, contains('${VideoPolicy.maxUploadsPerDay} clips'));
+      expect(e.tier, PlanTier.free);
+      expect(e.message, contains('${PlanLimits.free.clipCount} clips'));
       expect(e.message, contains('snap a photo'));
       expect(e.toString(), e.message);
+    });
+
+    test('WP-11: a Pro player walks 15 slots (0-9, a-e) before the limit',
+        () async {
+      final tried = <String>[];
+      await expectLater(
+        FirebaseVideoUploader.uploadToFirstFreeSlot(
+          userId: userId,
+          when: when,
+          byteCount: 1,
+          limits: PlanLimits.pro,
+          attempt: (path) async {
+            tried.add(path);
+            throw _denied();
+          },
+        ),
+        throwsA(isA<DailyVideoLimitReached>()
+            .having((e) => e.tier, 'tier', PlanTier.pro)),
+      );
+      expect(tried.length, 15);
+      expect(tried.last, 'submissions/user-1/20260912/e');
+    });
+
+    test('WP-11: a guest writes the lifetime guest folder, 5 slots', () async {
+      final tried = <String>[];
+      await expectLater(
+        FirebaseVideoUploader.uploadToFirstFreeSlot(
+          userId: userId,
+          when: when,
+          byteCount: 1,
+          limits: PlanLimits.guest,
+          attempt: (path) async {
+            tried.add(path);
+            throw _denied();
+          },
+        ),
+        throwsA(isA<DailyVideoLimitReached>()
+            .having((e) => e.tier, 'tier', PlanTier.guest)),
+      );
+      expect(tried, [
+        for (var i = 0; i < 5; i++) 'submissions/user-1/guest/$i',
+      ]);
     });
 
     test('a non-denial failure is NOT retried on another slot', () async {

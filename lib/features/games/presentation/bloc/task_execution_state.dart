@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/models/player_task_status.dart';
+import '../../../../core/services/plans/plans.dart';
 
 abstract class TaskExecutionState extends Equatable {
   const TaskExecutionState();
@@ -99,4 +100,26 @@ class TaskExecutionError extends TaskExecutionState {
 
   @override
   List<Object> get props => [message];
+}
+/// The clip could not be posted because the player's plan has no clip slot
+/// left (WP-11: guest 5 ever, free 3 a day, Pro 15 a day).
+///
+/// Extends [TaskExecutionLoaded] on purpose: the screen keeps rendering the
+/// task (and the clip the player just filmed) exactly as before, and its
+/// listener shows the upgrade prompt, whose first option is always the free
+/// way out: "Post it as a photo instead".
+class TaskExecutionPlanLimitReached extends TaskExecutionLoaded {
+  final PlanTier tier;
+
+  const TaskExecutionPlanLimitReached({
+    required this.tier,
+    required super.task,
+    super.userStatus,
+    required super.allPlayerStatuses,
+    required super.taskNumber,
+    required super.totalTasks,
+  });
+
+  @override
+  List<Object?> get props => [...super.props, tier];
 }

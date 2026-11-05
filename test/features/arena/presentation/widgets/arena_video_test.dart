@@ -169,14 +169,15 @@ void main() {
 
   testWidgets('loops back to the start at the cap — the auto-trim',
       (tester) async {
-    // A 45 s source is capped to 30 s by VideoPolicy.
-    platform.duration = const Duration(seconds: 45);
+    // A 75 s source is capped to 60 s (VideoPolicy.maxClipSeconds, the Pro
+    // cap; the server already trims each clip to its uploader's plan).
+    platform.duration = const Duration(seconds: 75);
     final key = GlobalKey<ArenaVideoState>();
 
     await pump(tester, ArenaVideo(key: key, url: 'https://cdn.test/long.mp4'));
-    expect(key.currentState!.capSeconds, 30);
+    expect(key.currentState!.capSeconds, 60);
 
-    platform.emitPosition(platform.lastPlayerId!, const Duration(seconds: 31));
+    platform.emitPosition(platform.lastPlayerId!, const Duration(seconds: 61));
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
 
@@ -186,7 +187,7 @@ void main() {
 
   testWidgets('with loop off it pauses at the cap and reports onEnded',
       (tester) async {
-    platform.duration = const Duration(seconds: 45);
+    platform.duration = const Duration(seconds: 75);
     var ended = 0;
 
     await pump(
@@ -198,7 +199,7 @@ void main() {
       ),
     );
 
-    platform.emitPosition(platform.lastPlayerId!, const Duration(seconds: 30));
+    platform.emitPosition(platform.lastPlayerId!, const Duration(seconds: 60));
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
 
@@ -206,7 +207,7 @@ void main() {
     expect(platform.paused, isNotEmpty);
 
     // Fires exactly once, however many ticks arrive afterwards.
-    platform.emitPosition(platform.lastPlayerId!, const Duration(seconds: 31));
+    platform.emitPosition(platform.lastPlayerId!, const Duration(seconds: 61));
     await tester.pump(const Duration(milliseconds: 600));
     expect(ended, 1);
   });

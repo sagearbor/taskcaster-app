@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,8 @@ import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/services/photo/photo_capture.dart';
+import '../../../../core/services/plans/plan_repository.dart';
+import '../../../../core/services/plans/plans.dart';
 import '../../../../core/services/video/video_capture.dart';
 import '../../../../core/services/video/video_policy.dart';
 import '../../../../core/services/video/video_uploader.dart';
@@ -20,6 +23,7 @@ import '../../../arena/domain/repositories/feed_repository.dart';
 import '../../../arena/presentation/screens/arena_screen.dart';
 import '../../../arena/presentation/widgets/share_attempt_button.dart';
 import '../../../arena/presentation/widgets/watch_together_button.dart';
+import '../../../paywall/presentation/paywall_launcher.dart';
 import '../widgets/clip_preview.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/repositories/game_repository.dart';
@@ -76,6 +80,8 @@ class TaskExecutionScreen extends StatelessWidget {
         gameRepository: sl<GameRepository>(),
         feedRepository: sl<FeedRepository>(),
         videoUploader: sl<VideoUploader>(),
+        planRepository:
+            sl.isRegistered<PlanRepository>() ? sl<PlanRepository>() : null,
       )..add(LoadTask(
           gameId: gameId,
           taskIndex: taskIndex,
@@ -143,16 +149,31 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   // Guards against stamping startedAt twice before the stream catches up.
   bool _clockStartDispatched = false;
   final _textEntryFocus = FocusNode();
+  // The player's plan (WP-11): the recorder's clip cap. Free until the plan
+  // stream says otherwise, which is also what the server assumes.
+  UserPlan _plan = UserPlan.free;
+  StreamSubscription<UserPlan>? _planSub;
+
+  int get _planCapSeconds => _plan.limits.clipSeconds;
 
   @override
   void initState() {
     super.initState();
     _armed = widget.autoStart;
     _textEntryFocus.addListener(_onTextEntryFocus);
+    if (sl.isRegistered<PlanRepository>()) {
+      _planSub = sl<PlanRepository>().watchPlan().listen(
+        (plan) {
+          if (mounted && plan != _plan) setState(() => _plan = plan);
+        },
+        onError: (Object _) {},
+      );
+    }
   }
 
   @override
   void dispose() {
+    _planSub?.cancel();
     _videoUrlController.dispose();
     _textEntryController.dispose();
     _textEntryFocus.dispose();
@@ -180,6 +201,18 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
           taskIndex: widget.taskIndex,
           userId: widget.userId,
         ));
+  }
+
+  /// The clip did not fit the plan: the upgrade prompt, whose first option is
+  /// the free way out (post a photo instead). Shown ONLY here, after a real
+  /// limit was hit, never on the way into a task.
+  void _showPlanLimitPrompt(TaskExecutionPlanLimitReached state) {
+    if (!sl.isRegistered<PaywallLauncher>()) return;
+    sl<PaywallLauncher>().showLimitPrompt(
+      context,
+      tier: state.tier,
+      onPostAsPhoto: () => _snapIt(context, state),
+    );
   }
 
   void _validateUrl(String url) {
@@ -252,6 +285,10 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
       ),
       body: BlocConsumer<TaskExecutionBloc, TaskExecutionState>(
         listener: (context, state) {
+          if (state is TaskExecutionPlanLimitReached) {
+            _showPlanLimitPrompt(state);
+          }
+
           if (state is TaskExecutionError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -922,6 +959,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                 clip: clip,
                 timerSeconds: state.task.durationSeconds,
                 clockOffsetSeconds: _videoClockOffsetSeconds,
+                planCapSeconds: _planCapSeconds,
               ),
             ),
           ),
@@ -961,7 +999,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
       );
     }
 
-    final capSeconds = VideoPolicy.clipCapSeconds(state.task.durationSeconds);
+    final capSeconds = VideoPolicy.clipCapSeconds(state.task.durationSeconds,
+        planCapSeconds: _planCapSeconds);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1066,7 +1105,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
     }
 
     // The recorder's own maxDuration IS the trim. There is no trim screen.
-    final cap = VideoPolicy.clipCapSeconds(state.task.durationSeconds);
+    final cap = VideoPolicy.clipCapSeconds(state.task.durationSeconds,
+        planCapSeconds: _planCapSeconds);
     final clip = await sl<VideoCapture>().pick(
       fromCamera: true,
       maxSeconds: cap,

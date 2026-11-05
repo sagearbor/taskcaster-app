@@ -57,6 +57,9 @@ import '../services/sfx/game_sfx.dart';
 import '../services/photo/photo_capture.dart';
 import '../services/video/video_capture.dart';
 import '../services/video/video_uploader.dart';
+import '../services/plans/plan_repository.dart';
+import '../services/purchases/purchases_service.dart';
+import '../../features/paywall/presentation/paywall_launcher.dart';
 
 final GetIt sl = GetIt.instance;
 
@@ -222,6 +225,25 @@ class ServiceLocator {
       sl.registerLazySingleton<VideoCapture>(() => ImagePickerVideoCapture());
       sl.registerLazySingleton<VideoUploader>(() => FirebaseVideoUploader());
     }
+
+    // Plans (WP-11). The plan is read from the server-owned users/{uid}
+    // fields; mock builds start every player on the free plan. Purchases go
+    // through RevenueCat only on iOS/Android builds given the
+    // REVENUECAT_IOS_KEY / REVENUECAT_ANDROID_KEY dart-defines; everywhere
+    // else (web, tests, mock builds) the paywall shows plan status only.
+    if (useMockServices) {
+      sl.registerLazySingleton<PlanRepository>(() => MockPlanRepository());
+      sl.registerLazySingleton<PurchasesService>(
+          () => const UnconfiguredPurchasesService());
+    } else {
+      sl.registerLazySingleton<PlanRepository>(
+          () => FirestorePlanRepository());
+      sl.registerLazySingleton<PurchasesService>(createPurchasesService);
+    }
+    // The one door to the paywall / upgrade prompt (placement rules live
+    // there; tests swap in RecordingPaywallLauncher).
+    sl.registerLazySingleton<PaywallLauncher>(
+        () => const DefaultPaywallLauncher());
 
     // Friend-invite loop: captures invite codes arriving via deep link or
     // Play Install Referrer. Same implementation for mock and real services —

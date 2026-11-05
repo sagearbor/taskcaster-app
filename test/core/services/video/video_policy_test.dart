@@ -4,18 +4,23 @@ import 'package:taskcaster_app/core/services/video/video_policy.dart';
 void main() {
   group('VideoPolicy.clipCapSeconds', () {
     test('is the task timer when shorter than the absolute cap', () {
-      expect(VideoPolicy.clipCapSeconds(20), 20);
+      expect(VideoPolicy.clipCapSeconds(15), 15);
     });
     test('is the absolute cap when the timer is longer', () {
-      expect(VideoPolicy.clipCapSeconds(180), VideoPolicy.maxClipSeconds);
+      expect(VideoPolicy.clipCapSeconds(180), VideoPolicy.defaultClipSeconds);
+      // WP-11: the plan cap replaces the default; never above the ceiling.
+      expect(VideoPolicy.clipCapSeconds(180, planCapSeconds: 60), 60);
+      expect(VideoPolicy.clipCapSeconds(45, planCapSeconds: 60), 45);
+      expect(VideoPolicy.clipCapSeconds(null, planCapSeconds: 600),
+          VideoPolicy.maxClipSeconds);
     });
     test('is the absolute cap for no timer', () {
-      expect(VideoPolicy.clipCapSeconds(null), VideoPolicy.maxClipSeconds);
-      expect(VideoPolicy.clipCapSeconds(0), VideoPolicy.maxClipSeconds);
-      expect(VideoPolicy.clipCapSeconds(-5), VideoPolicy.maxClipSeconds);
+      expect(VideoPolicy.clipCapSeconds(null), VideoPolicy.defaultClipSeconds);
+      expect(VideoPolicy.clipCapSeconds(0), VideoPolicy.defaultClipSeconds);
+      expect(VideoPolicy.clipCapSeconds(-5), VideoPolicy.defaultClipSeconds);
     });
     test('equal timer and cap gives the cap', () {
-      expect(VideoPolicy.clipCapSeconds(30), 30);
+      expect(VideoPolicy.clipCapSeconds(20), 20);
     });
   });
 
@@ -61,11 +66,11 @@ void main() {
     });
     test('builds submissions/{uid}/{day}/{slot}', () {
       expect(
-        VideoPolicy.storagePath(userId: 'u1', when: when, slot: 3),
-        'submissions/u1/20260912/3',
+        VideoPolicy.storagePath(userId: 'u1', when: when, slot: 2),
+        'submissions/u1/20260912/2',
       );
     });
-    test('slots outside 0..9 and empty uid throw', () {
+    test('slots outside the free 0..2 and empty uid throw', () {
       expect(() => VideoPolicy.storagePath(userId: 'u1', when: when, slot: 10),
           throwsArgumentError);
       expect(() => VideoPolicy.storagePath(userId: 'u1', when: when, slot: -1),

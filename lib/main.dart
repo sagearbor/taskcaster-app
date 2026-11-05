@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
@@ -15,6 +16,7 @@ import 'core/theme/theme_controller.dart';
 import 'core/di/service_locator.dart';
 import 'core/services/app_check/app_check_bootstrap.dart';
 import 'core/services/invite/pending_invite_service.dart';
+import 'core/services/purchases/purchases_service.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/games/domain/repositories/game_repository.dart';
@@ -93,6 +95,16 @@ Future<void> _startApp({required bool useMockServices}) async {
   // App Check (monitor mode). A no-op unless this build was given the
   // APP_CHECK_WEB_KEY / APP_CHECK dart-defines; see AppCheckBootstrap.
   if (!useMockServices) await AppCheckBootstrap.activate();
+
+  // WP-11: RevenueCat's app user id is the Firebase uid. Re-identify on
+  // every auth change (sign-in, guest -> Apple/Google link, sign-out); a
+  // no-op on web and in builds without a RevenueCat key.
+  if (!useMockServices) {
+    PurchasesIdentitySync(sl<PurchasesService>()).start(
+      fb_auth.FirebaseAuth.instance.userChanges().map((u) =>
+          u == null ? null : (uid: u.uid, isAnonymous: u.isAnonymous)),
+    );
+  }
 
   runApp(const TaskCasterApp());
 }
