@@ -25,6 +25,10 @@
  *                                      Admin SDK can do this, storage.rules
  *                                      deny client delete/list under
  *                                      submissions/
+ *   Storage transcoded/{uid}/          poster frames of the user's clips (WP-08;
+ *                                      the clips themselves are transcoded in
+ *                                      place under submissions/{uid}/)
+ *   clips where uid == uid             per-clip transcode metadata (WP-08)
  *   users/{uid}                        the whole subtree (private/, friends/)
  *   invites the user sent or received
  *   games                              the uid leaves players/playerIds and
@@ -50,6 +54,12 @@ const {MONTAGE_QUOTA} = require('./guards');
 
 /** Storage prefix every player upload lives under (see storage.rules). */
 const submissionsPrefix = (uid) => `submissions/${uid}/`;
+
+/** Storage prefix of the poster frames WP-08's transcode writes per clip. */
+const transcodedPrefix = (uid) => `transcoded/${uid}/`;
+
+/** Per-clip transcode metadata (functions/src/transcode.js). */
+const CLIPS = 'clips';
 
 /** Firestore caps a batch at 500 writes. */
 const BATCH_LIMIT = 450;
@@ -159,6 +169,13 @@ async function leaveGames(db, uid) {
 async function deleteStorageClips(bucket, uid) {
   if (!bucket) return;
   await bucket.deleteFiles({prefix: submissionsPrefix(uid), force: true});
+  await bucket.deleteFiles({prefix: transcodedPrefix(uid), force: true});
+}
+
+async function deleteClipDocs(db, uid) {
+  const snap = await db.collection(CLIPS).where('uid', '==', uid).get();
+  await deleteInBatches(db, snap.docs.map((d) => d.ref));
+  return snap.size;
 }
 
 /**
@@ -177,8 +194,11 @@ async function deleteUserData(uid, {db, bucket, FieldValue}) {
   await db.recursiveDelete(db.collection(MONTAGE_QUOTA).doc(uid));
   await db.recursiveDelete(db.collection(USERS).doc(uid));
   await deleteStorageClips(bucket, uid);
+  // After Storage: a transcode that finishes mid-deletion fails its
+  // generation precondition, but its claim doc may still be written.
+  const clips = await deleteClipDocs(db, uid);
 
-  return {posts, gradesGiven, games, invites};
+  return {posts, gradesGiven, games, invites, clips};
 }
 
 /**
@@ -206,5 +226,6 @@ module.exports = {
   deleteUserData,
   planGameDeparture,
   submissionsPrefix,
+  transcodedPrefix,
   onAuthUserDeleted,
 };
