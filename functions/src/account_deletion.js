@@ -35,6 +35,13 @@
  *                                      its task submissions; a game it created
  *                                      is deleted if it was the only player,
  *                                      otherwise handed to the next player
+ *   friend-game peer grades (WP-13)    games/{g}/peer_grades the user gave or
+ *                                      received, and their own locked scores
+ *                                      in games/{g}/peer_results, found by
+ *                                      collection-group queries (so games the
+ *                                      user already left are covered too).
+ *                                      Other players' locked scores stay, so
+ *                                      nobody else's total moves.
  *
  * Every step is idempotent, so a retried run is harmless.
  */
@@ -51,6 +58,7 @@ const USERS = 'users';
 const GAMES = 'games';
 const INVITES = 'invites';
 const {MONTAGE_QUOTA} = require('./guards');
+const {PEER_GRADES, PEER_RESULTS} = require('./peer_grading');
 
 /** Storage prefix every player upload lives under (see storage.rules). */
 const submissionsPrefix = (uid) => `submissions/${uid}/`;
@@ -93,6 +101,19 @@ async function deleteGivenGrades(db, uid, FieldValue) {
     await batch.commit();
   }
   return snap.size;
+}
+
+/** WP-13: per-game grades given or received, and the user's locked scores. */
+async function deletePeerData(db, uid) {
+  const [given, received, results] = await Promise.all([
+    db.collectionGroup(PEER_GRADES).where('graderUid', '==', uid).get(),
+    db.collectionGroup(PEER_GRADES).where('targetUid', '==', uid).get(),
+    db.collectionGroup(PEER_RESULTS).where('uid', '==', uid).get(),
+  ]);
+  const refs = new Map();
+  for (const d of [...given.docs, ...received.docs, ...results.docs]) refs.set(d.ref.path, d.ref);
+  await deleteInBatches(db, [...refs.values()]);
+  return refs.size;
 }
 
 async function deleteInvites(db, uid) {
@@ -206,6 +227,7 @@ async function deleteUserData(uid, {db, bucket, FieldValue}) {
 
   const posts = await deleteOwnPosts(db, uid);
   const gradesGiven = await deleteGivenGrades(db, uid, FieldValue);
+  const peerGrades = await deletePeerData(db, uid);
   const games = await leaveGames(db, uid);
   const invites = await deleteInvites(db, uid);
   await db.recursiveDelete(db.collection(PUSH_SUBSCRIPTIONS).doc(uid));
@@ -216,7 +238,7 @@ async function deleteUserData(uid, {db, bucket, FieldValue}) {
   // generation precondition, but its claim doc may still be written.
   const clips = await deleteClipDocs(db, uid);
 
-  return {posts, gradesGiven, games, invites, clips};
+  return {posts, gradesGiven, peerGrades, games, invites, clips};
 }
 
 /**
@@ -242,6 +264,7 @@ const onAuthUserDeleted = functionsV1
 
 module.exports = {
   deleteUserData,
+  deletePeerData,
   planGameDeparture,
   submissionsPrefix,
   transcodedPrefix,

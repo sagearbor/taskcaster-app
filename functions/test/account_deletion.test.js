@@ -135,6 +135,13 @@ test('deleting an account removes its data in one trigger run (emulator)', {skip
   await db.doc('games/solo').set({creatorId: uid, judgeId: uid, playerIds: [uid], players: [player(uid)]});
   await db.doc('games/shared').set({creatorId: uid, judgeId: uid, playerIds: [uid, 'other'], players: [player(uid), player('other')]});
   await db.doc('games/joined').set({creatorId: 'other', judgeId: 'other', playerIds: ['other', uid], players: [player('other'), player(uid)]});
+  // WP-13 friend-game grades: given, received, the user's locked score, and a
+  // bystander's grade and score that must survive.
+  await db.doc(`games/joined/peer_grades/t1__other__${uid}`).set({taskId: 't1', targetUid: 'other', graderUid: uid, score: 4});
+  await db.doc(`games/joined/peer_grades/t1__${uid}__other`).set({taskId: 't1', targetUid: uid, graderUid: 'other', score: 3});
+  await db.doc(`games/joined/peer_results/t1__${uid}`).set({taskId: 't1', uid, points: 6});
+  await db.doc('games/joined/peer_results/t1__other').set({taskId: 't1', uid: 'other', points: 8});
+  await db.doc('games/elsewhere/peer_grades/t1__x__other').set({taskId: 't1', targetUid: 'x', graderUid: 'other', score: 5});
   // Someone else's data must survive.
   await db.doc('feed_posts/bystander').set({userId: 'other', graderIds: []});
   await db.doc(`clips/${uid}_20261105_0`).set({uid, status: 'ready'});
@@ -170,6 +177,11 @@ test('deleting an account removes its data in one trigger run (emulator)', {skip
   assert.equal(joined.creatorId, 'other');
   assert.deepEqual(joined.playerIds, ['other']);
   assert.equal(await exists('feed_posts/bystander'), true, 'bystander untouched');
+  assert.equal(await exists(`games/joined/peer_grades/t1__other__${uid}`), false, 'peer grade given deleted');
+  assert.equal(await exists(`games/joined/peer_grades/t1__${uid}__other`), false, 'peer grade received deleted');
+  assert.equal(await exists(`games/joined/peer_results/t1__${uid}`), false, 'locked peer score deleted');
+  assert.equal(await exists('games/joined/peer_results/t1__other'), true, 'other player\'s locked score untouched');
+  assert.equal(await exists('games/elsewhere/peer_grades/t1__x__other'), true, 'unrelated peer grade untouched');
   assert.equal(await exists(`clips/${uid}_20261105_0`), false, 'clip metadata deleted');
   assert.equal(await exists('clips/other_20261105_0'), true, 'other player\'s clip metadata untouched');
 

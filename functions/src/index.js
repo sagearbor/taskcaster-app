@@ -37,7 +37,8 @@ const logger = require('firebase-functions/logger');
 
 const montage = require('./montage');
 const {hasDrawtext} = require('./ffmpeg');
-const {deliverGradePush, firestoreStore} = require('./push');
+const {deliverGradePush, deliverToUser, firestoreStore} = require('./push');
+const peerGrading = require('./peer_grading');
 const {
   MAX_CLIPS,
   montageDocId,
@@ -265,6 +266,82 @@ exports.onGradeCreated = onDocumentCreated(
       nowMs: Date.now(),
       logger,
     });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Friend games: everyone grades everyone (WP-13)
+// ---------------------------------------------------------------------------
+
+/**
+ * Settle one group-graded task and push "your score is in" to every entry
+ * that locked in this run. Scores are written only here (Admin SDK); see
+ * peer_grading.js for the lock rules.
+ */
+async function settlePeerTask(gameId, taskId) {
+  const out = await peerGrading.settleInStore({
+    store: peerGrading.firestorePeerStore({db: db()}),
+    gameId,
+    taskId,
+    nowMs: Date.now(),
+  });
+  if (out.locks && out.locks.length) {
+    const store = firestoreStore({db: db(), FieldValue, FieldPath});
+    await Promise.all(out.locks.map((lock) => deliverToUser({
+      store,
+      messaging: getMessaging(),
+      uid: lock.uid,
+      notification: peerGrading.scoreInNotification({gameId, taskId, taskTitle: out.taskTitle, lock}),
+      vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,
+      logger,
+    })));
+  }
+  return out;
+}
+
+/**
+ * A friend graded an entry (games/{gameId}/peer_grades/{taskId}__{target}__{grader},
+ * create-only per firestore.rules). Re-settle that task: the grade may be the
+ * last one an entry was waiting on.
+ */
+exports.onPeerGradeCreated = onDocumentCreated(
+  {document: `games/{gameId}/${peerGrading.PEER_GRADES}/{gradeId}`, ...PUSH_OPTS},
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const grade = snap.data() || {};
+    if (typeof grade.taskId !== 'string') return;
+    const out = await settlePeerTask(event.params.gameId, grade.taskId);
+    logger.info('peer grading: settled after grade', {
+      gameId: event.params.gameId, taskId: grade.taskId, status: out.status,
+      locked: (out.locks || []).length, complete: Boolean(out.complete),
+    });
+  },
+);
+
+/**
+ * The 24 h lock and the cases no grade triggers (the last holdout skipped or
+ * left): every 30 minutes, re-settle each open task of each in-progress
+ * group game. Needs the games (settings.judgingMode, status) index.
+ */
+exports.settlePeerGrading = onSchedule(
+  {schedule: 'every 30 minutes', ...PUSH_OPTS, maxInstances: 1},
+  async () => {
+    const store = peerGrading.firestorePeerStore({db: db()});
+    const games = await store.listOpenGroupGames();
+    let settled = 0;
+    for (const game of games) {
+      for (const taskId of peerGrading.tasksToSweep(game)) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const out = await settlePeerTask(game.id, taskId);
+          if (out.status === 'settled') settled += 1;
+        } catch (err) {
+          logger.error('peer grading: sweep failed', {gameId: game.id, taskId, error: err.message});
+        }
+      }
+    }
+    logger.info('peer grading: sweep done', {games: games.length, settled});
   },
 );
 

@@ -475,6 +475,52 @@ async function deliverGradePush({
   return {status: 'sent', web, fcm};
 }
 
+/**
+ * WP-13: send one ready-made notification to every push target [uid] has
+ * (web + FCM), pruning dead ones. Used for the friend-game "your score is in"
+ * push, which fires once per locked entry, so it needs no throttle. Never
+ * throws.
+ */
+async function deliverToUser({
+  store,
+  messaging,
+  uid,
+  notification,
+  vapidPrivateKey,
+  sendWebPush,
+  logger = SILENT_LOGGER,
+}) {
+  try {
+    const {subs, fcmTokens} = await store.getTargets(uid);
+    const hasWeb = Object.keys(subs).length > 0;
+    if (!hasWeb && !fcmTokens.length) return {status: 'no-targets'};
+
+    let web = {sent: [], gone: [], failed: [], skipped: []};
+    if (hasWeb && vapidPrivateKey) {
+      web = await sendToSubscriptions({
+        subscriptions: subs,
+        notification,
+        keys: {publicKey: VAPID_PUBLIC_KEY, privateKey: vapidPrivateKey},
+        send: sendWebPush,
+      });
+    } else if (hasWeb) {
+      logger.error('push: VAPID_PRIVATE_KEY is not set; skipping web push');
+    }
+    const fcm = await sendToFcmTokens({tokens: fcmTokens, notification, messaging});
+    if (web.gone.length || fcm.gone.length) {
+      try {
+        await store.removeTargets(uid, {subs: web.gone, fcmTokens: fcm.gone});
+      } catch (err) {
+        logger.warn('push: could not prune dead targets', {uid, error: err.message});
+      }
+    }
+    return {status: 'sent', web, fcm};
+  } catch (err) {
+    logger.warn('push: deliverToUser failed', {uid, error: err.message});
+    return {status: 'failed'};
+  }
+}
+
 module.exports = {
   THROTTLE_MS,
   FCM_GONE_CODES,
@@ -485,6 +531,7 @@ module.exports = {
   sendToFcmTokens,
   firestoreStore,
   deliverGradePush,
+  deliverToUser,
   VAPID_SUBJECT,
   VAPID_PUBLIC_KEY,
   GONE_STATUS,
