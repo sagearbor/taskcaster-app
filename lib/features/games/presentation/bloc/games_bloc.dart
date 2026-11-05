@@ -209,7 +209,9 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       }
 
       final name = challengeNameFor(user.displayName);
-      final gameId = await gameRepository.createGame(name, user.id, user.id);
+      // A friend game: everyone grades everyone (WP-13).
+      final gameId = await gameRepository.createGame(name, user.id, user.id,
+          judgingMode: JudgingMode.group);
       await gameRepository.addTasksToGame(gameId, _getRandomTasks(count: 5));
 
       emit(ChallengeFriendsReady(gameId: gameId));

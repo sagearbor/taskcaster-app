@@ -5,6 +5,7 @@ import '../../../../core/models/player.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/user_avatar.dart';
+import '../bloc/peer_grading_cubit.dart';
 import '../screens/ar_task_screen.dart';
 import '../screens/scoreboard_screen.dart';
 import '../screens/task_execution_screen.dart';
@@ -26,13 +27,28 @@ class GameInProgressView extends StatelessWidget {
   /// screen's bloc); null falls back to opening the current task.
   final ValueChanged<UpNextAction>? onUpNext;
 
+  /// Group-graded games (WP-13): open task [index]'s results (the animated
+  /// score reveal). Null hides the "scores are in" card.
+  final ValueChanged<int>? onViewResults;
+
   const GameInProgressView({
     super.key,
     required this.game,
     this.currentUserId = '',
     this.isJudge = false,
     this.onUpNext,
+    this.onViewResults,
   });
+
+  /// The most recently completed task of a group-graded game, or -1. Its
+  /// scores locked on the server, so everyone gets the reveal card.
+  int get _latestScoredTask {
+    if (!game.isGroupJudged) return -1;
+    for (var i = game.tasks.length - 1; i >= 0; i--) {
+      if (game.tasks[i].isCompleted) return i;
+    }
+    return -1;
+  }
 
   void _openTask(BuildContext context, int index) {
     final task = game.tasks[index];
@@ -57,16 +73,30 @@ class GameInProgressView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final current = game.currentTask;
     final upNext = UpNext.resolve(
       game,
       currentUserId: currentUserId,
       isJudge: isJudge,
+      alsoGraded: game.isGroupJudged && current != null
+          ? RecentPeerGrades.targets(game.id, current.id)
+          : const {},
     );
-    final current = game.currentTask;
+    final scored = _latestScoredTask;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
+        if (scored >= 0 && onViewResults != null) ...[
+          _ScoresInCard(
+            key: ValueKey('scores-in-${game.tasks[scored].id}'),
+            taskNumber: scored + 1,
+            title: game.tasks[scored].title,
+            myScore: game.tasks[scored].playerStatuses[currentUserId]?.score,
+            onPressed: () => onViewResults!(scored),
+          ),
+          const SizedBox(height: 16),
+        ],
         UpNextCard(
           upNext: upNext,
           taskCount: game.tasks.length,
@@ -102,6 +132,64 @@ class GameInProgressView extends StatelessWidget {
           onOpen: (i) => _openTask(context, i),
         ),
       ],
+    );
+  }
+}
+
+/// Group-graded games: "Task 2 scores are in" — slides and fades in for
+/// every player the moment the server locks a task (keyed by task, so each
+/// newly scored task animates afresh), and opens the animated reveal.
+class _ScoresInCard extends StatelessWidget {
+  final int taskNumber;
+  final String title;
+  final int? myScore;
+  final VoidCallback onPressed;
+
+  const _ScoresInCard({
+    super.key,
+    required this.taskNumber,
+    required this.title,
+    required this.myScore,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = context.tokens;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutBack,
+      builder: (context, t, child) => Opacity(
+        opacity: t.clamp(0.0, 1.0),
+        child: Transform.translate(offset: Offset(0, (1 - t) * 24), child: child),
+      ),
+      child: Card(
+        key: const Key('scores-in-card'),
+        color: tokens.successContainer,
+        child: ListTile(
+          onTap: onPressed,
+          leading: Icon(Icons.emoji_events_rounded, color: tokens.gold),
+          title: Text(
+            'Task $taskNumber scores are in',
+            style: theme.textTheme.titleMedium
+                ?.copyWith(color: tokens.onSuccessContainer),
+          ),
+          subtitle: Text(
+            myScore != null ? 'You got $myScore/10 · $title' : title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: tokens.onSuccessContainer),
+          ),
+          trailing: Text(
+            'See results',
+            style: theme.textTheme.labelLarge
+                ?.copyWith(color: tokens.onSuccessContainer),
+          ),
+        ),
+      ),
     );
   }
 }

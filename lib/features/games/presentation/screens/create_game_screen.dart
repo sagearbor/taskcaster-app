@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/models/game_settings.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -29,6 +30,10 @@ class _CreateGameScreenState extends State<CreateGameScreen> {
 
   /// 5 or 10 when the tasks came from a chip; null after a hand-picked set.
   int? _quickCount = 5;
+
+  /// "Taskmaster mode": the creator judges every entry. Off by default, so a
+  /// friend game is graded by everyone (WP-13).
+  bool _taskmasterMode = false;
 
   static const _nameAdjectives = [
     'Epic', 'Wild', 'Chaotic', 'Legendary', 'Silly',
@@ -125,7 +130,10 @@ class _CreateGameScreenState extends State<CreateGameScreen> {
       final gameId = await gameRepository.createGame(
         _gameNameController.text.trim(),
         authState.user.id,
-        authState.user.id, // Creator is always the judge.
+        // Taskmaster mode: the creator is the judge. Otherwise nobody is.
+        authState.user.id,
+        judgingMode:
+            _taskmasterMode ? JudgingMode.judge : JudgingMode.group,
       );
       await gameRepository.addTasksToGame(gameId, _selectedTasks);
 
@@ -276,6 +284,26 @@ class _CreateGameScreenState extends State<CreateGameScreen> {
                           ),
                         ],
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  const _Label('WHO SCORES?'),
+                  const SizedBox(height: 4),
+                  SwitchListTile(
+                    key: const Key('create-game-taskmaster'),
+                    contentPadding: EdgeInsets.zero,
+                    value: _taskmasterMode,
+                    onChanged: _isLoading
+                        ? null
+                        : (v) => setState(() => _taskmasterMode = v),
+                    title: const Text('Taskmaster mode'),
+                    subtitle: Text(
+                      _taskmasterMode
+                          ? 'You judge every entry yourself, Taskmaster-style.'
+                          : 'Off: everyone grades everyone else, 1 to 5. '
+                              'Nobody has to sit out as judge.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ),
                 ],

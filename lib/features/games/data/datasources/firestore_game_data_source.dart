@@ -15,6 +15,18 @@ class FirestoreGameDataSource implements GameRemoteDataSource {
         _auth = auth ?? FirebaseAuth.instance;
 
   static const String _gamesCollection = 'games';
+  static const String _peerGradesCollection = 'peer_grades';
+
+  @override
+  Future<void> createPeerGrade(
+      String gameId, String gradeId, Map<String, dynamic> data) {
+    return _firestore
+        .collection(_gamesCollection)
+        .doc(gameId)
+        .collection(_peerGradesCollection)
+        .doc(gradeId)
+        .set({...data, 'createdAt': FieldValue.serverTimestamp()});
+  }
 
   @override
   Stream<List<Map<String, dynamic>>> getGamesStream() {

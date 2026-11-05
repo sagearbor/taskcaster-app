@@ -20,6 +20,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(FakeGame());
     registerFallbackValue(<Task>[]);
+    registerFallbackValue(JudgingMode.judge);
   });
 
   group('GamesBloc Tests', () {
@@ -271,11 +272,12 @@ void main() {
       );
 
       blocTest<GamesBloc, GamesState>(
-        'creates a lobby game with a 5-task pack, creator judges',
+        'creates a lobby game with a 5-task pack, everyone grades (WP-13)',
         build: () {
           when(() => mockAuthRepository.getCurrentUser())
               .thenAnswer((_) async => challenger);
-          when(() => mockGameRepository.createGame(any(), any(), any()))
+          when(() => mockGameRepository.createGame(any(), any(), any(),
+                  judgingMode: any(named: 'judgingMode')))
               .thenAnswer((_) async => 'challenge_1');
           when(() => mockGameRepository.addTasksToGame(any(), any()))
               .thenAnswer((_) async {});
@@ -291,6 +293,7 @@ void main() {
                 "Sam's challenge",
                 challenger.id,
                 challenger.id,
+                judgingMode: JudgingMode.group,
               )).called(1);
           final tasks = verify(() => mockGameRepository.addTasksToGame(
                 'challenge_1',
@@ -309,7 +312,8 @@ void main() {
                     displayName: 'Guest',
                     createdAt: DateTime(2025, 1, 1),
                   ));
-          when(() => mockGameRepository.createGame(any(), any(), any()))
+          when(() => mockGameRepository.createGame(any(), any(), any(),
+                  judgingMode: any(named: 'judgingMode')))
               .thenAnswer((_) async => 'challenge_2');
           when(() => mockGameRepository.addTasksToGame(any(), any()))
               .thenAnswer((_) async {});
@@ -325,6 +329,7 @@ void main() {
                 captureAny(),
                 'guest_1',
                 'guest_1',
+                judgingMode: JudgingMode.group,
               )).captured.single as String;
           expect(GamesBloc.funChallengeNames, contains(name));
         },

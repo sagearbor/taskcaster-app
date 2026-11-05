@@ -11,6 +11,7 @@ import '../../../../core/models/game_settings.dart';
 import '../../../../core/models/user.dart';
 import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
+import '../../domain/peer_grading.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../datasources/game_remote_data_source.dart';
 
@@ -64,8 +65,10 @@ class GameRepositoryImpl implements GameRepository {
   @override
   Future<String> cloneGame(
       Game template, String creatorId, String displayName) async {
-    // New game is private and owned by the cloner; creator is judge by default.
-    final gameId = await createGame(template.gameName, creatorId, creatorId);
+    // New game is private and owned by the cloner. A new friend game, so
+    // everyone grades everyone (WP-13).
+    final gameId = await createGame(template.gameName, creatorId, creatorId,
+        judgingMode: JudgingMode.group);
 
     // Copy tasks as fresh, unsubmitted tasks (new ids, no submissions/statuses).
     final freshTasks = template.tasks
@@ -100,6 +103,8 @@ class GameRepositoryImpl implements GameRepository {
       _rematchName(source.gameName),
       source.creatorId,
       source.judgeId,
+      // A rematch keeps the crew's choice: group grading or Taskmaster mode.
+      judgingMode: source.settings.judgingMode,
     );
 
     final data = await remoteDataSource.getGameStream(gameId).first;
@@ -224,13 +229,16 @@ class GameRepositoryImpl implements GameRepository {
   }
 
   @override
-  Future<String> createGame(String gameName, String creatorId, String judgeId) async {
+  Future<String> createGame(String gameName, String creatorId, String judgeId,
+      {JudgingMode judgingMode = JudgingMode.judge}) async {
     final inviteCode = await _uniqueInviteCode();
     final gameData = {
       'id': _uuid.v4(),
       'gameName': gameName,
       'creatorId': creatorId,
-      'judgeId': judgeId,
+      // Group-graded games have no judge at all (WP-13): nobody gets the
+      // judge's screens or the rules' judge rights.
+      'judgeId': judgingMode == JudgingMode.group ? '' : judgeId,
       'status': GameStatus.lobby.name,
       'inviteCode': inviteCode,
       'createdAt': DateTime.now().toIso8601String(),
@@ -251,6 +259,7 @@ class GameRepositoryImpl implements GameRepository {
         'autoAdvanceEnabled': true,
         'allowLateSubmissions': false,
         'taskDeadline': null,
+        'judgingMode': judgingMode.name,
       },
       'currentTaskIndex': 0,
     };
@@ -631,6 +640,33 @@ class GameRepositoryImpl implements GameRepository {
       }
       return _scoreUpdates(game, taskIndex, playerId, score);
     });
+  }
+
+  @override
+  Future<void> submitPeerGrade({
+    required String gameId,
+    required int taskIndex,
+    required String taskId,
+    required String targetUid,
+    required String graderUid,
+    required int score,
+  }) async {
+    final grade = PeerGrade(
+      taskId: taskId,
+      taskIndex: taskIndex,
+      targetUid: targetUid,
+      graderUid: graderUid,
+      score: score,
+    );
+    try {
+      await remoteDataSource.createPeerGrade(gameId, grade.id, grade.toMap());
+    } catch (e) {
+      if ('$e'.contains('permission-denied') ||
+          '$e'.contains('PERMISSION_DENIED')) {
+        throw PeerGradeRejected(e);
+      }
+      rethrow;
+    }
   }
 
   @override

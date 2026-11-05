@@ -100,6 +100,12 @@ service cloud.firestore {
              underMaxPlayers(after.size());
     }
 
+    // WP-13: everyone grades everyone (no human judge). Absent -> judge mode.
+    function isGroupGraded(data) {
+      let settings = data.get('settings', null);
+      return settings is map && settings.get('judgingMode', 'judge') == 'group';
+    }
+
     // Cloning a public template bumps its popularity counter by exactly one.
     function isCloneCountBump() {
       return resource.data.get('isPublic', false) == true &&
@@ -118,9 +124,12 @@ service cloud.firestore {
                        request.resource.data.creatorId == request.auth.uid;
 
       allow update: if isSignedIn() && (
-        // Creator: full rights, but the game stays theirs.
+        // Creator: full rights, but the game stays theirs — and once a
+        // group-graded game (WP-13) has started, its scores are the server's.
         (request.auth.uid == resource.data.creatorId &&
-         !gameChangedKeys().hasAny(['creatorId'])) ||
+         !gameChangedKeys().hasAny(['creatorId']) &&
+         !(isGroupGraded(resource.data) && resource.data.status != 'lobby' &&
+           gameChangedKeys().hasAny(['players']))) ||
         isJudgeUpdate() ||
         isPlayerTaskUpdate() ||
         isLeave() ||
@@ -130,6 +139,62 @@ service cloud.firestore {
 
       // Only the creator can delete a game.
       allow delete: if isSignedIn() && request.auth.uid == resource.data.creatorId;
+
+      // ---- Friend-game peer grades (WP-13) ----
+      // settings.judgingMode == 'group': no judge; once a player has posted
+      // their entry for a task they grade every other player's entry, 1..5.
+      // One doc per (task, entry, grader), id `{taskId}__{targetUid}__{graderUid}`,
+      // written by the grader as themselves only, never on their own entry,
+      // never edited or withdrawn (a second grade would be an update, and is
+      // refused). The rules check the game itself: group mode, in progress,
+      // both players on the roster, the task at taskIndex has this id, the
+      // entry is posted and not yet scored, and the grader has posted too
+      // (grading is unlocked by posting). Scores are derived from these docs
+      // by the onPeerGradeCreated Cloud Function (Admin SDK); no client ever
+      // writes a score. Grades are anonymous: only the grader can read theirs.
+      match /peer_grades/{gradeId} {
+        function theGame() {
+          return get(/databases/$(database)/documents/games/$(gameId)).data;
+        }
+
+        function peerGradeOk() {
+          let d = request.resource.data;
+          let g = theGame();
+          let uid = request.auth.uid;
+          let task = g.tasks[d.taskIndex];
+          let statuses = task.get('playerStatuses', {});
+          return d.keys().hasOnly(['taskId', 'taskIndex', 'targetUid', 'graderUid', 'score', 'createdAt']) &&
+                 d.keys().hasAll(['taskId', 'taskIndex', 'targetUid', 'graderUid', 'score', 'createdAt']) &&
+                 d.graderUid == uid &&
+                 d.targetUid is string &&
+                 d.targetUid != uid &&
+                 d.taskId is string &&
+                 gradeId == d.taskId + '__' + d.targetUid + '__' + uid &&
+                 d.score is int && d.score >= 1 && d.score <= 5 &&
+                 d.createdAt == request.time &&
+                 isGroupGraded(g) &&
+                 g.status == 'inProgress' &&
+                 uid in g.get('playerIds', []) &&
+                 d.targetUid in g.get('playerIds', []) &&
+                 d.taskIndex is int && d.taskIndex >= 0 && d.taskIndex < g.tasks.size() &&
+                 task.id == d.taskId &&
+                 statuses.get(d.targetUid, {}).get('state', '') == 'submitted' &&
+                 statuses.get(uid, {}).get('state', '') in ['submitted', 'judged'];
+        }
+
+        allow read: if isSignedIn() && resource.data.graderUid == request.auth.uid;
+        allow create: if isSignedIn() && peerGradeOk();
+        allow update, delete: if false;
+      }
+
+      // The server's ledger of locked peer scores (one per task per player).
+      // players[].totalScore in a group game is recomputed from it, so it is
+      // written only by Cloud Functions; game members may read it.
+      match /peer_results/{resultId} {
+        allow read: if isSignedIn() &&
+                       request.auth.uid in get(/databases/$(database)/documents/games/$(gameId)).data.get('playerIds', []);
+        allow write: if false;
+      }
     }
 
     // ---- Drawing Telephone sessions ----

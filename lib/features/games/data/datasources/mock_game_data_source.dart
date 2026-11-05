@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import '../../../../core/models/game.dart';
+import '../../../../core/models/player_task_status.dart';
+import '../../domain/peer_grading.dart';
 import 'game_remote_data_source.dart';
 
 class MockGameDataSource implements GameRemoteDataSource {
@@ -325,6 +328,92 @@ class MockGameDataSource implements GameRemoteDataSource {
     _games[gameIndex] = {..._games[gameIndex], ...updates};
     _gamesController.add(List.from(_games));
     _gameControllers[gameId]?.add(_games[gameIndex]);
+  }
+
+  /// peer_grades per game: gradeId -> grade.
+  final Map<String, Map<String, PeerGrade>> _peerGrades = {};
+
+  /// The server's ledger per game: '{taskId}__{uid}' -> locked points.
+  final Map<String, Map<String, int>> _peerResults = {};
+
+  /// The clock the mock's settle pass reads (tests move it past 24 h).
+  DateTime Function() clock = DateTime.now;
+
+  /// Mirrors firestore.rules (create-only, one per task/entry/grader, never
+  /// yourself, only once both have posted) and then the onPeerGradeCreated
+  /// Function (functions/src/peer_grading.js), so a group game plays to the
+  /// end offline exactly as it does against Firebase.
+  @override
+  Future<void> createPeerGrade(
+      String gameId, String gradeId, Map<String, dynamic> data) async {
+    await Future.delayed(const Duration(milliseconds: 100));
+    final grades = _peerGrades.putIfAbsent(gameId, () => {});
+    if (grades.containsKey(gradeId)) {
+      throw StateError('permission-denied: already graded');
+    }
+    final grade = PeerGrade(
+      taskId: data['taskId'] as String,
+      taskIndex: data['taskIndex'] as int,
+      targetUid: data['targetUid'] as String,
+      graderUid: data['graderUid'] as String,
+      score: data['score'] as int,
+    );
+    final index = _games.indexWhere((g) => g['id'] == gameId);
+    if (index == -1) throw StateError('permission-denied: no such game');
+    final game = Game.fromMap(_games[index]);
+    final task = grade.taskIndex >= 0 && grade.taskIndex < game.tasks.length
+        ? game.tasks[grade.taskIndex]
+        : null;
+    final allowed = game.isGroupJudged &&
+        game.isInProgress &&
+        task != null &&
+        task.id == grade.taskId &&
+        grade.id == gradeId &&
+        grade.graderUid != grade.targetUid &&
+        grade.score >= 1 &&
+        grade.score <= 5 &&
+        game.playerIds.contains(grade.graderUid) &&
+        game.playerIds.contains(grade.targetUid) &&
+        task.playerStatuses[grade.targetUid]?.state ==
+            TaskPlayerState.submitted &&
+        PeerGrading.canGrade(task, grade.graderUid);
+    if (!allowed) throw StateError('permission-denied: grade refused');
+    grades[gradeId] = grade;
+    settlePeerTask(gameId, grade.taskId);
+  }
+
+  /// The mock's copy of the server settle pass (also the 24 h sweep: call it
+  /// after moving [clock]).
+  void settlePeerTask(String gameId, String taskId) {
+    final index = _games.indexWhere((g) => g['id'] == gameId);
+    if (index == -1) return;
+    final game = Game.fromMap(_games[index]);
+    if (!game.isInProgress) return;
+    final ledger = _peerResults.putIfAbsent(gameId, () => {});
+    final locked = {
+      for (final key in ledger.keys)
+        if (key.startsWith('${taskId}__')) key.substring(taskId.length + 2),
+    };
+    final outcome = PeerGrading.settle(
+      game: game,
+      taskId: taskId,
+      grades: _peerGrades[gameId]?.values ?? const [],
+      locked: locked,
+      now: clock(),
+    );
+    if (outcome == null) return;
+    for (final lock in outcome.locks) {
+      ledger['${taskId}__${lock.uid}'] = lock.points;
+    }
+    final totals = <String, int>{};
+    ledger.forEach((key, points) {
+      final uid = key.substring(key.indexOf('__') + 2);
+      totals[uid] = (totals[uid] ?? 0) + points;
+    });
+    final next = PeerGrading.apply(game, outcome, totals: totals, now: clock());
+    _games[index] = {..._games[index], ...next.toMap(), 'id': gameId};
+    _gamesController.add(List.from(_games));
+    _gameControllers[gameId]?.add(_games[index]);
   }
 
   void dispose() {

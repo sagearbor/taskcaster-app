@@ -1,4 +1,5 @@
 import '../../../../core/models/game.dart';
+import '../../../../core/models/game_settings.dart';
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/models/user.dart';
@@ -10,6 +11,17 @@ class GameJoinException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// A peer grade the backend refused: almost always "you already graded that
+/// one" (another device, a double tap) or "that entry's score just locked".
+/// The grade queue treats it as done and moves on.
+class PeerGradeRejected implements Exception {
+  final Object cause;
+  const PeerGradeRejected(this.cause);
+
+  @override
+  String toString() => 'PeerGradeRejected($cause)';
 }
 
 abstract class GameRepository {
@@ -37,7 +49,12 @@ abstract class GameRepository {
   /// re-run of challenges everyone has already seen. Returns the new game id.
   Future<String> rematchGame(Game source);
 
-  Future<String> createGame(String gameName, String creatorId, String judgeId);
+  /// Create a lobby game owned by [creatorId]. [judgingMode] defaults to
+  /// [JudgingMode.judge] (one human judge, [judgeId]); with
+  /// [JudgingMode.group] everyone grades everyone and nobody is the judge
+  /// (`judgeId` is stored empty, whatever is passed).
+  Future<String> createGame(String gameName, String creatorId, String judgeId,
+      {JudgingMode judgingMode = JudgingMode.judge});
 
   /// Create [user]'s Starter Pack game: the ten hand-written solo tasks from
   /// `StarterPackData`, already in progress, crowd-judged, shared to the
@@ -102,6 +119,19 @@ abstract class GameRepository {
   /// their result is recorded as a `submitted` status carrying the AR score
   /// for the judge to confirm. [rawResult] (optional) is the raw gameplay metric (e.g.
   /// balloons popped) stored on the task for display/analytics.
+  /// Group-graded games (WP-13): [graderUid] grades [targetUid]'s entry for
+  /// task [taskIndex] with [score] (1..5). Writes ONE create-only grade doc;
+  /// the server locks scores. Throws [PeerGradeRejected] when the grade was
+  /// refused (already graded, entry already locked, not posted yet...).
+  Future<void> submitPeerGrade({
+    required String gameId,
+    required int taskIndex,
+    required String taskId,
+    required String targetUid,
+    required String graderUid,
+    required int score,
+  });
+
   Future<void> submitArResult(
     String gameId,
     int taskIndex,

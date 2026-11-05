@@ -31,4 +31,11 @@ abstract class GameRemoteDataSource {
   /// [mutate], and `update` only the fields it returns. Concurrent writers
   /// never erase each other's changes. Throws if the game does not exist.
   Future<void> transactGame(String gameId, GameMutation mutate);
+
+  /// Create `games/{gameId}/peer_grades/{gradeId}` (WP-13) with [data] plus a
+  /// server-timestamp `createdAt`. Create-only: firestore.rules refuse a
+  /// second grade with the same id (and any grade that is not the caller's
+  /// own to give) with permission-denied.
+  Future<void> createPeerGrade(
+      String gameId, String gradeId, Map<String, dynamic> data);
 }
