@@ -16,6 +16,13 @@ const {
   shouldNotify,
   toWebPushSubscription,
   sendToSubscriptions,
+  THROTTLE_MS,
+  PUSH_THROTTLE,
+  throttleAllows,
+  fcmMessage,
+  sendToFcmTokens,
+  firestoreStore,
+  deliverGradePush,
 } = require('../src/push');
 
 const KEYS = {publicKey: VAPID_PUBLIC_KEY, privateKey: 'not-used-by-the-fake-sender'};
@@ -190,4 +197,229 @@ test('the push service worker draws a notification and focuses an open tab', () 
   const code = sw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(code, /flutter_service_worker/);
   assert.doesNotMatch(code, /importScripts/);
+});
+
+// ---------------------------------------------------------------------------
+// Mobile (FCM) push and the onGradeCreated orchestration
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory Firestore with just what firestoreStore touches: doc get/set,
+ * update(FieldPath, FieldValue.delete(), ...) and runTransaction. Running the
+ * REAL store over a fake db (rather than a fake store) means token pruning and
+ * the throttle doc are exercised exactly as deployed.
+ */
+class FakeFieldPath {
+  constructor(...segments) {
+    this.segments = segments;
+  }
+}
+const DELETE = Symbol('delete');
+const FakeFieldValue = {delete: () => DELETE};
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
+function fakeDb(initial = {}) {
+  const docs = new Map(Object.entries(initial).map(([k, v]) => [k, clone(v)]));
+  const ref = (key) => ({
+    key,
+    async get() {
+      const d = docs.get(key);
+      return {exists: d !== undefined, data: () => (d === undefined ? undefined : clone(d))};
+    },
+    async update(...args) {
+      const d = docs.get(key);
+      if (d === undefined) throw new Error(`NOT_FOUND ${key}`);
+      for (let i = 0; i < args.length; i += 2) {
+        const segs = args[i].segments;
+        let node = d;
+        for (const s of segs.slice(0, -1)) node = node[s] || (node[s] = {});
+        const leaf = segs[segs.length - 1];
+        if (args[i + 1] === DELETE) delete node[leaf];
+        else node[leaf] = args[i + 1];
+      }
+    },
+  });
+  return {
+    docs,
+    collection: (c) => ({doc: (id) => ref(`${c}/${id}`)}),
+    async runTransaction(fn) {
+      return fn({get: (r) => r.get(), set: (r, data) => docs.set(r.key, clone(data))});
+    },
+  };
+}
+
+/** getMessaging() stand-in. `fail` maps token -> FCM error code. */
+function fakeMessaging(fail = {}) {
+  const calls = [];
+  return {
+    calls,
+    async sendEachForMulticast(message) {
+      calls.push(message);
+      return {
+        responses: message.tokens.map((t) =>
+          fail[t] ? {success: false, error: {code: fail[t]}} : {success: true, messageId: `m-${t}`},
+        ),
+      };
+    },
+  };
+}
+
+const POST = {
+  userId: 'owner',
+  taskTitle: 'Egg on a spoon',
+  gradeSum: 13,
+  gradeCount: 3,
+  gameId: 'g1',
+  taskId: 't1',
+};
+
+function run(db, messaging, extra = {}) {
+  return deliverGradePush({
+    store: firestoreStore({db, FieldValue: FakeFieldValue, FieldPath: FakeFieldPath}),
+    messaging,
+    postId: 'p1',
+    graderUid: 'grader',
+    score: 5,
+    vapidPrivateKey: undefined,
+    nowMs: 1_000_000_000,
+    ...extra,
+  });
+}
+
+test('a grade on a post whose owner has 2 FCM tokens sends 2 messages', async () => {
+  const db = fakeDb({
+    'feed_posts/p1': POST,
+    'push_subscriptions/owner': {fcmTokens: {'tok:A': 1, 'tok:B': 2}},
+  });
+  const messaging = fakeMessaging();
+  const out = await run(db, messaging);
+  assert.equal(out.status, 'sent');
+  assert.equal(messaging.calls.length, 1);
+  assert.deepEqual([...messaging.calls[0].tokens].sort(), ['tok:A', 'tok:B']);
+  assert.deepEqual(out.fcm.sent.sort(), ['tok:A', 'tok:B']);
+  // The aggregated copy the throttle makes necessary.
+  assert.equal(messaging.calls[0].notification.title, '3 people graded "Egg on a spoon"');
+  assert.match(messaging.calls[0].notification.body, /avg 4\.3/);
+});
+
+test('dead FCM tokens are removed; transient failures are kept', async () => {
+  const db = fakeDb({
+    'feed_posts/p1': POST,
+    'push_subscriptions/owner': {
+      fcmTokens: {'tok:live': 1, 'tok:gone': 2, 'tok:bad': 3, 'tok:flaky': 4},
+      subs: {web1: sub(1)},
+    },
+  });
+  const messaging = fakeMessaging({
+    'tok:gone': 'messaging/registration-token-not-registered',
+    'tok:bad': 'messaging/invalid-registration-token',
+    'tok:flaky': 'messaging/internal-error',
+  });
+  const out = await run(db, messaging);
+  assert.deepEqual(out.fcm.gone.sort(), ['tok:bad', 'tok:gone']);
+  assert.deepEqual(out.fcm.failed, ['tok:flaky']);
+  const left = db.docs.get('push_subscriptions/owner');
+  assert.deepEqual(Object.keys(left.fcmTokens).sort(), ['tok:flaky', 'tok:live']);
+  // Pruning FCM tokens must not touch the browser subscriptions beside them.
+  assert.deepEqual(Object.keys(left.subs), ['web1']);
+});
+
+test('web and mobile targets both get the grade, from one trigger', async () => {
+  const db = fakeDb({
+    'feed_posts/p1': POST,
+    'push_subscriptions/owner': {fcmTokens: {'tok:A': 1}, subs: {web1: sub(1), web2: sub(2)}},
+  });
+  const webSeen = [];
+  const out = await run(db, fakeMessaging(), {
+    vapidPrivateKey: 'fake',
+    sendWebPush: async (s) => {
+      if (s.endpoint.endsWith('-2')) {
+        const err = new Error('gone');
+        err.statusCode = 410;
+        throw err;
+      }
+      webSeen.push(s.endpoint);
+    },
+  });
+  assert.equal(webSeen.length, 1);
+  assert.deepEqual(out.fcm.sent, ['tok:A']);
+  const left = db.docs.get('push_subscriptions/owner');
+  assert.deepEqual(Object.keys(left.subs), ['web1']);
+  assert.deepEqual(Object.keys(left.fcmTokens), ['tok:A']);
+});
+
+test('a missing VAPID key skips web push but still reaches the app', async () => {
+  const db = fakeDb({
+    'feed_posts/p1': POST,
+    'push_subscriptions/owner': {fcmTokens: {'tok:A': 1}, subs: {web1: sub(1)}},
+  });
+  const out = await run(db, fakeMessaging(), {
+    sendWebPush: async () => assert.fail('no key, no web send'),
+  });
+  assert.deepEqual(out.fcm.sent, ['tok:A']);
+});
+
+test('at most one push per post per 10 minutes', async () => {
+  const db = fakeDb({
+    'feed_posts/p1': POST,
+    'push_subscriptions/owner': {fcmTokens: {'tok:A': 1}},
+  });
+  const messaging = fakeMessaging();
+  const t0 = 5_000_000;
+  assert.equal((await run(db, messaging, {nowMs: t0})).status, 'sent');
+  assert.equal((await run(db, messaging, {nowMs: t0 + 60_000})).status, 'throttled');
+  assert.equal((await run(db, messaging, {nowMs: t0 + THROTTLE_MS - 1})).status, 'throttled');
+  assert.equal((await run(db, messaging, {nowMs: t0 + THROTTLE_MS})).status, 'sent');
+  assert.equal(messaging.calls.length, 2);
+  assert.equal(THROTTLE_MS, 10 * 60 * 1000);
+});
+
+test('no targets, self-grades and missing posts send nothing and burn no throttle', async () => {
+  const messaging = fakeMessaging();
+  const empty = fakeDb({'feed_posts/p1': POST});
+  assert.equal((await run(empty, messaging)).status, 'no-targets');
+  assert.equal(empty.docs.has(`${PUSH_THROTTLE}/p1`), false);
+
+  const self = fakeDb({
+    'feed_posts/p1': POST,
+    'push_subscriptions/owner': {fcmTokens: {'tok:A': 1}},
+  });
+  assert.equal((await run(self, messaging, {graderUid: 'owner'})).status, 'skipped');
+  assert.equal(self.docs.has(`${PUSH_THROTTLE}/p1`), false);
+  assert.equal((await run(fakeDb({}), messaging)).status, 'post-missing');
+  assert.equal(messaging.calls.length, 0);
+});
+
+test('throttleAllows treats a missing or junk timestamp as never sent', () => {
+  assert.equal(throttleAllows(undefined, 10), true);
+  assert.equal(throttleAllows(null, 10), true);
+  assert.equal(throttleAllows('x', 10), true);
+  assert.equal(throttleAllows(0, THROTTLE_MS - 1), false);
+  assert.equal(throttleAllows(0, THROTTLE_MS), true);
+});
+
+test('the FCM message carries string-only data and collapses per post', () => {
+  const m = fcmMessage(
+    gradeNotification({post: {id: 'p9', taskTitle: 'T', gradeSum: 4, gradeCount: 1}, score: 4}),
+  );
+  for (const v of Object.values(m.data)) assert.equal(typeof v, 'string');
+  // gameId/taskId were null: dropped, not sent as the string "null".
+  assert.deepEqual(Object.keys(m.data).sort(), ['postId', 'url']);
+  assert.equal(m.notification.title, 'Someone graded "T"');
+  assert.equal(m.android.collapseKey, 'grade-p9');
+  assert.equal(m.android.notification.tag, 'grade-p9');
+  assert.equal(m.apns.headers['apns-collapse-id'], 'grade-p9');
+});
+
+test('a whole-call FCM failure marks tokens failed, never gone', async () => {
+  const out = await sendToFcmTokens({
+    tokens: ['a', 'b', 'a'],
+    notification: gradeNotification({post: {id: 'p', taskTitle: 'T'}, score: 5}),
+    messaging: {
+      async sendEachForMulticast() {
+        throw new Error('app/invalid-credential');
+      },
+    },
+  });
+  assert.deepEqual(out, {sent: [], gone: [], failed: ['a', 'b']});
 });

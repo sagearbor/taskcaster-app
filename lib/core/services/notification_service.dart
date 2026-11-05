@@ -1,31 +1,39 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+
+import 'push/push_gateway.dart';
+import 'push/push_gateway_stub.dart' show fcmTokenWhenReady;
+import 'push/web_push_service.dart';
 
 /// App-level push-notification abstraction. Keeps `firebase_messaging` behind
 /// an interface so the rest of the app — and the tests — don't depend on it.
 ///
-/// The async game model relies on nudging players ("it's your turn",
-/// "deadline soon", "you've been judged"). Sending those pushes requires a
-/// server/Cloud Function targeting device tokens; this client side handles
-/// permission, token retrieval, and foreground message handling.
+/// Sending is server-side: `onGradeCreated` (functions/src/push.js) sends
+/// "you got graded" to every FCM token on `push_subscriptions/{uid}`. This
+/// client side keeps that token store current and handles foreground
+/// delivery. It never ASKS for permission: that happens on the Posted screen
+/// after the player's first post (PushOptInCard), the same as on web.
 abstract class NotificationService {
-  /// Request permission and wire up message handlers. Must never throw — a
-  /// failure here should not block app startup.
+  /// Wire up message handlers and, if the player has ALREADY granted
+  /// permission, refresh this device's token. Never prompts. Must never
+  /// throw — a failure here should not block app startup.
   Future<void> initialize();
 
   /// The FCM registration token for this device, or null if unavailable.
   Future<String?> getToken();
 
-  /// Persist this device's FCM token onto `users/{uid}.fcmTokens` (a map keyed
-  /// by token) so a future server/Cloud Function can target the user's devices.
-  /// Best-effort — must never throw. No-op when there is no token. Nothing
-  /// sends push messages yet; this only prepares the token store.
+  /// Persist this device's FCM token onto
+  /// `push_subscriptions/{uid}.fcmTokens.{token}`, where the grade push
+  /// Cloud Function reads it. Only when notification permission is already
+  /// granted, and never on web (web uses VAPID subscriptions instead).
+  /// Best-effort — must never throw.
   Future<void> registerToken(String uid);
 
-  /// Whether the user has granted notification permission.
+  /// Prompt for notification permission; whether it is granted.
   Future<bool> requestPermission();
 
   void dispose();
@@ -50,20 +58,46 @@ class MockNotificationService implements NotificationService {
 }
 
 /// Real Firebase Cloud Messaging implementation. Degrades gracefully: any
-/// failure (e.g. web without a configured VAPID key, or a platform without
-/// Firebase set up) is swallowed so it never crashes the app.
+/// failure (a platform without Firebase set up, a simulator without APNs) is
+/// swallowed so it never crashes the app.
 class FcmNotificationService implements NotificationService {
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FirebaseFirestore _firestore;
+  final FirebaseFirestore? _injectedFirestore;
+  final String? Function() _currentUid;
+  final Future<bool> Function() _isPermitted;
+  final Future<String?> Function() _tokenSource;
+  final bool _isWeb;
   StreamSubscription<RemoteMessage>? _foregroundSub;
+  StreamSubscription<String>? _tokenRefreshSub;
+  final Set<String> _legacyCleaned = {};
 
-  FcmNotificationService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  /// The seams are for tests; production uses the Firebase singletons.
+  FcmNotificationService({
+    FirebaseFirestore? firestore,
+    String? Function()? currentUid,
+    Future<bool> Function()? isPermitted,
+    Future<String?> Function()? tokenSource,
+    bool? isWeb,
+  })  : _injectedFirestore = firestore,
+        _currentUid = currentUid ?? _firebaseUid,
+        _isPermitted = isPermitted ?? _fcmIsPermitted,
+        _tokenSource = tokenSource ?? fcmTokenWhenReady,
+        _isWeb = isWeb ?? kIsWeb;
+
+  FirebaseFirestore get _firestore =>
+      _injectedFirestore ?? FirebaseFirestore.instance;
+
+  static String? _firebaseUid() => fb.FirebaseAuth.instance.currentUser?.uid;
+
+  static Future<bool> _fcmIsPermitted() async {
+    final s = await FirebaseMessaging.instance.getNotificationSettings();
+    return s.authorizationStatus == AuthorizationStatus.authorized ||
+        s.authorizationStatus == AuthorizationStatus.provisional;
+  }
 
   @override
   Future<bool> requestPermission() async {
     try {
-      final settings = await _messaging.requestPermission(
+      final settings = await FirebaseMessaging.instance.requestPermission(
         alert: true,
         badge: true,
         sound: true,
@@ -78,24 +112,50 @@ class FcmNotificationService implements NotificationService {
 
   @override
   Future<void> initialize() async {
+    // Web push is VAPID (web/push.js); FCM on web would need a console-only
+    // Web Push certificate and its getToken() would itself prompt.
+    if (_isWeb) return;
     try {
-      await requestPermission();
+      final messaging = FirebaseMessaging.instance;
+      // iOS shows nothing for a push that arrives while the app is open
+      // unless told to; a grade landing mid-session should still be seen.
+      await messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
       _foregroundSub = FirebaseMessaging.onMessage.listen((message) {
-        // Foreground delivery — surfacing an in-app banner is a UI follow-up.
         final n = message.notification;
         if (n != null) {
           debugPrint('FCM foreground message: ${n.title} — ${n.body}');
         }
       });
+      // Tokens rotate (app restore, FCM housekeeping). Re-store the new one,
+      // or grades go to a token the server will soon prune as dead.
+      _tokenRefreshSub = messaging.onTokenRefresh.listen((token) {
+        final uid = _currentUid();
+        if (uid != null && uid.isNotEmpty) {
+          unawaited(_storeToken(uid, token));
+        }
+      });
     } catch (e) {
       debugPrint('NotificationService.initialize failed: $e');
+    }
+    // Players who granted permission before tokens moved off users/{uid}
+    // (or before the opt-in card existed) never see the card again, since
+    // there is nothing left to ask. Register them here instead.
+    try {
+      final uid = _currentUid();
+      if (uid != null && uid.isNotEmpty) await registerToken(uid);
+    } catch (e) {
+      debugPrint('NotificationService.initialize registerToken failed: $e');
     }
   }
 
   @override
   Future<String?> getToken() async {
     try {
-      return await _messaging.getToken();
+      return await _tokenSource();
     } catch (e) {
       debugPrint('NotificationService.getToken failed: $e');
       return null;
@@ -104,23 +164,49 @@ class FcmNotificationService implements NotificationService {
 
   @override
   Future<void> registerToken(String uid) async {
-    if (uid.isEmpty) return;
+    if (uid.isEmpty || _isWeb) return;
     try {
+      // Not opted in: storing a token would only make the server send pushes
+      // the OS then refuses to show.
+      if (!await _isPermitted()) return;
       final token = await getToken();
       if (token == null || token.isEmpty) return;
-      // Store under a map keyed by the token so multiple devices coexist and a
-      // re-registration of the same token is a harmless no-op overwrite.
-      await _firestore.collection('users').doc(uid).set({
-        'fcmTokens': {token: FieldValue.serverTimestamp()},
-      }, SetOptions(merge: true));
+      await _storeToken(uid, token);
     } catch (e) {
       // Best-effort: never let token registration disrupt sign-in.
       debugPrint('NotificationService.registerToken failed: $e');
     }
   }
 
+  Future<void> _storeToken(String uid, String token) async {
+    try {
+      await _firestore
+          .collection(WebPushService.collection)
+          .doc(uid)
+          .set(WebPushService.fieldsFor(FcmRegistration(token)),
+              SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('NotificationService._storeToken failed: $e');
+      return;
+    }
+    // Tokens used to live on users/{uid}, which any signed-in user can read.
+    // Remove the legacy copy now that the private one exists, once per
+    // process. Best-effort: the field is simply absent for most people.
+    if (_legacyCleaned.contains(uid)) return;
+    _legacyCleaned.add(uid);
+    try {
+      await _firestore
+          .collection('users')
+          .doc(uid)
+          .update({'fcmTokens': FieldValue.delete()});
+    } catch (_) {
+      // No users doc, or no field: nothing to clean up.
+    }
+  }
+
   @override
   void dispose() {
     _foregroundSub?.cancel();
+    _tokenRefreshSub?.cancel();
   }
 }

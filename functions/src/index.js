@@ -20,7 +20,8 @@ const os = require('os');
 const path = require('path');
 
 const {initializeApp} = require('firebase-admin/app');
-const {getFirestore, FieldValue} = require('firebase-admin/firestore');
+const {getFirestore, FieldValue, FieldPath} = require('firebase-admin/firestore');
+const {getMessaging} = require('firebase-admin/messaging');
 const {getStorage} = require('firebase-admin/storage');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {onDocumentCreated} = require('firebase-functions/v2/firestore');
@@ -30,12 +31,7 @@ const logger = require('firebase-functions/logger');
 
 const montage = require('./montage');
 const {hasDrawtext} = require('./ffmpeg');
-const {
-  VAPID_PUBLIC_KEY,
-  gradeNotification,
-  shouldNotify,
-  sendToSubscriptions,
-} = require('./push');
+const {deliverGradePush, firestoreStore} = require('./push');
 const {
   MAX_CLIPS,
   montageDocId,
@@ -82,7 +78,6 @@ const PUSH_OPTS = {
 const MONTAGES = 'montages';
 const FEED_POSTS = 'feed_posts';
 const GRADES = 'grades';
-const PUSH_SUBSCRIPTIONS = 'push_subscriptions';
 
 const db = () => getFirestore();
 const bucket = () => getStorage().bucket();
@@ -179,7 +174,8 @@ exports.renderMontageNow = onCall({...RENDER_OPTS, maxInstances: 1}, async (requ
 });
 
 /**
- * "You got graded" web push.
+ * "You got graded" push, to the browser (VAPID) and to the iOS/Android app
+ * (FCM). All the logic lives in push.js#deliverGradePush; this is plumbing.
  *
  * Fires on the grade document, not on the post. A grade is written as
  * `feed_posts/{postId}/grades/{graderUid}` in the same transaction that bumps
@@ -196,57 +192,15 @@ exports.onGradeCreated = onDocumentCreated(
     const {postId, graderUid} = event.params;
     const score = snap.data() ? snap.data().score : null;
 
-    const postSnap = await db().collection(FEED_POSTS).doc(postId).get();
-    if (!postSnap.exists) {
-      logger.warn('push: graded post is gone', {postId});
-      return;
-    }
-    const post = {id: postId, ...postSnap.data()};
-
-    const verdict = shouldNotify({post, graderUid});
-    if (!verdict.ok) {
-      logger.info('push: skipped', {postId, reason: verdict.reason});
-      return;
-    }
-
-    const subsRef = db().collection(PUSH_SUBSCRIPTIONS).doc(post.userId);
-    const subsSnap = await subsRef.get();
-    const subscriptions = subsSnap.exists ? subsSnap.data().subs || {} : {};
-    if (!Object.keys(subscriptions).length) {
-      // The overwhelmingly common case: the player never opted in. Not a
-      // problem, and not worth a warning.
-      logger.info('push: no subscriptions', {postId, uid: post.userId});
-      return;
-    }
-
-    const privateKey = process.env.VAPID_PRIVATE_KEY;
-    if (!privateKey) {
-      logger.error('push: VAPID_PRIVATE_KEY is not set; cannot send');
-      return;
-    }
-
-    const notification = gradeNotification({post, score});
-    const result = await sendToSubscriptions({
-      subscriptions,
-      notification,
-      keys: {publicKey: VAPID_PUBLIC_KEY, privateKey},
-    });
-
-    // Drop subscriptions the push service says are permanently gone, so a
-    // cleared browser does not cost a failed request on every future grade.
-    if (result.gone.length) {
-      const deletions = {};
-      for (const id of result.gone) deletions[`subs.${id}`] = FieldValue.delete();
-      await subsRef.update(deletions);
-    }
-
-    logger.info('push: sent', {
+    await deliverGradePush({
+      store: firestoreStore({db: db(), FieldValue, FieldPath}),
+      messaging: getMessaging(),
       postId,
-      uid: post.userId,
-      sent: result.sent.length,
-      gone: result.gone.length,
-      failed: result.failed.length,
-      skipped: result.skipped.length,
+      graderUid,
+      score,
+      vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,
+      nowMs: Date.now(),
+      logger,
     });
   },
 );

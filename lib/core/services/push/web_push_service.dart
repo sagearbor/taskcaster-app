@@ -1,12 +1,14 @@
 /// "Tell me when someone grades my clip."
 ///
-/// Ties the browser Push API ([PushGateway]) to the store the Cloud Function
-/// reads: `push_subscriptions/{uid}.subs.{id}`.
+/// Ties the platform's push permission ([PushGateway]) to the store the Cloud
+/// Function reads, on every platform despite the historical name:
+///   web          `push_subscriptions/{uid}.subs.{id}`        (VAPID)
+///   iOS/Android  `push_subscriptions/{uid}.fcmTokens.{token}` (FCM)
 ///
-/// Subscriptions live in their own collection rather than on `users/{uid}`
-/// because the rules let any signed-in user READ any user document, and a push
-/// endpoint is not something to hand out. `push_subscriptions` is readable and
-/// writable only by its owner.
+/// Both live in their own collection rather than on `users/{uid}` because the
+/// rules let any signed-in user READ any user document, and a push endpoint or
+/// device token is not something to hand out. `push_subscriptions` is
+/// readable and writable only by its owner.
 library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -41,11 +43,16 @@ class WebPushService {
   /// can do push AND has not already been answered either way.
   bool get canPrompt => _gateway.permission() == PushPermission.prompt;
 
-  /// Whether this browser is already subscribed.
+  /// Whether this browser / device is already opted in.
   bool get isEnabled => _gateway.permission() == PushPermission.granted;
 
-  /// Prompt, subscribe, and persist. Safe to call twice: the subscription id
-  /// is derived from the endpoint, so a re-subscribe overwrites its own entry.
+  /// Re-read the permission state. On iOS/Android that is an async platform
+  /// call, so [canPrompt] stays false until this completes once.
+  Future<void> refresh() => _gateway.refresh();
+
+  /// Prompt, subscribe, and persist. Safe to call twice: a browser
+  /// subscription is keyed by a hash of its endpoint and an FCM token by
+  /// itself, so a re-subscribe overwrites its own entry.
   Future<PushOptInResult> enable(String uid) async {
     if (uid.isEmpty) return PushOptInResult.failed;
     if (_gateway.permission() == PushPermission.unsupported) {
@@ -62,10 +69,10 @@ class WebPushService {
     }
 
     try {
-      await _firestore.collection(collection).doc(uid).set({
-        'subs': {subscription.id: subscription.toMap()},
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _firestore
+          .collection(collection)
+          .doc(uid)
+          .set(fieldsFor(subscription), SetOptions(merge: true));
       return PushOptInResult.enabled;
     } catch (e) {
       // The browser is subscribed but we could not record it. Say so rather
@@ -74,5 +81,22 @@ class WebPushService {
       debugPrint('WebPushService.enable failed to persist: $e');
       return PushOptInResult.failed;
     }
+  }
+
+  /// The merge-write that records [target] on `push_subscriptions/{uid}`.
+  /// Shared with `FcmNotificationService.registerToken` so the two writers of
+  /// `fcmTokens` can never disagree on its shape.
+  static Map<String, Object?> fieldsFor(PushTarget target) {
+    final entry = switch (target) {
+      PushSubscription s => {
+          'subs': {s.id: s.toMap()},
+        },
+      FcmRegistration f => {
+          // Keyed by the token itself: a re-registration of the same device
+          // is a harmless overwrite, and the server prunes dead ones by key.
+          'fcmTokens': {f.token: FieldValue.serverTimestamp()},
+        },
+    };
+    return {...entry, 'updatedAt': FieldValue.serverTimestamp()};
   }
 }

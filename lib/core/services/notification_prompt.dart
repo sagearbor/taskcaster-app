@@ -3,15 +3,15 @@ import 'dart:async';
 import '../di/service_locator.dart';
 import 'notification_service.dart';
 
-/// Defers the push-notification permission prompt until the player has
-/// actually reached the home screen.
+/// Runs push-notification setup once the player has reached the home screen.
 ///
-/// Previously `main()` awaited [NotificationService.initialize] before
-/// `runApp`, so on Android the very first thing a new player saw was the OS
-/// "Allow TaskCaster to send you notifications?" dialog over a blank grey
-/// window — before onboarding, before any explanation. Both stores' review
-/// guidelines ask for permission prompts in context; this asks once, after
-/// the first home-screen frame.
+/// Setup no longer ASKS for anything. It used to: on Android the OS
+/// "Allow TaskCaster to send you notifications?" dialog fired on the first
+/// home frame, before the player had posted a clip or had any reason to want
+/// a notification. The ask now lives on the Posted screen after the first
+/// post (PushOptInCard), on every platform, matching web. What remains here
+/// is [NotificationService.initialize]: foreground handlers, token-refresh
+/// tracking, and re-registering the token of someone who already said yes.
 class NotificationPrompt {
   NotificationPrompt._();
 
