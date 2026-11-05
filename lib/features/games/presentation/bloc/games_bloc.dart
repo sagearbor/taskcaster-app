@@ -146,14 +146,26 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
         initializedTasks[0] = initializedTasks[0].copyWith(deadline: firstTaskDeadline);
       }
 
-      // Create game object
+      // createGame seeds the doc with a fresh invite code that no other game
+      // holds (GameRepositoryImpl retries until it is unique); read it back
+      // so the full write below keeps that code rather than minting one.
+      final gameId = await gameRepository.createGame(
+        gameName,
+        user.id,
+        user.id,
+      );
+      final created = await gameRepository.getGameStream(gameId).first;
+      if (created == null) {
+        throw Exception('Quick Play game vanished right after it was created');
+      }
+
       final game = Game(
-        id: '', // Firestore will generate
+        id: gameId,
         gameName: gameName,
         creatorId: user.id,
         judgeId: user.id, // Creator is judge in Quick Play
         status: GameStatus.inProgress, // Skip lobby!
-        inviteCode: _generateInviteCode(),
+        inviteCode: created.inviteCode,
         players: [
           Player(
             userId: user.id,
@@ -171,17 +183,8 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
         gameKind: Game.kindQuick,
       );
 
-      // Create in Firestore via updateGame (since createGame doesn't support full Game objects)
-      // First create basic game
-      final gameId = await gameRepository.createGame(
-        gameName,
-        user.id,
-        user.id,
-      );
-
-      // Then update with full game data including tasks
-      final completeGame = game.copyWith(id: gameId);
-      await gameRepository.updateGame(gameId, completeGame);
+      // Then write the full game (tasks, in progress) over the seed doc.
+      await gameRepository.updateGame(gameId, game);
 
       emit(QuickPlaySuccess(gameId: gameId));
     } catch (e) {
@@ -326,12 +329,6 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     final adj = adjectives[random.nextInt(adjectives.length)];
     final noun = nouns[random.nextInt(nouns.length)];
     return '$adj $noun #${random.nextInt(9999).toString().padLeft(4, '0')}';
-  }
-
-  String _generateInviteCode() {
-    final random = Random();
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    return List.generate(6, (_) => chars[random.nextInt(chars.length)]).join();
   }
 
   List<Task> _getRandomTasks({required int count}) {
