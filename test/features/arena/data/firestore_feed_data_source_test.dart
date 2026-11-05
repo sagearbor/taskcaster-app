@@ -1,10 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskcaster_app/core/models/submission.dart';
 import 'package:taskcaster_app/features/arena/data/datasources/firestore_feed_data_source.dart';
 import 'package:taskcaster_app/features/arena/data/repositories/feed_repository_impl.dart';
 import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
-import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 FeedPost makePost({
   String id = '',
@@ -157,46 +157,156 @@ void main() {
     );
   });
 
-  test('ensureHouseEntries seeds deterministic ids and is idempotent',
+  test('ensureHouseEntries is a no-op on Firestore (Admin SDK seeds them)',
       () async {
     await repo.ensureHouseEntries();
-    final first = await firestore.collection('feed_posts').get();
-    expect(first.docs.length, StarterPackData.houseEntries.length);
-    expect(
-      first.docs.map((d) => d.id),
-      contains('house-starter-01-v2'),
-    );
-
-    await repo.ensureHouseEntries();
-    final second = await firestore.collection('feed_posts').get();
-    expect(second.docs.length, first.docs.length);
+    final docs = await firestore.collection('feed_posts').get();
+    expect(docs.docs, isEmpty);
   });
 
-  test('re-seeding keeps grades the crowd has already given', () async {
-    await repo.ensureHouseEntries();
-    await repo.gradePost(
-        postId: 'house-starter-01-v2', graderId: 'me', score: 5);
+  test('createPost stamps createdAt with the server clock, not the device',
+      () async {
+    final id = await repo.createPost(makePost(minutesOld: 60 * 24 * 365));
+    final raw =
+        (await firestore.collection('feed_posts').doc(id).get()).data()!;
+    expect(raw['createdAt'], isA<Timestamp>());
+    final post = (await repo.watchPost(id).first)!;
+    expect(
+      DateTime.now().difference(post.createdAt).inMinutes.abs(),
+      lessThan(5),
+    );
+  });
 
-    await repo.ensureHouseEntries();
+  /// Writes a raw document, bypassing createPost (and its server timestamp).
+  Future<void> putRaw(String id, Map<String, dynamic> overrides) {
+    return firestore.collection('feed_posts').doc(id).set({
+      ...makePost(userId: 'other').toMap()..remove('id'),
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 9, 1)),
+      ...overrides,
+    });
+  }
 
-    final post = await repo.watchPost('house-starter-01-v2').first;
-    expect(post!.gradeCount, 1);
-    expect(post.gradeSum, 5);
-    expect(post.graderIds, ['me']);
+  test('a legacy ISO-string createdAt still reads', () async {
+    await putRaw('legacy', {'createdAt': '2026-09-01T10:00:00.000Z'});
+    final post = (await repo.watchPost('legacy').first)!;
+    expect(post.createdAt, DateTime.parse('2026-09-01T10:00:00.000Z'));
+  });
+
+  test('tapPost names the bucket it moves in lastTapSecond', () async {
+    final id = await repo.createPost(makePost(userId: 'other'));
+    await repo.tapPost(id, atSecond: 6);
+    final raw =
+        (await firestore.collection('feed_posts').doc(id).get()).data()!;
+    expect(raw['lastTapSecond'], '6');
+    expect(raw['tapSeconds'], {'6': 1});
   });
 
   test('the queue is gated, filtered and ordered off a real query', () async {
-    await repo.createPost(makePost(id: 'mine', userId: 'me'));
-    await repo.createPost(
-        makePost(id: 'locked', userId: 'other', taskId: 'starter-09-v2'));
-    await repo.createPost(
-        makePost(id: 'newer', userId: 'other', minutesOld: 1));
-    await repo.createPost(
-        makePost(id: 'older', userId: 'other', minutesOld: 30));
+    await putRaw('mine', {'userId': 'me'});
+    await putRaw('locked', {'taskId': 'starter-09-v2'});
+    await putRaw('older',
+        {'createdAt': Timestamp.fromDate(DateTime.utc(2026, 9, 1, 10))});
+    await putRaw('newer',
+        {'createdAt': Timestamp.fromDate(DateTime.utc(2026, 9, 1, 11))});
 
     final queue = await repo
         .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
         .first;
     expect(queue.map((p) => p.id), ['newer', 'older']);
+  });
+
+  test('a malformed post does not break the queue stream', () async {
+    await putRaw('good', {});
+    // The ordered-by fields stay well-typed here only because
+    // fake_cloud_firestore throws comparing mixed types in orderBy (real
+    // Firestore orders by type instead); everything else is junk.
+    await putRaw('bad', {
+      'graderIds': 'not-a-list',
+      'tapSeconds': ['nope'],
+      'tapCount': 'lots',
+      'displayName': 42,
+      'isHouse': 'yes',
+      'mediaType': 7,
+    });
+
+    final queue = await repo
+        .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
+        .first;
+    expect(queue.map((p) => p.id), containsAll(['good', 'bad']));
+  });
+
+  test('a post with a junk createdAt / counters still reads', () async {
+    await putRaw('bad', {
+      'createdAt': 12.5, // neither Timestamp nor ISO string
+      'gradeCount': 'three',
+      'gradeSum': null,
+    });
+    final post = (await repo.watchPost('bad').first)!;
+    expect(post.createdAt, FeedPost.unknownCreatedAt);
+    expect(post.gradeCount, 0);
+    expect(post.gradeSum, 0);
+  });
+
+  test('40 posts, newest 30 graded: the 10 older ungraded ones still show',
+      () async {
+    final start = DateTime.utc(2026, 9, 1);
+    for (var i = 0; i < 40; i++) {
+      final graded = i >= 10; // p10..p39 are the newest 30
+      await putRaw('p$i', {
+        'userId': 'author-$i',
+        'createdAt': Timestamp.fromDate(start.add(Duration(minutes: i))),
+        'gradeCount': graded ? 1 : 0,
+        'gradeSum': graded ? 3 : 0,
+        'graderIds': graded ? ['someone-else'] : <String>[],
+      });
+    }
+
+    final queue = await repo
+        .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
+        .first;
+    // Ungraded first, so the 10 old ungraded entries lead the queue.
+    expect(queue.take(10).map((p) => p.id).toSet(),
+        {for (var i = 0; i < 10; i++) 'p$i'});
+  });
+
+  test('the queue pages past the viewer\'s own posts to fill up', () async {
+    final start = DateTime.utc(2026, 9, 1);
+    // p3..p7: the viewer's own (newest); p0..p2: other people's (oldest).
+    for (var i = 0; i < 8; i++) {
+      await putRaw('p$i', {
+        'userId': i < 3 ? 'other' : 'me',
+        'createdAt': Timestamp.fromDate(start.add(Duration(minutes: i))),
+      });
+    }
+    final queue = await repo
+        .watchQueue(
+          viewerId: 'me',
+          unlockedTaskIds: const {'starter-01-v2'},
+          limit: 3,
+        )
+        .first;
+    expect(queue.map((p) => p.id), ['p2', 'p1', 'p0']);
+  });
+
+  test('the queue covers more than 10 unlocked tasks (whereIn chunks)',
+      () async {
+    final tasks = [for (var i = 0; i < 23; i++) 'task-$i'];
+    for (final t in tasks) {
+      await putRaw('post-$t', {'taskId': t});
+    }
+    final queue = await repo
+        .watchQueue(viewerId: 'me', unlockedTaskIds: tasks.toSet(), limit: 50)
+        .first;
+    expect(queue.length, 23);
+  });
+
+  test('Watch together reads only the one game\'s entries for the task',
+      () async {
+    await putRaw('g1', {'gameId': 'game-1'});
+    await putRaw('g2', {'gameId': 'game-2'});
+    final posts = await repo
+        .watchPostsForTask(gameId: 'game-1', taskId: 'starter-01-v2')
+        .first;
+    expect(posts.map((p) => p.id), ['g1']);
   });
 }

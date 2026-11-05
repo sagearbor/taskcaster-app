@@ -2,7 +2,17 @@
 // smoke test that the pre-existing photo-post create and grade paths still
 // work. Run via test/rules/run.sh (firebase emulators:exec).
 const { assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, updateDoc, deleteDoc, increment } = require('firebase/firestore');
+const {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
+  increment,
+  arrayUnion,
+  serverTimestamp,
+  writeBatch,
+} = require('firebase/firestore');
 const { makeTestEnv } = require('./helpers');
 
 describe('firestore.rules — feed_posts (video)', function () {
@@ -34,6 +44,7 @@ describe('firestore.rules — feed_posts (video)', function () {
       boosted: false,
       tapCount: 0,
       tapSeconds: {},
+      createdAt: serverTimestamp(),
       ...overrides,
     };
   }
@@ -49,9 +60,15 @@ describe('firestore.rules — feed_posts (video)', function () {
     const owner = testEnv.authenticatedContext('u1').firestore();
     await assertSucceeds(setDoc(doc(owner, 'feed_posts/grade1'), photoPost()));
     const grader = testEnv.authenticatedContext('u2').firestore();
-    await assertSucceeds(
-      setDoc(doc(grader, 'feed_posts/grade1/grades/u2'), { score: 4 })
-    );
+    // A grade is the grade doc AND the counter bump, in one commit.
+    const batch = writeBatch(grader);
+    batch.set(doc(grader, 'feed_posts/grade1/grades/u2'), { score: 4 });
+    batch.update(doc(grader, 'feed_posts/grade1'), {
+      gradeCount: increment(1),
+      gradeSum: increment(4),
+      graderIds: arrayUnion('u2'),
+    });
+    await assertSucceeds(batch.commit());
   });
 
   // ---- New: video post create ----
@@ -84,56 +101,6 @@ describe('firestore.rules — feed_posts (video)', function () {
     );
   });
 
-  it('a house video post with a house/ storage path is allowed', async () => {
-    const db = testEnv.authenticatedContext('u3').firestore();
-    await assertSucceeds(
-      setDoc(
-        doc(db, 'feed_posts/houseVidOk'),
-        photoPost({
-          userId: 'house',
-          isHouse: true,
-          mediaType: 'video',
-          photoData: null,
-          videoStoragePath: 'house/starter-01.mp4',
-        })
-      )
-    );
-  });
-
-  it('a house video post claiming a submissions/ (real uid) path is denied', async () => {
-    const db = testEnv.authenticatedContext('u3').firestore();
-    await assertFails(
-      setDoc(
-        doc(db, 'feed_posts/houseVid'),
-        photoPost({
-          userId: 'house',
-          isHouse: true,
-          mediaType: 'video',
-          photoData: null,
-          videoStoragePath: 'submissions/u3/20260912/0',
-        })
-      )
-    );
-  });
-
-  it('a house re-seed update (house -> house) may change mediaType/videoUrl/videoStoragePath/text', async () => {
-    const seeder = testEnv.authenticatedContext('u3').firestore();
-    await setDoc(
-      doc(seeder, 'feed_posts/houseReseed'),
-      photoPost({ userId: 'house', isHouse: true, photoData: null })
-    );
-    const reseeder = testEnv.authenticatedContext('u4').firestore();
-    await assertSucceeds(
-      updateDoc(doc(reseeder, 'feed_posts/houseReseed'), {
-        mediaType: 'video',
-        videoUrl:
-          'https://firebasestorage.googleapis.com/v0/b/taskmaster-app-3d480.firebasestorage.app/o/house%2Fstarter-01.mp4?alt=media',
-        videoStoragePath: 'house/starter-01.mp4',
-        text: 'Egg made it 4 steps. Narration made it 30 seconds.',
-      })
-    );
-  });
-
   // ---- New: tapBump with tapSeconds ----
 
   it('a non-owner update of {tapCount +1, tapSeconds.3 +1} is allowed', async () => {
@@ -144,6 +111,7 @@ describe('firestore.rules — feed_posts (video)', function () {
       updateDoc(doc(other, 'feed_posts/tapOk'), {
         tapCount: increment(1),
         'tapSeconds.3': increment(1),
+        lastTapSecond: '3',
       })
     );
   });
@@ -170,11 +138,19 @@ describe('firestore.rules — feed_posts (video)', function () {
     );
   });
 
-  it('the owner may still rewrite their own post', async () => {
+  it('the owner may edit the caption of their own post', async () => {
     const owner = testEnv.authenticatedContext('u1').firestore();
     await setDoc(doc(owner, 'feed_posts/ownRewrite'), photoPost());
     await assertSucceeds(
-      updateDoc(doc(owner, 'feed_posts/ownRewrite'), { photoData: 'newphoto' })
+      updateDoc(doc(owner, 'feed_posts/ownRewrite'), { caption: 'new caption' })
+    );
+  });
+
+  it('the owner may NOT swap the media of their own post', async () => {
+    const owner = testEnv.authenticatedContext('u1').firestore();
+    await setDoc(doc(owner, 'feed_posts/ownSwap'), photoPost());
+    await assertFails(
+      updateDoc(doc(owner, 'feed_posts/ownSwap'), { photoData: 'newphoto' })
     );
   });
 });

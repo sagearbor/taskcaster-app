@@ -41,9 +41,14 @@ class MockFeedDataSource implements FeedRemoteDataSource {
     Iterable<Map<String, dynamic>> source,
   ) {
     final list = source.map((p) => Map<String, dynamic>.from(p)).toList();
-    list.sort((a, b) => (b['createdAt'] as String? ?? '')
-        .compareTo(a['createdAt'] as String? ?? ''));
+    list.sort((a, b) => _createdAtKey(b).compareTo(_createdAtKey(a)));
     return list;
+  }
+
+  /// Sortable form of whatever `createdAt` holds (unreadable -> oldest).
+  static String _createdAtKey(Map<String, dynamic> p) {
+    final v = p['createdAt'];
+    return v is String ? v : '';
   }
 
   @override
@@ -65,9 +70,41 @@ class MockFeedDataSource implements FeedRemoteDataSource {
     return id;
   }
 
+  /// Mirrors the Firestore query: per chunk of [whereInLimit] task ids,
+  /// fewest grades first, then newest, at most [limit] rows.
   @override
-  Stream<List<Map<String, dynamic>>> watchRecentPosts({int limit = 30}) {
-    return _watch(() => _sortedNewestFirst(_posts).take(limit).toList());
+  Stream<QueuePage> watchQueuePage({
+    required List<String> taskIds,
+    required int limit,
+  }) {
+    return _watch(() {
+      final rows = <Map<String, dynamic>>[];
+      var hasMore = false;
+      for (var i = 0; i < taskIds.length; i += whereInLimit) {
+        final chunk = taskIds.skip(i).take(whereInLimit).toSet();
+        final matching = _sortedNewestFirst(
+          _posts.where((p) => chunk.contains(p['taskId'])),
+        );
+        // List.sort is not stable; break gradeCount ties on recency
+        // explicitly.
+        final order = {
+          for (var j = 0; j < matching.length; j++) matching[j]['id']: j,
+        };
+        matching.sort((a, b) {
+          final byGrades = _count(a).compareTo(_count(b));
+          if (byGrades != 0) return byGrades;
+          return order[a['id']]!.compareTo(order[b['id']]!);
+        });
+        if (matching.length >= limit) hasMore = true;
+        rows.addAll(matching.take(limit));
+      }
+      return QueuePage(rows, hasMore: hasMore);
+    });
+  }
+
+  static int _count(Map<String, dynamic> p) {
+    final v = p['gradeCount'];
+    return v is num ? v.toInt() : 0;
   }
 
   @override

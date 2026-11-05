@@ -13,6 +13,9 @@ abstract class FeedRepository {
   /// the viewer has submitted, in any game). Excludes the viewer's own posts
   /// and posts the viewer has already graded. House posts are included.
   /// Order: boosted first, then fewest grades, then tapCount desc, then newest.
+  /// At most [limit] entries; the read pages past excluded rows (own posts,
+  /// already graded) so older ungraded entries are never hidden. Rows that
+  /// fail to parse are skipped, never surfaced as a stream error.
   Stream<List<FeedPost>> watchQueue({
     required String viewerId,
     required Set<String> unlockedTaskIds,

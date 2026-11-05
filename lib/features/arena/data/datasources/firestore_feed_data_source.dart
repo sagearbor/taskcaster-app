@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'feed_remote_data_source.dart';
@@ -5,9 +7,15 @@ import 'feed_remote_data_source.dart';
 /// The Arena on Firestore: `feed_posts/{postId}` with a `grades/{graderUid}`
 /// subcollection.
 ///
-/// Every query here is a single-field filter (or a plain orderBy), with the
-/// reveal gate, own-post/already-graded exclusions and queue ordering applied
-/// client-side by `FeedRepositoryImpl` — so NO composite index is needed.
+/// Composite indexes this needs (see firestore.indexes.json):
+///   * queue — `taskId` (whereIn) + `gradeCount` ASC + `createdAt` DESC;
+///   * Watch together — `gameId` == + `taskId` ==.
+/// Own-post/already-graded exclusions and the final queue ordering (boosted,
+/// taps) are applied client-side by `FeedRepositoryImpl`.
+///
+/// `createdAt` is written as `FieldValue.serverTimestamp()` and the rules
+/// require exactly that, so no client clock can reorder the Arena. Older
+/// documents still hold ISO-8601 strings; `FeedPost.fromMap` reads both.
 class FirestoreFeedDataSource implements FeedRemoteDataSource {
   final FirebaseFirestore _firestore;
 
@@ -39,6 +47,8 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
   Future<String> createPost(Map<String, dynamic> data) async {
     final payload = Map<String, dynamic>.from(data);
     final id = payload.remove('id') as String?;
+    // The server's clock, never the device's — the rules insist on it.
+    payload['createdAt'] = FieldValue.serverTimestamp();
     if (id != null && id.isNotEmpty) {
       await _posts.doc(id).set(payload);
       return id;
@@ -48,12 +58,68 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
   }
 
   @override
-  Stream<List<Map<String, dynamic>>> watchRecentPosts({int limit = 30}) {
-    return _posts
-        .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map(_rows);
+  Stream<QueuePage> watchQueuePage({
+    required List<String> taskIds,
+    required int limit,
+  }) {
+    if (taskIds.isEmpty) {
+      return Stream.value(const QueuePage([], hasMore: false));
+    }
+    final streams = [
+      for (var i = 0; i < taskIds.length; i += whereInLimit)
+        _posts
+            .where(
+              'taskId',
+              whereIn: taskIds.sublist(
+                i,
+                i + whereInLimit > taskIds.length
+                    ? taskIds.length
+                    : i + whereInLimit,
+              ),
+            )
+            .orderBy('gradeCount')
+            .orderBy('createdAt', descending: true)
+            .limit(limit)
+            .snapshots()
+            .map(_rows),
+    ];
+    return _combineLatest(streams).map((perChunk) => QueuePage(
+          [for (final rows in perChunk) ...rows],
+          hasMore: perChunk.any((rows) => rows.length >= limit),
+        ));
+  }
+
+  /// Emits the latest value of every stream once each has emitted at least
+  /// once, and again whenever any of them changes.
+  static Stream<List<T>> _combineLatest<T>(List<Stream<T>> streams) {
+    if (streams.length == 1) return streams.single.map((v) => [v]);
+    late final StreamController<List<T>> controller;
+    final subs = <StreamSubscription<T>>[];
+    final latest = List<T?>.filled(streams.length, null);
+    final seen = List<bool>.filled(streams.length, false);
+
+    controller = StreamController<List<T>>(
+      onListen: () {
+        for (var i = 0; i < streams.length; i++) {
+          subs.add(streams[i].listen(
+            (value) {
+              latest[i] = value;
+              seen[i] = true;
+              if (seen.every((s) => s)) {
+                controller.add(latest.cast<T>().toList());
+              }
+            },
+            onError: controller.addError,
+          ));
+        }
+      },
+      onCancel: () async {
+        for (final sub in subs) {
+          await sub.cancel();
+        }
+      },
+    );
+    return controller.stream;
   }
 
   @override
@@ -61,11 +127,13 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
     String gameId,
     String taskId,
   ) {
-    // Single equality filter, then narrow to the game client-side.
+    // Both filters server-side: only this game's entries are downloaded, not
+    // every post of the task app-wide.
     return _posts
+        .where('gameId', isEqualTo: gameId)
         .where('taskId', isEqualTo: taskId)
         .snapshots()
-        .map((s) => _rows(s).where((r) => r['gameId'] == gameId).toList());
+        .map(_rows);
   }
 
   @override
@@ -103,9 +171,11 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
         throw StateError('Already graded');
       }
 
+      // The rules accept the grade doc only in the same commit as this exact
+      // counter bump, and the bump only alongside a NEW grade doc.
       tx.set(gradeRef, {
         'score': score,
-        'createdAt': DateTime.now().toIso8601String(),
+        'createdAt': FieldValue.serverTimestamp(),
       });
       tx.update(postRef, {
         'gradeCount': FieldValue.increment(1),
@@ -122,8 +192,11 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
       // A dotted key is a nested field path, so this bumps one bucket of the
       // tapSeconds map without reading or rewriting the rest of it — and it
       // lands in the same update as tapCount, which is what the Firestore
-      // rules require of a non-owner write.
+      // rules require of a tap.
       if (atSecond != null) 'tapSeconds.$atSecond': FieldValue.increment(taps),
+      // Names the one bucket this write moves, so the rules can check that it
+      // moved by exactly [taps] and that no other bucket changed.
+      if (atSecond != null) 'lastTapSecond': '$atSecond',
     });
   }
 
@@ -142,7 +215,8 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
     final hungry = snap.docs.where((d) {
       final data = d.data();
       if (data['boosted'] == true) return false;
-      return (data['gradeCount'] as int? ?? 0) < belowGradeCount;
+      final count = data['gradeCount'];
+      return (count is num ? count.toInt() : 0) < belowGradeCount;
     }).toList();
     if (hungry.isEmpty) return;
 
@@ -155,34 +229,11 @@ class FirestoreFeedDataSource implements FeedRemoteDataSource {
 
   @override
   Future<void> ensureHouseEntries(List<Map<String, dynamic>> posts) async {
-    // Deterministic doc ids (`house-<taskId>`) plus set(merge) make re-running
-    // this harmless: it refreshes the seeded copy and never duplicates.
-    for (final post in posts) {
-      final payload = Map<String, dynamic>.from(post);
-      final id = payload.remove('id') as String?;
-      if (id == null || id.isEmpty) continue;
-
-      final ref = _posts.doc(id);
-      final existing = await ref.get();
-      if (!existing.exists) {
-        // First seed: write the whole document, counters and all.
-        await ref.set(payload);
-        continue;
-      }
-      // Re-seed: refresh the copy, but never clobber the counters the crowd
-      // has already built up.
-      for (final key in const [
-        'gradeCount',
-        'gradeSum',
-        'graderIds',
-        'tapCount',
-        'tapSeconds',
-        'boosted',
-        'createdAt',
-      ]) {
-        payload.remove(key);
-      }
-      await ref.set(payload, SetOptions(merge: true));
-    }
+    // Deliberately a no-op. House posts carry crowd counters like any other
+    // post, so the rules deny every client create, rewrite or delete of them
+    // (otherwise anyone could reset or vandalise them). They are seeded with
+    // the Admin SDK by functions/scripts/seed_house_posts.js, from
+    // functions/scripts/house_posts.json, which is generated from
+    // FeedRepositoryImpl.houseEntryPosts() and kept in step by a test.
   }
 }
