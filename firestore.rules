@@ -14,6 +14,100 @@ service cloud.firestore {
     }
 
     // ---- Games ----
+    // Who may change what (WP-02). Scores live in players[].totalScore and
+    // are written only by the judge or the creator. Rules cannot walk the
+    // per-task maps inside `tasks`, so the app re-reads the game inside a
+    // transaction and changes only the caller's own entries there.
+
+    // Top-level fields this update changes.
+    function gameChangedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function gamePlayers(data) {
+      return data.get('players', []);
+    }
+
+    function gamePlayerIds(data) {
+      return data.get('playerIds', []);
+    }
+
+    // Already on the flat roster of uids.
+    function isGameMember() {
+      return gamePlayerIds(resource.data) is list &&
+             request.auth.uid in gamePlayerIds(resource.data);
+    }
+
+    // The judge: full rights, except handing the game (or the judge's chair,
+    // or the invite code) to someone else.
+    function isJudgeUpdate() {
+      return request.auth.uid == resource.data.judgeId &&
+             !gameChangedKeys().hasAny(['creatorId', 'judgeId', 'inviteCode']);
+    }
+
+    // A player records their own start / submission / skip. Only `tasks`
+    // moves: not the roster, not the scores, not status or ownership.
+    function isPlayerTaskUpdate() {
+      return isGameMember() && gameChangedKeys().hasOnly(['tasks']);
+    }
+
+    // A player leaves: exactly their own roster entry and uid go, every other
+    // entry stays byte-for-byte (so nobody's score moves on the way out), and
+    // their per-task statuses may be dropped from `tasks`.
+    function isLeave() {
+      let before = gamePlayers(resource.data);
+      let after = gamePlayers(request.resource.data);
+      let removed = before.removeAll(after);
+      return isGameMember() &&
+             gameChangedKeys().hasOnly(['players', 'playerIds', 'tasks']) &&
+             gamePlayerIds(request.resource.data) ==
+               gamePlayerIds(resource.data).removeAll([request.auth.uid]) &&
+             after.size() == before.size() - 1 &&
+             before.hasAll(after) &&
+             removed.size() == 1 &&
+             removed[0].userId == request.auth.uid;
+    }
+
+    // Lobby games take new players; Quick Play and the Starter Pack are
+    // created in progress and still do.
+    function isJoinable() {
+      return resource.data.status == 'lobby' ||
+             resource.data.get('gameKind', null) in ['quick', 'starter'];
+    }
+
+    function underMaxPlayers(count) {
+      let maxPlayers = resource.data.get('settings', {}).get('maxPlayers', null);
+      return maxPlayers == null || count <= maxPlayers;
+    }
+
+    // A non-member joins: appends exactly themselves, at score 0, to both
+    // rosters, and changes nothing else.
+    function isJoin() {
+      let before = gamePlayers(resource.data);
+      let after = gamePlayers(request.resource.data);
+      let added = after.removeAll(before);
+      return !isGameMember() &&
+             isJoinable() &&
+             gameChangedKeys().hasOnly(['players', 'playerIds']) &&
+             gamePlayerIds(request.resource.data) ==
+               gamePlayerIds(resource.data).concat([request.auth.uid]) &&
+             after.size() == before.size() + 1 &&
+             after.hasAll(before) &&
+             added.size() == 1 &&
+             added[0].keys().hasOnly(['userId', 'displayName', 'totalScore']) &&
+             added[0].userId == request.auth.uid &&
+             added[0].totalScore == 0 &&
+             underMaxPlayers(after.size());
+    }
+
+    // Cloning a public template bumps its popularity counter by exactly one.
+    function isCloneCountBump() {
+      return resource.data.get('isPublic', false) == true &&
+             gameChangedKeys().hasOnly(['cloneCount']) &&
+             request.resource.data.cloneCount ==
+               resource.data.get('cloneCount', 0) + 1;
+    }
+
     // Read: any signed-in user (needed for join-by-invite-code lookups).
     // Privacy of individual video submissions is enforced at the app level.
     match /games/{gameId} {
@@ -23,22 +117,15 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
                        request.resource.data.creatorId == request.auth.uid;
 
-      // The creator and judge have full update rights (scores, status, tasks).
-      // Now that games carry a flat playerIds array, an actual participant is
-      // also allowed to update (submitting answers, AR results). Anyone else
-      // may still write ONLY if they leave ownership/judge/invite code intact —
-      // this is what lets a NOT-yet-member join (they add themselves to
-      // players/playerIds without changing ownership) and blocks hijacking.
       allow update: if isSignedIn() && (
-        // Owner / judge: full rights.
-        request.auth.uid == resource.data.creatorId ||
-        request.auth.uid == resource.data.judgeId ||
-        // Existing participant (member of the flat playerIds list).
-        (resource.data.playerIds is list &&
-         request.auth.uid in resource.data.playerIds) ||
-        // Non-member (e.g. a joining player) may write only without seizing
-        // ownership, swapping the judge, or rewriting the invite code.
-        (unchanged('creatorId') && unchanged('judgeId') && unchanged('inviteCode'))
+        // Creator: full rights, but the game stays theirs.
+        (request.auth.uid == resource.data.creatorId &&
+         !gameChangedKeys().hasAny(['creatorId'])) ||
+        isJudgeUpdate() ||
+        isPlayerTaskUpdate() ||
+        isLeave() ||
+        isJoin() ||
+        isCloneCountBump()
       );
 
       // Only the creator can delete a game.

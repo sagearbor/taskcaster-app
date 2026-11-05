@@ -56,6 +56,7 @@ void main() {
           'players': [
             {'userId': currentUserId, 'displayName': 'Current User', 'totalScore': 0},
           ],
+          'playerIds': [currentUserId],
           'createdAt': DateTime.now().toIso8601String(),
         });
 
@@ -65,6 +66,7 @@ void main() {
           'players': [
             {'userId': 'other_user', 'displayName': 'Other User', 'totalScore': 0},
           ],
+          'playerIds': ['other_user'],
           'createdAt': DateTime.now().toIso8601String(),
         });
 
@@ -194,53 +196,54 @@ void main() {
       });
     });
 
-    group('joinGame', () {
-      test('should add player to game by invite code', () async {
-        // Arrange
-        final userId = 'new_user_123';
-        await fakeFirestore.collection('games').add({
+    group('findGameIdByInviteCode', () {
+      test('returns the id of the game carrying the code', () async {
+        final docRef = await fakeFirestore.collection('games').add({
           'gameName': 'Test Game',
           'inviteCode': 'JOIN123',
-          'players': [
-            {'userId': 'existing_user', 'displayName': 'Existing', 'totalScore': 0},
-          ],
         });
-
-        // Act
-        final gameId = await dataSource.joinGame('JOIN123', userId);
-
-        // Assert
-        expect(gameId, isNotEmpty);
-        final doc = await fakeFirestore.collection('games').doc(gameId).get();
-        final players = List.from(doc.data()?['players'] ?? []);
-        expect(players.length, 2);
-        expect(players.any((p) => p['userId'] == userId), isTrue);
+        expect(await dataSource.findGameIdByInviteCode('JOIN123'), docRef.id);
       });
 
-      test('should not duplicate player if already in game', () async {
-        // Arrange
-        final userId = 'existing_user';
-        await fakeFirestore.collection('games').add({
+      test('returns null for an unknown code', () async {
+        expect(await dataSource.findGameIdByInviteCode('INVALID'), isNull);
+      });
+    });
+
+    group('transactGame', () {
+      test('writes only the fields the mutation returns', () async {
+        final docRef = await fakeFirestore.collection('games').add({
           'gameName': 'Test Game',
-          'inviteCode': 'JOIN456',
-          'players': [
-            {'userId': userId, 'displayName': 'Existing', 'totalScore': 0},
-          ],
+          'status': 'lobby',
+          'currentTaskIndex': 0,
         });
 
-        // Act
-        final gameId = await dataSource.joinGame('JOIN456', userId);
+        await dataSource.transactGame(docRef.id, (current) {
+          expect(current['id'], docRef.id);
+          return {'currentTaskIndex': 1};
+        });
 
-        // Assert
-        final doc = await fakeFirestore.collection('games').doc(gameId).get();
-        final players = List.from(doc.data()?['players'] ?? []);
-        expect(players.length, 1);
+        final data =
+            (await fakeFirestore.collection('games').doc(docRef.id).get())
+                .data()!;
+        expect(data['currentTaskIndex'], 1);
+        expect(data['status'], 'lobby');
+        expect(data.containsKey('id'), isFalse);
       });
 
-      test('should throw exception for invalid invite code', () async {
-        // Act & Assert
-        expect(
-          () => dataSource.joinGame('INVALID', 'user_123'),
+      test('a null mutation writes nothing', () async {
+        final docRef =
+            await fakeFirestore.collection('games').add({'status': 'lobby'});
+        await dataSource.transactGame(docRef.id, (_) => null);
+        final data =
+            (await fakeFirestore.collection('games').doc(docRef.id).get())
+                .data()!;
+        expect(data, {'status': 'lobby'});
+      });
+
+      test('throws for a missing game', () async {
+        await expectLater(
+          dataSource.transactGame('missing', (_) => {'status': 'x'}),
           throwsException,
         );
       });

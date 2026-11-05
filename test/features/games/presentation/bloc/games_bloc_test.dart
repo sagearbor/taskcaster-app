@@ -363,6 +363,45 @@ void main() {
         createdAt: DateTime(2025, 1, 1),
       );
 
+      // createGame's seed doc, carrying the repository's unique invite code.
+      setUp(() {
+        when(() => mockGameRepository.getGameStream(any()))
+            .thenAnswer((invocation) => Stream.value(Game(
+                  id: invocation.positionalArguments[0] as String,
+                  gameName: 'seed',
+                  creatorId: testUser.id,
+                  judgeId: testUser.id,
+                  status: GameStatus.lobby,
+                  inviteCode: 'UNIQ23',
+                  createdAt: DateTime(2025, 1, 1),
+                  players: const [],
+                  tasks: const [],
+                  settings: GameSettings.quickPlay(),
+                )));
+      });
+
+      blocTest<GamesBloc, GamesState>(
+        'keeps the unique invite code createGame minted',
+        build: () {
+          when(() => mockAuthRepository.getCurrentUser())
+              .thenAnswer((_) async => testUser);
+          when(() => mockGameRepository.createGame(any(), any(), any()))
+              .thenAnswer((_) async => 'quick_game_123');
+          when(() => mockGameRepository.updateGame(any(), any()))
+              .thenAnswer((_) async {});
+          return gamesBloc;
+        },
+        act: (bloc) => bloc.add(const QuickPlayGame()),
+        verify: (_) {
+          final written = verify(() => mockGameRepository.updateGame(
+                'quick_game_123',
+                captureAny(),
+              )).captured.single as Game;
+          expect(written.inviteCode, 'UNIQ23');
+          expect(written.gameKind, Game.kindQuick);
+        },
+      );
+
       blocTest<GamesBloc, GamesState>(
         'emits [GamesLoading, QuickPlaySuccess] when quick play succeeds',
         build: () {
