@@ -185,6 +185,9 @@ class Game extends Equatable {
   /// True for the Starter Pack game (crowd-judged, solo, ten fixed tasks).
   bool get isStarter => gameKind == kindStarter;
 
+  /// Everyone grades everyone; there is no judge (WP-13).
+  bool get isGroupJudged => settings.isGroupJudged;
+
   bool get isInLobby => status == GameStatus.lobby;
   bool get isInProgress => status == GameStatus.inProgress;
   bool get isCompleted => status == GameStatus.completed;

@@ -94,6 +94,16 @@ test('the leaver\'s per-task status goes too (WP-02 leaveGame parity)', () => {
   assert.deepEqual(Object.keys(plan.data.tasks[0].playerStatuses), ['a']);
 });
 
+test('a group-graded game (WP-13) has no judge, and the departure does not mint one', () => {
+  const game = {
+    creatorId: 'u', judgeId: '', settings: {judgingMode: 'group'},
+    playerIds: ['u', 'b', 'c'], players: [player('u'), player('b'), player('c')],
+  };
+  const plan = planGameDeparture(game, 'u');
+  assert.equal(plan.data.creatorId, 'b');
+  assert.equal(plan.data.judgeId, undefined);
+});
+
 test('a legacy game without playerIds gets them from the remaining roster', () => {
   const game = {creatorId: 'a', judgeId: 'a', players: [player('a'), player('u'), player('b')]};
   const plan = planGameDeparture(game, 'u');

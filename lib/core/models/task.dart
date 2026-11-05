@@ -63,6 +63,12 @@ class Task extends Equatable {
   /// first half of the auto-generated caption. Null when a task has no twist.
   final String? twist;
 
+  /// Group-graded games (WP-13): entry author uid -> the uids who have graded
+  /// that entry so far. Written by the server's settle pass (never the
+  /// scores themselves, which stay anonymous); the app reads it to build each
+  /// player's grade queue. Empty for every judge-mode task.
+  final Map<String, List<String>> peerGraders;
+
   const Task({
     required this.id,
     required this.title,
@@ -81,6 +87,7 @@ class Task extends Equatable {
     this.submissionType = SubmissionType.any,
     this.rubric,
     this.twist,
+    this.peerGraders = const {},
   });
 
   factory Task.fromMap(Map<String, dynamic> map) {
@@ -125,6 +132,15 @@ class Task extends Equatable {
       ),
       rubric: map['rubric'] as String?,
       twist: map['twist'] as String?,
+      peerGraders: (map['peerGraders'] as Map<String, dynamic>?)?.map(
+            (key, value) => MapEntry(
+              key,
+              (value as List<dynamic>? ?? const [])
+                  .map((e) => e as String)
+                  .toList(),
+            ),
+          ) ??
+          const {},
     );
   }
 
@@ -149,6 +165,8 @@ class Task extends Equatable {
       'submissionType': submissionType.name,
       'rubric': rubric,
       'twist': twist,
+      // Round-trip it: clients rewrite the whole tasks array.
+      'peerGraders': peerGraders,
     };
   }
 
@@ -170,6 +188,7 @@ class Task extends Equatable {
     SubmissionType? submissionType,
     String? rubric,
     String? twist,
+    Map<String, List<String>>? peerGraders,
   }) {
     return Task(
       id: id ?? this.id,
@@ -189,6 +208,7 @@ class Task extends Equatable {
       submissionType: submissionType ?? this.submissionType,
       rubric: rubric ?? this.rubric,
       twist: twist ?? this.twist,
+      peerGraders: peerGraders ?? this.peerGraders,
     );
   }
 
@@ -262,6 +282,10 @@ class Task extends Equatable {
     return playerStatuses[playerId]?.hasSubmitted ?? false;
   }
 
+  /// True when [graderId] has graded [targetId]'s entry (group games).
+  bool hasPeerGraded(String targetId, String graderId) =>
+      peerGraders[targetId]?.contains(graderId) ?? false;
+
   // Check if a specific player can view videos (privacy feature)
   bool canPlayerViewVideos(String playerId) {
     return playerStatuses[playerId]?.canViewVideos ?? false;
@@ -286,5 +310,6 @@ class Task extends Equatable {
         submissionType,
         rubric,
         twist,
+        peerGraders,
       ];
 }

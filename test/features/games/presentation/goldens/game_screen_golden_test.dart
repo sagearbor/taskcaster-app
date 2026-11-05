@@ -21,6 +21,7 @@ import 'package:taskcaster_app/core/models/game.dart';
 import 'package:taskcaster_app/core/models/game_settings.dart';
 import 'package:taskcaster_app/core/models/player.dart';
 import 'package:taskcaster_app/core/models/player_task_status.dart';
+import 'package:taskcaster_app/core/models/submission.dart';
 import 'package:taskcaster_app/core/models/task.dart';
 import 'package:taskcaster_app/core/models/user.dart';
 import 'package:taskcaster_app/core/theme/app_theme.dart';
@@ -224,6 +225,46 @@ void main() {
         ),
       );
       expect(find.text('Waiting for 3 more'), findsOneWidget);
+    }, skip: !Platform.isMacOS);
+
+    // WP-13: a group-graded game. Task 1 has locked (the "scores are in"
+    // card), and on task 2 three entries are in, so I grade the other two.
+    testWidgets('group grading (${b.name})', (tester) async {
+      final tasks = _tasks(
+          current: _all(TaskPlayerState.submitted, except: {
+        'p4': TaskPlayerState.not_started,
+      }));
+      final first = tasks[0];
+      tasks[0] = first.copyWith(playerStatuses: {
+        for (final e in first.playerStatuses.entries)
+          e.key: e.value.copyWith(score: e.key == _me ? 8 : 6),
+      });
+      tasks[1] = tasks[1].copyWith(submissions: [
+        for (final id in [_me, 'p2', 'p3'])
+          Submission(
+            id: 's-$id',
+            userId: id,
+            score: 0,
+            isJudged: false,
+            submittedAt: DateTime(2026, 11, 5),
+          ),
+      ]);
+      final game = _game(GameStatus.inProgress, tasks).copyWith(
+        judgeId: '',
+        settings: const GameSettings(judgingMode: JudgingMode.group),
+      );
+      await shoot(
+        tester,
+        'group_grading',
+        b,
+        GameInProgressView(
+          game: game,
+          currentUserId: _me,
+          onViewResults: (_) {},
+        ),
+      );
+      expect(find.text('Grade 2 entries'), findsOneWidget);
+      expect(find.text('Task 1 scores are in'), findsOneWidget);
     }, skip: !Platform.isMacOS);
 
     testWidgets('completed (${b.name})', (tester) async {

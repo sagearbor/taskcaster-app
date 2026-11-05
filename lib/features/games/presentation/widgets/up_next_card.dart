@@ -4,6 +4,7 @@ import '../../../../core/models/game.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../domain/peer_grading.dart';
 import 'timer_pill.dart';
 
 /// What the hero button on the game screen does.
@@ -13,6 +14,9 @@ enum UpNextAction {
 
   /// Open the judging screen for the current task.
   judge,
+
+  /// Group-graded game (WP-13): open the grade queue for the current task.
+  grade,
 
   /// Show the current task's results.
   results,
@@ -66,11 +70,14 @@ class UpNext {
 
   static String _entries(int n) => n == 1 ? '1 entry' : '$n entries';
 
+  /// [alsoGraded]: entry authors this device graded on the current task
+  /// that the server has not echoed into `Task.peerGraders` yet.
   static UpNext resolve(
     Game game, {
     required String currentUserId,
     required bool isJudge,
     DateTime? now,
+    Set<String> alsoGraded = const {},
   }) {
     final task = game.currentTask;
     if (task == null) {
@@ -123,8 +130,10 @@ class UpNext {
 
     if (task.status == TaskStatus.completed) {
       final score = status?.score;
+      // Group grades are round(mean x 2): out of 10.
+      final outOf = game.isGroupJudged ? 10 : 5;
       return make('SCORES ARE IN', 'See results', UpNextAction.results,
-          detail: score != null ? 'You got $score/5.' : null);
+          detail: score != null ? 'You got $score/$outOf.' : null);
     }
 
     if (state == null || state == TaskPlayerState.not_started) {
@@ -140,6 +149,25 @@ class UpNext {
           'Finish and submit', UpNextAction.play,
           detail: urgent ? 'Submit before the clock runs out.' : null,
           urgent: urgent);
+    }
+
+    // Group-graded (WP-13): posting unlocks grading, and EVERY player grades
+    // every other entry. There is no judge to wait for.
+    if (game.isGroupJudged) {
+      final queue = PeerGrading.queue(game, index, currentUserId,
+          alsoGraded: alsoGraded);
+      if (queue.isNotEmpty) {
+        return make('GRADE THE CREW', 'Grade ${_entries(queue.length)}',
+            UpNextAction.grade,
+            detail: 'Your entry is in. Score each friend\'s, 1 to 5.');
+      }
+      if (remaining > 0) {
+        return make('SUBMITTED ✓', 'Waiting for $remaining more',
+            UpNextAction.none,
+            detail: 'You\'ll grade each entry as it comes in.');
+      }
+      return make('ALL GRADED ✓', 'Waiting for the crew', UpNextAction.none,
+          detail: 'Scores lock when everyone has graded, or after 24 hours.');
     }
 
     // The player has submitted (or skipped / been judged).

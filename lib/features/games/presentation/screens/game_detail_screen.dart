@@ -25,6 +25,8 @@ import '../widgets/up_next_card.dart';
 import 'task_execution_screen.dart';
 import 'ar_task_screen.dart';
 import 'judging_screen.dart';
+import 'peer_grading_screen.dart';
+import 'task_scoreboard_screen.dart';
 import 'scoreboard_screen.dart';
 
 class GameDetailScreen extends StatelessWidget {
@@ -234,6 +236,10 @@ class _GameDetailViewState extends State<GameDetailView> {
                   isJudge: isJudge,
                   onUpNext: (action) =>
                       _handleUpNext(context, state.game, action),
+                  onViewResults: state.game.isGroupJudged
+                      ? (index) => _openTaskResults(
+                          context, state.game, index)
+                      : null,
                 ),
               GameStatus.completed => GameCompletedView(
                   game: state.game,
@@ -321,7 +327,28 @@ class _GameDetailViewState extends State<GameDetailView> {
             ),
           ),
         );
+      case UpNextAction.grade:
+        if (currentTask == null) return;
+        final authState = context.read<AuthBloc>().state;
+        final uid = authState is AuthAuthenticated ? authState.user.id : '';
+        Navigator.of(context)
+            .push(MaterialPageRoute(
+              builder: (_) => PeerGradingScreen(
+                gameId: game.id,
+                taskIndex: game.currentTaskIndex,
+                currentUserId: uid,
+              ),
+            ))
+            // Rebuild on return so the hero reflects the grades just given
+            // before the server echoes them.
+            .then((_) {
+          if (mounted) setState(() {});
+        });
       case UpNextAction.results:
+        if (game.isGroupJudged) {
+          _openTaskResults(context, game, game.currentTaskIndex);
+          return;
+        }
         context.read<GameDetailBloc>().add(
               ViewTaskResultsEvent(
                 gameId: game.id,
@@ -335,6 +362,41 @@ class _GameDetailViewState extends State<GameDetailView> {
       case UpNextAction.none:
         break;
     }
+  }
+
+  /// Group-graded games (WP-13): the animated reveal for task [index], from
+  /// the scores the server locked. Totals before this task are the current
+  /// totals minus every score locked on this task and any later one.
+  void _openTaskResults(BuildContext context, Game game, int index) {
+    if (index < 0 || index >= game.tasks.length) return;
+    final task = game.tasks[index];
+    final taskScores = <String, int>{
+      for (final p in game.players)
+        p.userId: task.playerStatuses[p.userId]?.score ?? 0,
+    };
+    final previousTotals = <String, int>{
+      for (final p in game.players)
+        p.userId: p.totalScore -
+            [
+              for (var i = index; i < game.tasks.length; i++)
+                if (game.tasks[i].playerStatuses[p.userId]?.isJudged ?? false)
+                  game.tasks[i].playerStatuses[p.userId]?.score ?? 0,
+            ].fold<int>(0, (a, b) => a + b),
+    };
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: context.read<GameDetailBloc>(),
+          child: TaskScoreboardScreen(
+            game: game,
+            completedTask: task,
+            taskIndex: index,
+            taskScores: taskScores,
+            previousTotals: previousTotals,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmLeave(

@@ -1,5 +1,19 @@
 import 'package:equatable/equatable.dart';
 
+/// Who scores a friend game's entries (WP-13).
+enum JudgingMode {
+  /// One human judge (the creator) scores every entry: "Taskmaster mode".
+  /// Every game written before WP-13 has no `judgingMode` key and parses as
+  /// this, so live games keep their judge.
+  judge,
+
+  /// Everyone grades everyone: once you post your entry for a task you grade
+  /// every other player's entry 1..5, and a Cloud Function locks each score
+  /// (`round(mean x 2)`) when everyone has graded or after 24 h. No player is
+  /// the judge. The default for new friend games.
+  group,
+}
+
 class GameSettings extends Equatable {
   final Duration? taskDeadline; // How long players have to submit each task
   final bool autoAdvanceTasks; // Auto-unlock next task when current is judged
@@ -21,6 +35,9 @@ class GameSettings extends Equatable {
   /// true, which matches the product default ("default on").
   final bool shareToArena;
 
+  /// Who scores entries. Absent in older game docs -> [JudgingMode.judge].
+  final JudgingMode judgingMode;
+
   const GameSettings({
     this.taskDeadline,
     this.autoAdvanceTasks = true,
@@ -29,7 +46,11 @@ class GameSettings extends Equatable {
     this.judgePlays = true,
     this.crowdJudged = false,
     this.shareToArena = true,
+    this.judgingMode = JudgingMode.judge,
   });
+
+  /// True when the players grade each other instead of a judge (WP-13).
+  bool get isGroupJudged => judgingMode == JudgingMode.group;
 
   // Default settings for quick play
   factory GameSettings.quickPlay() {
@@ -63,6 +84,11 @@ class GameSettings extends Equatable {
       // Backward-compatible: older docs have neither key.
       crowdJudged: map['crowdJudged'] as bool? ?? false,
       shareToArena: map['shareToArena'] as bool? ?? true,
+      // Backward-compatible: no key (or an unknown value) is a judge game.
+      judgingMode: JudgingMode.values.firstWhere(
+        (m) => m.name == map['judgingMode'],
+        orElse: () => JudgingMode.judge,
+      ),
     );
   }
 
@@ -75,6 +101,7 @@ class GameSettings extends Equatable {
       'judgePlays': judgePlays,
       'crowdJudged': crowdJudged,
       'shareToArena': shareToArena,
+      'judgingMode': judgingMode.name,
     };
   }
 
@@ -86,6 +113,7 @@ class GameSettings extends Equatable {
     bool? judgePlays,
     bool? crowdJudged,
     bool? shareToArena,
+    JudgingMode? judgingMode,
   }) {
     return GameSettings(
       taskDeadline: taskDeadline ?? this.taskDeadline,
@@ -95,6 +123,7 @@ class GameSettings extends Equatable {
       judgePlays: judgePlays ?? this.judgePlays,
       crowdJudged: crowdJudged ?? this.crowdJudged,
       shareToArena: shareToArena ?? this.shareToArena,
+      judgingMode: judgingMode ?? this.judgingMode,
     );
   }
 
@@ -107,5 +136,6 @@ class GameSettings extends Equatable {
         judgePlays,
         crowdJudged,
         shareToArena,
+        judgingMode,
       ];
 }
