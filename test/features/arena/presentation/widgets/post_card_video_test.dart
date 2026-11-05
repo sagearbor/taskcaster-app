@@ -14,6 +14,8 @@ FeedPost videoPost({
   int? timerSeconds = 30,
   int? clockOffsetSeconds = 0,
   String? url = 'https://cdn.test/clip.mp4',
+  String? playbackUrl,
+  String? posterUrl,
 }) {
   return FeedPost(
     id: 'p1',
@@ -25,6 +27,8 @@ FeedPost videoPost({
     displayName: 'Sophie',
     mediaType: SubmissionMediaType.video,
     videoUrl: url,
+    playbackUrl: playbackUrl,
+    posterUrl: posterUrl,
     videoStoragePath: 'submissions/user-1/20260912/0',
     timerSeconds: timerSeconds,
     clockOffsetSeconds: clockOffsetSeconds,
@@ -72,6 +76,33 @@ void main() {
     // The existing card chrome is untouched.
     expect(find.text('Sophie'), findsOneWidget);
     expect(find.text('Nature documentary · Done in 22 s'), findsOneWidget);
+  });
+
+  testWidgets('WP-08: a transcoded post plays playbackUrl, with its poster',
+      (tester) async {
+    await pump(
+      tester,
+      PostCard(
+        post: videoPost(
+          url: 'https://cdn.test/original.mov',
+          playbackUrl: 'https://cdn.test/transcoded.mp4',
+          posterUrl: 'https://cdn.test/poster.jpg',
+        ),
+      ),
+    );
+    final video = tester.widget<ArenaVideo>(find.byType(ArenaVideo));
+    expect(video.url, 'https://cdn.test/transcoded.mp4');
+    expect(video.posterUrl, 'https://cdn.test/poster.jpg');
+    expect(platform.dataSources.single.uri, 'https://cdn.test/transcoded.mp4');
+  });
+
+  testWidgets('WP-08: an old post without playbackUrl still plays videoUrl',
+      (tester) async {
+    await pump(tester, PostCard(post: videoPost()));
+    final video = tester.widget<ArenaVideo>(find.byType(ArenaVideo));
+    expect(video.url, 'https://cdn.test/clip.mp4');
+    expect(video.posterUrl, isNull);
+    expect(platform.dataSources.single.uri, 'https://cdn.test/clip.mp4');
   });
 
   testWidgets('the countdown is drawn over a player clip', (tester) async {

@@ -18,7 +18,9 @@ const assert = require('node:assert/strict');
 // v1 trigger metadata needs a project id; the emulators set one themselves.
 process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || 'demo-taskcaster';
 
-const {planGameDeparture, submissionsPrefix, onAuthUserDeleted} = require('../src/account_deletion');
+const {
+  planGameDeparture, submissionsPrefix, transcodedPrefix, onAuthUserDeleted,
+} = require('../src/account_deletion');
 
 const player = (userId) => ({userId, displayName: userId, totalScore: 0});
 
@@ -32,6 +34,12 @@ test('index.js exports the auth onDelete trigger', () => {
 
 test('clips are deleted from the uploader\'s own Storage folder only', () => {
   assert.equal(submissionsPrefix('u1'), 'submissions/u1/');
+});
+
+test('WP-08 posters are deleted from the user\'s transcoded/ folder, matching transcode.js', () => {
+  const {posterObjectPath} = require('../src/transcode');
+  assert.equal(transcodedPrefix('u1'), 'transcoded/u1/');
+  assert.ok(posterObjectPath({uid: 'u1', day: '20261105', slot: '0'}).startsWith(transcodedPrefix('u1')));
 });
 
 test('a game the user is not in is left alone', () => {
@@ -110,9 +118,13 @@ test('deleting an account removes its data in one trigger run (emulator)', {skip
   await db.doc('games/joined').set({creatorId: 'other', judgeId: 'other', playerIds: ['other', uid], players: [player('other'), player(uid)]});
   // Someone else's data must survive.
   await db.doc('feed_posts/bystander').set({userId: 'other', graderIds: []});
+  await db.doc(`clips/${uid}_20261105_0`).set({uid, status: 'ready'});
+  await db.doc('clips/other_20261105_0').set({uid: 'other', status: 'ready'});
   if (bucket) {
     await bucket.file(`submissions/${uid}/20261105/0`).save(Buffer.from('clip'), {contentType: 'video/mp4'});
     await bucket.file('submissions/other/20261105/0').save(Buffer.from('clip'), {contentType: 'video/mp4'});
+    await bucket.file(`transcoded/${uid}/20261105/0.jpg`).save(Buffer.from('jpg'), {contentType: 'image/jpeg'});
+    await bucket.file('transcoded/other/20261105/0.jpg').save(Buffer.from('jpg'), {contentType: 'image/jpeg'});
   }
 
   // Fire the deployed trigger's handler exactly as Auth would.
@@ -139,12 +151,18 @@ test('deleting an account removes its data in one trigger run (emulator)', {skip
   assert.equal(joined.creatorId, 'other');
   assert.deepEqual(joined.playerIds, ['other']);
   assert.equal(await exists('feed_posts/bystander'), true, 'bystander untouched');
+  assert.equal(await exists(`clips/${uid}_20261105_0`), false, 'clip metadata deleted');
+  assert.equal(await exists('clips/other_20261105_0'), true, 'other player\'s clip metadata untouched');
 
   if (bucket) {
     const [mine] = await bucket.getFiles({prefix: submissionsPrefix(uid)});
     assert.equal(mine.length, 0, 'clips deleted');
     const [others] = await bucket.getFiles({prefix: submissionsPrefix('other')});
     assert.equal(others.length, 1, 'other player\'s clip untouched');
+    const [posters] = await bucket.getFiles({prefix: transcodedPrefix(uid)});
+    assert.equal(posters.length, 0, 'posters deleted');
+    const [otherPosters] = await bucket.getFiles({prefix: transcodedPrefix('other')});
+    assert.equal(otherPosters.length, 1, 'other player\'s poster untouched');
   }
 
   // A retry (Functions may redeliver) is a harmless no-op.

@@ -219,7 +219,10 @@ class _Media extends StatelessWidget {
       case SubmissionMediaType.video:
         return ArenaVideo(
           key: videoKey,
-          url: post.videoUrl,
+          // The server's H.264 transcode when it exists (WP-08), else the
+          // original — which keeps every pre-WP-08 post playing.
+          url: post.playableVideoUrl,
+          posterUrl: post.posterUrl,
           durationSeconds: post.videoDurationSeconds,
           timerSeconds: post.timerSeconds,
           clockOffsetSeconds: post.clockOffsetSeconds,

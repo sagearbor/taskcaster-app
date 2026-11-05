@@ -44,6 +44,46 @@ void main() {
       expect(restored.tapSeconds, {'3': 2, '11': 3});
     });
 
+    test('WP-08: playbackUrl/posterUrl round-trip and win over videoUrl', () {
+      final post = _videoPost().copyWith(
+        playbackUrl: 'https://cdn.test/submissions%2Fuser-1%2F20260912%2F3?alt=media',
+        posterUrl: 'https://cdn.test/transcoded%2Fuser-1%2F20260912%2F3.jpg?alt=media',
+      );
+      final restored = FeedPost.fromMap(post.toMap());
+      expect(restored, post);
+      expect(restored.playbackUrl, post.playbackUrl);
+      expect(restored.posterUrl, post.posterUrl);
+      expect(restored.playableVideoUrl, post.playbackUrl);
+    });
+
+    test('WP-08: without a transcode, playback falls back to videoUrl', () {
+      final post = _videoPost();
+      expect(post.playbackUrl, isNull);
+      expect(post.playableVideoUrl, 'https://cdn.test/clip.mp4');
+      expect(
+        post.copyWith(playbackUrl: '').playableVideoUrl,
+        'https://cdn.test/clip.mp4',
+      );
+    });
+
+    test('WP-08: toMap never writes the server-owned keys when unset', () {
+      // The feed_posts create rule denies playbackUrl/posterUrl outright,
+      // even as null, so a client post must not carry the keys at all.
+      final map = _videoPost().toMap();
+      expect(map.containsKey('playbackUrl'), isFalse);
+      expect(map.containsKey('posterUrl'), isFalse);
+    });
+
+    test('WP-08: a wrong-typed playbackUrl parses as absent', () {
+      final map = _videoPost().toMap()
+        ..['playbackUrl'] = 42
+        ..['posterUrl'] = {'x': 1};
+      final post = FeedPost.fromMap(map);
+      expect(post.playbackUrl, isNull);
+      expect(post.posterUrl, isNull);
+      expect(post.playableVideoUrl, 'https://cdn.test/clip.mp4');
+    });
+
     test('a document written before in-app video existed still parses', () {
       final legacy = <String, dynamic>{
         'id': 'old',

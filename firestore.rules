@@ -223,6 +223,15 @@ service cloud.firestore {
                d.createdAt == request.time;
       }
 
+      // WP-08: the transcoded-clip pointers are written only by the
+      // onClipUploaded / onFeedPostCreated Cloud Functions (Admin SDK). The
+      // app prefers playbackUrl over videoUrl, so a client-chosen value would
+      // let a post play any URL at all; ownerEdit() already keeps them out of
+      // updates, this keeps them out of creates.
+      function noServerPlaybackFields() {
+        return !request.resource.data.keys().hasAny(['playbackUrl', 'posterUrl']);
+      }
+
       allow read: if isSignedIn();
 
       // Post as yourself only — never as the house, never as someone else.
@@ -230,6 +239,7 @@ service cloud.firestore {
                        request.resource.data.userId == request.auth.uid &&
                        request.resource.data.get('isHouse', false) == false &&
                        ownVideoPathOk() &&
+                       noServerPlaybackFields() &&
                        freshCounters();
 
       allow update: if isSignedIn() && (ownerEdit() || gradeBump() || tapBump());
@@ -264,6 +274,15 @@ service cloud.firestore {
     match /montages/{montageId} {
       allow read: if isSignedIn();
       allow create, update, delete: if false;
+    }
+
+    // ---- Clip transcode metadata (WP-08) ----
+    // clips/{uid}_{day}_{slot}: one doc per uploaded clip, the transcode's
+    // claim/lock and the retention clock (createdAt) for the WP-11 sweep.
+    // Written and read only by Cloud Functions (Admin SDK); clients get the
+    // URLs they need through the feed post's playbackUrl / posterUrl.
+    match /clips/{clipId} {
+      allow read, write: if false;
     }
 
     // ---- Web push subscriptions ----

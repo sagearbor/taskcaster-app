@@ -31,7 +31,7 @@ rules_version = '2';
 //     model: bounded per-user upload volume, bounded per-clip size, and a
 //     human notified before spend gets away from either.
 //   - everything outside the sanctioned prefixes below (`submissions/**`,
-//     `house/**`, `montages/**`) is denied entirely: there is no other
+//     `transcoded/**`, `house/**`, `montages/**`) is denied entirely: there is no other
 //     sanctioned use of this bucket, and an open bucket is an open line item
 //     on the budget.
 //
@@ -123,6 +123,20 @@ service firebase.storage {
     // sanctioned client write path at all.
     match /house/{file} {
       allow read: if true;
+      allow write: if false;
+    }
+
+    // Poster frames for transcoded clips (WP-08):
+    // transcoded/{uid}/{day}/{slot}.jpg, written by the onClipUploaded Cloud
+    // Function with the Admin SDK (which bypasses these rules). The clip
+    // itself is NOT here: the function re-encodes it to 720p H.264 SDR IN
+    // PLACE at submissions/{uid}/{day}/{slot}, so the slot stays occupied (a
+    // delete would free it and leak the daily cap above) and every existing
+    // download URL keeps working. Public get like the clip; no list; no
+    // client write of any kind.
+    match /transcoded/{uid}/{day}/{file} {
+      allow get: if true;
+      allow list: if false;
       allow write: if false;
     }
 

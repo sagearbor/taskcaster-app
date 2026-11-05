@@ -40,6 +40,49 @@ void main() {
     expect(platform.played, isNotEmpty);
   });
 
+  testWidgets('WP-08: the poster shows while the clip loads, then gives way',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            height: 375,
+            child: ArenaVideo(
+              url: 'https://cdn.test/clip.mp4',
+              posterUrl: 'https://cdn.test/poster.jpg',
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('arena-video-poster')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(VideoPlayer), findsOneWidget);
+    expect(find.byKey(const ValueKey('arena-video-poster')), findsNothing);
+  });
+
+  testWidgets('without a poster the loading state is the plain spinner',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            height: 375,
+            child: ArenaVideo(url: 'https://cdn.test/clip.mp4'),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('arena-video-poster')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
   testWidgets('a source that will not load shows the calm placeholder',
       (tester) async {
     platform.failToInitialize = true;

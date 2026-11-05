@@ -18,6 +18,11 @@ const {warn} = require('./log');
  * @property {boolean} hasAudio
  * @property {number} fps
  * @property {number} rotation degrees of display rotation metadata
+ * @property {string} codec video codec name (e.g. 'h264', 'hevc')
+ * @property {string} pixFmt video pixel format (e.g. 'yuv420p10le')
+ * @property {string} colorTransfer e.g. 'bt709', 'arib-std-b67' (HLG), 'smpte2084' (PQ)
+ * @property {string} colorPrimaries e.g. 'bt709', 'bt2020'
+ * @property {string} colorSpace e.g. 'bt709', 'bt2020nc'
  */
 
 /**
@@ -62,6 +67,11 @@ async function probe(filePath) {
     hasAudio: Boolean(audio),
     fps: parseFps(video.avg_frame_rate || video.r_frame_rate),
     rotation,
+    codec: String(video.codec_name || ''),
+    pixFmt: String(video.pix_fmt || ''),
+    colorTransfer: String(video.color_transfer || ''),
+    colorPrimaries: String(video.color_primaries || ''),
+    colorSpace: String(video.color_space || ''),
   };
 }
 

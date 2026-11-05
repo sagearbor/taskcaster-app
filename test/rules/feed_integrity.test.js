@@ -6,6 +6,7 @@
 const { assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
 const {
   doc,
+  getDoc,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -113,6 +114,44 @@ describe('firestore.rules — feed_posts integrity', function () {
         post({ createdAt: Timestamp.fromDate(new Date('9999-01-01T00:00:00Z')) })
       )
     );
+  });
+
+  // WP-08: playbackUrl / posterUrl are server-owned (the app prefers
+  // playbackUrl, so a client-chosen one could make a post play any URL).
+  it('DENIED: create carrying a client playbackUrl or posterUrl', async () => {
+    const db = as('author');
+    const video = {
+      mediaType: 'video',
+      videoUrl: 'https://example.test/v',
+      videoStoragePath: 'submissions/author/20261105/0',
+    };
+    await assertFails(
+      setDoc(doc(db, 'feed_posts/v1'), post({ ...video, playbackUrl: 'https://evil.test/x.mp4' }))
+    );
+    await assertFails(
+      setDoc(doc(db, 'feed_posts/v2'), post({ ...video, posterUrl: 'https://evil.test/x.jpg' }))
+    );
+    await assertFails(
+      setDoc(doc(db, 'feed_posts/v3'), post({ ...video, playbackUrl: null }))
+    );
+    // The normal video post (no server fields) is still allowed.
+    await assertSucceeds(setDoc(doc(db, 'feed_posts/v4'), post(video)));
+  });
+
+  it('DENIED: owner setting playbackUrl / posterUrl after the fact', async () => {
+    await seed('p1', { mediaType: 'video', videoStoragePath: 'submissions/author/20261105/0' });
+    const db = as('author');
+    await assertFails(updateDoc(doc(db, 'feed_posts/p1'), { playbackUrl: 'https://evil.test/x.mp4' }));
+    await assertFails(updateDoc(doc(db, 'feed_posts/p1'), { posterUrl: 'https://evil.test/x.jpg' }));
+  });
+
+  it('DENIED: any client reading or writing clips/ (server-only metadata)', async () => {
+    const db = as('author');
+    await assertFails(setDoc(doc(db, 'clips/author_20261105_0'), { status: 'ready' }));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'clips/author_20261105_0'), { uid: 'author' });
+    });
+    await assertFails(getDoc(doc(db, 'clips/author_20261105_0')));
   });
 
   it('DENIED: create as someone else', async () => {
