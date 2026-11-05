@@ -60,14 +60,34 @@
             </intent-filter>
             <!-- Friend-invite deep link: taskcaster://join?code=XXXXXX. The
                  app_links plugin picks the intent up and hands the URI to
-                 PendingInviteService. (No https App Links filter yet — that
-                 needs assetlinks.json on the hosting domain first.) -->
+                 PendingInviteService. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="taskcaster" android:host="join"/>
             </intent-filter>
+            <!-- Verified App Links: https://taskmaster-app-3d480.web.app/join/...
+                 (and the /p/ /t/ /c/ share routes reserved for WP-09) open the
+                 app directly instead of the browser. Verified against
+                 web/.well-known/assetlinks.json; keep the pathPrefixes in sync
+                 with InviteLinks.claimedPathPrefixes (a unit test checks).
+                 The web root "/?join=" is deliberately NOT claimed: it is the
+                 "Play in browser" target. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="taskmaster-app-3d480.web.app"/>
+                <data android:pathPrefix="/join"/>
+                <data android:pathPrefix="/p/"/>
+                <data android:pathPrefix="/t/"/>
+                <data android:pathPrefix="/c/"/>
+            </intent-filter>
+            <!-- Links are routed by app_links, not Flutter's Navigator. -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sagearbor.taskcaster.app",
+      "sha256_cert_fingerprints": [
+        "REPLACE_WITH_PLAY_APP_SIGNING_SHA256_FROM_PLAY_CONSOLE_APP_INTEGRITY",
+        "11:D9:A1:A9:3E:90:F4:1C:13:10:08:E8:98:AA:4C:E2:E1:3A:BB:7A:48:7C:9C:A4:79:73:C8:DE:EE:D9:06:62"
+      ]
+    }
+  }
+]

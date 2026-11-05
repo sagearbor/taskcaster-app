@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["553Y9KWR84.com.sagearbor.taskcaster.app"],
+        "components": [
+          { "/": "/join", "comment": "invite landing without trailing slash" },
+          { "/": "/join/*", "comment": "invite: /join/?code=X and /join/X" },
+          { "/": "/p/*", "comment": "shared feed post (WP-09)" },
+          { "/": "/t/*", "comment": "shared task (reserved)" },
+          { "/": "/c/*", "comment": "shared challenge (WP-09)" }
+        ],
+        "appID": "553Y9KWR84.com.sagearbor.taskcaster.app",
+        "paths": ["/join", "/join/*", "/p/*", "/t/*", "/c/*"]
+      }
+    ]
+  }
+}

@@ -32,11 +32,15 @@ class PendingInviteService extends ChangeNotifier {
     Stream<Uri>? uriLinkStream,
     Future<String?> Function()? getInstallReferrer,
     bool? isAndroid,
+    bool? isWeb,
+    Uri Function()? webLaunchUri,
   })  : _getInitialLink = getInitialLink,
         _uriLinkStream = uriLinkStream,
         _getInstallReferrer = getInstallReferrer ?? _playInstallReferrer,
         _isAndroid = isAndroid ??
-            (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
+            (!kIsWeb && defaultTargetPlatform == TargetPlatform.android),
+        _isWeb = isWeb ?? kIsWeb,
+        _webLaunchUri = webLaunchUri ?? (() => Uri.base);
 
   /// shared_preferences flag: the install referrer has been read (or the read
   /// was attempted) on this install — never read it again.
@@ -47,6 +51,8 @@ class PendingInviteService extends ChangeNotifier {
   final Stream<Uri>? _uriLinkStream;
   final Future<String?> Function() _getInstallReferrer;
   final bool _isAndroid;
+  final bool _isWeb;
+  final Uri Function() _webLaunchUri;
 
   StreamSubscription<Uri>? _linkSubscription;
   bool _initialized = false;
@@ -54,6 +60,22 @@ class PendingInviteService extends ChangeNotifier {
   String? _pendingCode;
   String? _pendingRef;
   PendingInviteSource? _source;
+  DeepLink? _pendingLink;
+
+  /// A non-join deep link (`/p/`, `/t/`, `/c/`) waiting for a screen to open
+  /// it. Reserved for WP-09 share pages: nothing consumes it yet, so today
+  /// such a link simply opens the app on Home. Join links never land here;
+  /// they go to [pendingCode].
+  DeepLink? get pendingLink => _pendingLink;
+
+  /// Returns [pendingLink] (or null) and clears it.
+  DeepLink? consumeLink() {
+    final link = _pendingLink;
+    if (link == null) return null;
+    _pendingLink = null;
+    notifyListeners();
+    return link;
+  }
 
   /// The invite code waiting to be offered to the user, if any.
   String? get pendingCode => _pendingCode;
@@ -77,6 +99,19 @@ class PendingInviteService extends ChangeNotifier {
     if (_initialized) return;
     _initialized = true;
 
+    // Web: the "link" is the page URL itself (e.g. /?join=CODE from the join
+    // page's "Play in browser" button). app_links has nothing more to offer
+    // on web, so read Uri.base and stop. Any host is accepted: this is our
+    // own origin (web.app, firebaseapp.com, a preview channel or localhost).
+    if (_isWeb) {
+      try {
+        _offerUri(_webLaunchUri(), anyHost: true);
+      } catch (e) {
+        debugPrint('PendingInviteService: reading launch URL failed: $e');
+      }
+      return;
+    }
+
     // Deep links: the link that launched the app (cold start) + links that
     // arrive while it is running.
     try {
@@ -94,13 +129,19 @@ class PendingInviteService extends ChangeNotifier {
     await _checkInstallReferrerOnce();
   }
 
-  void _offerUri(Uri uri) {
-    final code = InviteLinks.codeFromUri(uri);
-    if (code == null) return;
-    // A fresh explicit link always wins over anything already pending.
-    _pendingCode = code;
-    _pendingRef = InviteLinks.refFromUri(uri);
-    _source = PendingInviteSource.link;
+  void _offerUri(Uri uri, {bool anyHost = false}) {
+    final link = InviteLinks.parse(uri, anyHost: anyHost);
+    switch (link) {
+      case null:
+        return;
+      case JoinGameLink(:final code, :final ref):
+        // A fresh explicit link always wins over anything already pending.
+        _pendingCode = code;
+        _pendingRef = ref;
+        _source = PendingInviteSource.link;
+      case FeedPostLink() || TaskLink() || ChallengeLink():
+        _pendingLink = link;
+    }
     notifyListeners();
   }
 
