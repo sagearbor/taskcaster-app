@@ -21,9 +21,11 @@ rules_version = '2';
 //     egress cost (each Arena view re-downloads the clip).
 //   - the `video/.*` content-type check keeps non-video blobs (large images,
 //     zips, etc.) from being smuggled into a path sized for a 30 s clip.
-//   - the day/slot regexes reject anything outside the exact
-//     `submissions/{uid}/{yyyyMMdd}/{0-9}` shape `video_policy.dart` writes,
-//     so a bug or a hostile client can't fan out into unbounded object counts.
+//   - the day must be TODAY (server clock, UTC) and the slot a single digit,
+//     so the only writable path is `submissions/{uid}/{today}/{0-9}`, which
+//     is what `video_policy.dart` writes: a bug or a hostile client can't fan
+//     out into unbounded object counts with made-up dates.
+//   - no client delete, so a used slot can't be freed and refilled.
 //   - with retention indefinite, the caps above plus the $100 GCP budget
 //     alarm (`taskcaster-video-ceiling-100`, 50/90/100 %) are the entire cost
 //     model: bounded per-user upload volume, bounded per-clip size, and a
@@ -47,46 +49,54 @@ rules_version = '2';
 // path is classified as `update`, which `allow update: if false` below
 // denies — so the create-only slot scheme is a REAL 10/day cap in
 // production. The Firebase Storage emulator does not implement Object
-// Versioning, so it always evaluates a same-path rewrite as `create` and
-// cannot demonstrate this protection either way; see the skipped test in
-// `test/rules/storage.test.js` and docs/FIREBASE_SETUP.md "Video storage and
-// cost controls" for the write-up.
+// Versioning, so it always evaluates a same-path rewrite as `create`; the
+// explicit `resource == null` guard in the create rule is what denies it
+// there, and `test/rules/storage.test.js` ("accepted once; a second write to
+// it is denied") exercises that guard. See docs/FIREBASE_SETUP.md "Video
+// storage and cost controls" for the write-up.
 // ---------------------------------------------------------------------------
 
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Player video submissions. Arena clips are public content (anyone can
-    // watch an Arena entry without signing in), so read/list is open; writes
-    // are locked to the owning uid and to the exact shape video_policy.dart
-    // produces.
-    //
-    // Split into two match blocks on purpose:
-    //   - a recursive-wildcard block that grants `read` (get AND list, per
-    //     Storage's rule that `list` on a prefix needs a `**` wildcard
-    //     reaching it) at any depth under a day folder;
-    //   - an exact single-segment block for create/update/delete, where
-    //     `slot` binds as a plain STRING (not a path object) and so supports
-    //     `.matches()` directly. A recursive `{slot=**}` variable is a path
-    //     object in this engine and has no `.size()`/`.matches()` of its
-    //     own — and even indexing into it (`slot[0]`) would happily match a
-    //     deeper path like `.../0/extra`, which is exactly the "fan out into
-    //     unbounded object counts" risk called out above. Keeping create tied
-    //     to the exact single-segment match closes that gap: a path with more
-    //     than one trailing segment simply doesn't match this block at all.
-    match /submissions/{uid}/{day}/{path=**} {
-      // Public read (get AND list, via the recursive wildcard) — clips are
-      // public Arena content once posted.
-      allow read: if true;
+    // Two-digit zero padding for todayKey().
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
     }
 
+    // Today's date as yyyyMMdd in UTC, from the SERVER clock. Mirrors
+    // VideoPolicy.dayKey() in lib/core/services/video/video_policy.dart.
+    function todayKey() {
+      return string(request.time.year()) +
+             pad2(request.time.month()) +
+             pad2(request.time.day());
+    }
+
+    // Player video submissions: submissions/{uid}/{yyyyMMdd}/{slot}.
+    //
+    // WP-04 (audit 2026-11-05) closed three holes in the "10 clips/day" cap:
+    //   1. `day` used to be any 8 digits, so one uid had 10 fresh slots per
+    //      FAKE date (19990101, 19990102, ...): unbounded uploads. `day` must
+    //      now equal today's date in UTC, taken from the server's
+    //      `request.time`, so there is exactly one writable day folder per uid.
+    //   2. Owner delete freed a slot for reuse, so delete + re-upload was an
+    //      unbounded loop inside that one day. Client delete is now denied;
+    //      clips are removed only with the Admin SDK (the account-deletion
+    //      Cloud Function, WP-01) or by the owner from the console.
+    //   3. `list` was open on every prefix, so anyone could enumerate every
+    //      stored clip, including ones posted to private games. Only `get`
+    //      (download / getDownloadURL of a path you already know) is allowed.
+    //
+    // `slot` binds as a plain string here (single-segment wildcard), so a
+    // deeper path like `.../0/extra` never matches this block, and a `list`
+    // of a uid or day prefix matches nothing but the deny-all at the bottom.
     match /submissions/{uid}/{day}/{slot} {
-      // Create-only: the owner, writing their own uid, into a well-formed
-      // yyyyMMdd/0-9 path, under the size cap, as an actual video. No
-      // `update` rule exists (see OVERWRITE PROTECTION above) — `allow
-      // update: if false` below makes that explicit rather than
-      // implicit-deny, and is what the create-only cap actually relies on
-      // now that the bucket has Object Versioning enabled.
+      // Public get: clips are public Arena content once posted. No list.
+      allow get: if true;
+      allow list: if false;
+
+      // Create-only: the owner, writing their own uid, into TODAY's folder
+      // (UTC, server clock), a 0-9 slot, under the size cap, as a video.
       allow create: if request.auth != null &&
                        request.auth.uid == uid &&
                        // Explicit no-overwrite guard: a production probe showed
@@ -94,20 +104,15 @@ service firebase.storage {
                        // as `create` even with Object Versioning on, so the
                        // slot must be empty for the write to be allowed.
                        resource == null &&
-                       day.matches('^[0-9]{8}$') &&
+                       day == todayKey() &&
                        slot.matches('^[0-9]$') &&
                        request.resource.size <= 32 * 1024 * 1024 &&
                        request.resource.contentType.matches('video/.*');
 
-      // Never allowed. An object can only be created once, then deleted (by
-      // its owner) — never replaced in place. This is the mechanism that
-      // makes "10 uploads/day" real (see OVERWRITE PROTECTION above).
-      allow update: if false;
-
-      // The owner may remove their own clip (e.g. a re-take, or a privacy
-      // change of mind). Retention is otherwise indefinite — there is no
-      // lifecycle rule that ages out a live clip on its own.
-      allow delete: if request.auth != null && request.auth.uid == uid;
+      // Never allowed. An object is created once and never replaced in place
+      // (see OVERWRITE PROTECTION above), and never deleted by a client: a
+      // delete would free the slot for another upload the same day.
+      allow update, delete: if false;
     }
 
     // Seeded "house" video clips (e.g. house/starter-01.mp4) — short,

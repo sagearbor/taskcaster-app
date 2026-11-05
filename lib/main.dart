@@ -13,6 +13,7 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/backend_unavailable_screen.dart';
 import 'core/theme/theme_controller.dart';
 import 'core/di/service_locator.dart';
+import 'core/services/app_check/app_check_bootstrap.dart';
 import 'core/services/invite/pending_invite_service.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
@@ -87,6 +88,10 @@ Future<void> _startApp({required bool useMockServices}) async {
   // NOT done here: it runs once the player reaches the home screen, via
   // NotificationPrompt.ensureRequestedOnce(), so the first thing a new player
   // sees is the first task rather than a permission dialog on a blank window.
+
+  // App Check (monitor mode). A no-op unless this build was given the
+  // APP_CHECK_WEB_KEY / APP_CHECK dart-defines; see AppCheckBootstrap.
+  if (!useMock) await AppCheckBootstrap.activate();
 
   runApp(const TaskCasterApp());
 }

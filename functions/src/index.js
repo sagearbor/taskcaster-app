@@ -12,7 +12,10 @@
  *
  * Cost posture: no minInstances, maxInstances 3, us-central1, and every render
  * is claimed with a lock so a burst of posts cannot fan out into parallel
- * encodes.
+ * encodes. Only posts for a real task (Starter Pack id, or a game the poster
+ * belongs to) can queue a render, each uid may queue at most
+ * MONTAGE_QUEUE_PER_UID_PER_DAY posts a day, and the force-render callable is
+ * admin-only (guards.js, audit WP-04).
  */
 
 const fs = require('fs');
@@ -40,12 +43,12 @@ const {
   momentsObjectPath,
   publicUrl,
   objectPathForPost,
-  isMontageablePost,
   selectClips,
   decideRender,
-  applyNewPost,
   clipFromPost,
 } = require('./contract');
+const {requireAdmin} = require('./guards');
+const pipeline = require('./pipeline');
 
 initializeApp();
 
@@ -89,8 +92,11 @@ const nowIso = () => new Date().toISOString();
 // ---------------------------------------------------------------------------
 
 /**
- * A new post landed. If it is a player video, mark its task's montage pending
- * and — once three videos have piled up — render straight away.
+ * A new post landed. If it is a player video for a real task (a Starter Pack
+ * task, or a task in a game the poster belongs to) and the poster is under
+ * their daily montage quota, mark its task's montage pending and — once three
+ * videos have piled up — render straight away. Anything else is ignored: the
+ * post still shows in the feed, it just never costs a render. See guards.js.
  */
 exports.onFeedPostCreated = onDocumentCreated(
   {document: `${FEED_POSTS}/{postId}`, ...RENDER_OPTS},
@@ -99,29 +105,13 @@ exports.onFeedPostCreated = onDocumentCreated(
     if (!snap) return;
     const post = {id: event.params.postId, ...snap.data()};
 
-    if (!isMontageablePost(post)) {
-      logger.debug('montage: ignoring post', {postId: post.id, mediaType: post.mediaType});
-      return;
-    }
-    const {gameId, taskId} = post;
-    if (!gameId || !taskId) {
-      logger.warn('montage: post is missing gameId/taskId', {postId: post.id});
-      return;
-    }
-
-    const ref = db().collection(MONTAGES).doc(montageDocId(gameId, taskId));
-    const decision = await db().runTransaction(async (tx) => {
-      const existing = await tx.get(ref);
-      const data = existing.exists ? existing.data() : null;
-      const update = applyNewPost(data, post, nowIso());
-      tx.set(ref, update, {merge: true});
-      return decideRender({...(data || {}), ...update}, Date.now());
+    const result = await pipeline.handleNewPost(post, {db: db(), render});
+    logger.info(result.queued ? 'montage: post queued' : 'montage: post not queued', {
+      postId: post.id,
+      gameId: post.gameId,
+      taskId: post.taskId,
+      reason: result.queued ? result.decision.reason : result.reason,
     });
-
-    logger.info('montage: post queued', {
-      postId: post.id, gameId, taskId, decision: decision.reason,
-    });
-    if (decision.render) await render(gameId, taskId);
   },
 );
 
@@ -156,11 +146,13 @@ exports.renderPendingMontages = onSchedule(
 
 /**
  * Manual kick, for verifying the pipeline in the cloud without waiting for the
- * settle window. Requires a signed-in caller and an existing montage doc that
- * is not already `ready`, so it cannot be used to burn CPU on demand.
+ * settle window. Operator-only: the caller must hold the `admin` custom claim
+ * (anonymous guests never can), because `force` skips the render lock and a
+ * render is a 2 GiB ffmpeg run. Also requires an existing montage doc that is
+ * not already `ready`.
  */
 exports.renderMontageNow = onCall({...RENDER_OPTS, maxInstances: 1}, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  requireAdmin(request);
   const {gameId, taskId} = request.data || {};
   if (!gameId || !taskId) throw new HttpsError('invalid-argument', 'gameId and taskId required.');
 
@@ -210,24 +202,6 @@ exports.onGradeCreated = onDocumentCreated(
 // ---------------------------------------------------------------------------
 
 /**
- * Claim the montage doc so two instances never encode the same task at once.
- * @returns {Promise<{claimed:boolean, version:number, reason?:string}>}
- */
-async function claim(ref, {force}) {
-  return db().runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists) return {claimed: false, version: 0, reason: 'no-doc'};
-    const data = snap.data();
-    const decision = decideRender(data, Date.now());
-    if (!force && decision.reason === 'locked') {
-      return {claimed: false, version: Number(data.version) || 0, reason: 'locked'};
-    }
-    tx.set(ref, {lockedAt: nowIso()}, {merge: true});
-    return {claimed: true, version: Number(data.version) || 0};
-  });
-}
-
-/**
  * Render both montages for one task and publish them.
  *
  * Idempotent and safe to re-run: it always rebuilds from whatever videos are in
@@ -240,7 +214,7 @@ async function claim(ref, {force}) {
  */
 async function render(gameId, taskId, {force = false} = {}) {
   const ref = db().collection(MONTAGES).doc(montageDocId(gameId, taskId));
-  const claimResult = await claim(ref, {force});
+  const claimResult = await pipeline.claim(db(), ref, {force});
   if (!claimResult.claimed) {
     logger.info('montage: render skipped', {gameId, taskId, reason: claimResult.reason});
     return {status: 'skipped', reason: claimResult.reason};
@@ -310,25 +284,23 @@ async function render(gameId, taskId, {force = false} = {}) {
       momentsUrl: publicUrl(bucketName, momentsObject),
       sourcePostIds: clips.map((c) => c.postId),
       clipCount: finaleResult.clipCount,
-      status: 'ready',
       // false when the runtime ffmpeg lacks drawtext: montage rendered, but
       // without burned-in countdown/title text (the app overlays the clock).
       countdownBurned: await hasDrawtext(),
       error: FieldValue.delete(),
       updatedAt: nowIso(),
       version: claimResult.version + 1,
-      // renderer bookkeeping — reset the window so new posts start a fresh one
-      pendingCount: 0,
-      pendingSince: null,
-      lockedAt: null,
       finaleSeconds: finaleResult.durationSeconds,
       momentsSeconds: momentsResult.durationSeconds,
       momentSignals: momentsResult.segments.map((s) => ({postId: s.postId, signal: s.signal})),
     };
-    await ref.set(doc, {merge: true});
+    // status / pendingCount / pendingSince / lockedAt are settled inside a
+    // transaction: posts that landed mid-render keep the montage pending.
+    const written = await pipeline.finalize(db(), ref, doc, claimResult);
 
     logger.info('montage: ready', {
       gameId, taskId, clipCount: doc.clipCount, version: doc.version,
+      status: written.status, stillPending: written.pendingCount,
       ms: Date.now() - started,
     });
     return {status: 'ready', clipCount: doc.clipCount, version: doc.version};
