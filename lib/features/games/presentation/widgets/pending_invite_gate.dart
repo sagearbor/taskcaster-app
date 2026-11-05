@@ -2,11 +2,76 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/models/game.dart';
 import '../../../../core/services/invite/pending_invite_service.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../friends/domain/repositories/friends_repository.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../screens/game_detail_screen.dart';
+import '../screens/task_execution_screen.dart';
+
+/// Wraps the auth-dependent root. When an invite code is pending (deep link,
+/// "Play in browser" ?join=, install referrer) and nobody is signed in, signs
+/// the visitor in as a guest silently, so the invite opens straight into the
+/// "join your friend's game?" dialog instead of the cold open. Once
+/// authenticated, [PendingInviteGate] (mounted under Home) takes over.
+class PendingInviteGuestSignIn extends StatefulWidget {
+  final Widget child;
+
+  /// Injectable for tests; defaults to the service-locator singleton.
+  final PendingInviteService? invites;
+
+  const PendingInviteGuestSignIn({super.key, required this.child, this.invites});
+
+  @override
+  State<PendingInviteGuestSignIn> createState() =>
+      _PendingInviteGuestSignInState();
+}
+
+class _PendingInviteGuestSignInState extends State<PendingInviteGuestSignIn> {
+  late final PendingInviteService _invites;
+
+  // One guest sign-in per signed-out stretch: a failed attempt (AuthError)
+  // must not loop. Reset once someone is authenticated.
+  bool _requested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _invites = widget.invites ?? sl<PendingInviteService>();
+    _invites.addListener(_maybeSignInAsGuest);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeSignInAsGuest());
+  }
+
+  @override
+  void dispose() {
+    _invites.removeListener(_maybeSignInAsGuest);
+    super.dispose();
+  }
+
+  void _maybeSignInAsGuest() {
+    if (!mounted) return;
+    final auth = context.read<AuthBloc>();
+    if (auth.state is AuthAuthenticated) {
+      _requested = false;
+      return;
+    }
+    if (_requested || _invites.pendingCode == null) return;
+    // Only once the startup auth check has settled on "nobody signed in";
+    // AuthInitial/AuthLoading are re-evaluated by the BlocListener below.
+    if (auth.state is! AuthUnauthenticated) return;
+    _requested = true;
+    auth.add(AnonymousSignInRequested());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<AuthBloc, AuthState>(
+      listener: (_, __) => _maybeSignInAsGuest(),
+      child: widget.child,
+    );
+  }
+}
 
 /// Watches [PendingInviteService] and, when an invite code has arrived via
 /// deep link or Play Install Referrer, pops a "join your friend's game?"
@@ -123,20 +188,26 @@ class _JoinInviteDialogState extends State<_JoinInviteDialog> {
         displayName,
       );
 
+      Game? game;
+      try {
+        game = await sl<GameRepository>().getGameStream(gameId).first;
+      } catch (e) {
+        debugPrint('Loading joined game failed: $e');
+      }
+
       // Auto-friend everyone in the joined game (the inviter included). We can
       // only write OUR own side of the edge; the inviter gains us when they
       // next load the shared game (addFriendsFromGame runs there too). The
       // `ref` uid is implicitly covered because the inviter is a co-player, so
       // loading the game and upserting co-players is sufficient. Best-effort.
-      try {
-        final game = await sl<GameRepository>().getGameStream(gameId).first;
-        if (game != null) {
+      if (game != null) {
+        try {
           debugPrint('Auto-friending co-players of $gameId '
               '(invite ref: ${widget.ref ?? "none"})');
           await sl<FriendsRepository>().addFriendsFromGame(game);
+        } catch (e) {
+          debugPrint('Auto-friend after join failed: $e');
         }
-      } catch (e) {
-        debugPrint('Auto-friend after join failed: $e');
       }
 
       if (!mounted) return;
@@ -146,6 +217,18 @@ class _JoinInviteDialogState extends State<_JoinInviteDialog> {
           builder: (_) => GameDetailScreen(gameId: gameId),
         ),
       );
+      // A game that is already running: land on its current task (with the
+      // game screen underneath for Back), not on the lobby view.
+      if (game != null && game.isInProgress && game.tasks.isNotEmpty) {
+        final taskIndex =
+            game.currentTaskIndex.clamp(0, game.tasks.length - 1).toInt();
+        hostNavigator.push(
+          MaterialPageRoute(
+            builder: (_) =>
+                TaskExecutionScreen(gameId: gameId, taskIndex: taskIndex),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       final text = e.toString().toLowerCase();

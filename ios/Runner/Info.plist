@@ -53,6 +53,12 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- Invite links (custom scheme + Universal Links) are delivered to Dart by
+	     the app_links plugin (PendingInviteService). Flutter's own deep-link
+	     routing must stay off: it would push the URL path as a named route,
+	     which this app (home: only, no route table) cannot resolve. -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>

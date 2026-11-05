@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Join a TaskCaster game</title>
   <meta name="description" content="You've been invited to a TaskCaster party game!">
+  <!-- When the app is installed, iOS (Universal Links) and Android (verified
+       App Links) open these /join/ links in the app and this page never
+       shows. It is the fallback for: no app yet, desktop, or a link opened
+       inside a browser. "Play in browser" works everywhere. -->
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -113,8 +117,12 @@
       <h1>You're invited!</h1>
       <p class="sub">Your friend wants you in their TaskCaster game.</p>
       <div class="code-box" id="code-display"></div>
-      <a id="open-app" class="btn btn-primary hidden" href="#">Open in app</a>
-      <a id="get-play" class="btn btn-secondary" href="#">Get it on Google Play</a>
+      <!-- Primary on every platform: the Flutter web app at /?join=CODE
+           signs the visitor in as a guest and offers the join (2 taps). -->
+      <a id="play-browser" class="btn btn-primary" href="/">Play in browser</a>
+      <a id="open-app" class="btn btn-secondary hidden" href="#">Open in app</a>
+      <a id="get-appstore" class="btn btn-secondary hidden" href="#">Get it on the App Store</a>
+      <a id="get-play" class="btn btn-secondary hidden" href="#">Get it on Google Play</a>
       <p class="hint" id="invite-hint"></p>
     </div>
 
@@ -122,6 +130,8 @@
     <div id="no-code" class="hidden">
       <h1>TaskCaster</h1>
       <p class="sub">This invite link is missing its game code — ask your friend to share it again.</p>
+      <a class="btn btn-primary" href="/">Play in browser</a>
+      <a class="btn btn-secondary" href="https://apps.apple.com/app/id6824157028">Get TaskCaster on the App Store</a>
       <a class="btn btn-secondary" href="https://play.google.com/store/apps/details?id=com.sagearbor.taskcaster.app">Get TaskCaster on Google Play</a>
       <p class="hint">Already have the app? Open it and use "Join Game" with your friend's 6-character code.</p>
     </div>
@@ -130,10 +140,15 @@
   <script>
     (function () {
       var PACKAGE = 'com.sagearbor.taskcaster.app';
+      var APP_STORE_URL = 'https://apps.apple.com/app/id6824157028';
+      // Accept /join/?code=X and the path form /join/X (same as the app's
+      // InviteLinks.parse route table).
       var params = new URLSearchParams(location.search);
-      var code = (params.get('code') || '').trim().toUpperCase();
+      var pathCode = (location.pathname.split('/').filter(Boolean)[1] || '');
+      var code = (params.get('code') || pathCode).trim().toUpperCase();
       // The inviter's uid (optional). Opaque — used to auto-friend the inviter
-      // after the join. Carried through both the deep link and install referrer.
+      // after the join. Carried through the deep link, the install referrer
+      // and the "Play in browser" URL.
       var ref = (params.get('ref') || '').trim();
       // Same alphabet the app uses (no I/L/O/0/1).
       var valid = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(code);
@@ -146,43 +161,71 @@
       document.getElementById('invite').classList.remove('hidden');
       document.getElementById('code-display').textContent = code;
 
-      // Referrer payload carries the code (and optional ref) through a fresh
-      // install so the app can pop the join dialog on first launch.
-      var referrerPayload = 'invite_code=' + code + (ref ? '&ref=' + ref : '');
+      var refQuery = ref ? '&ref=' + encodeURIComponent(ref) : '';
 
-      // Play Store link carrying the referrer payload.
+      // Play in browser: the Flutter web app reads ?join= from Uri.base at
+      // startup (PendingInviteService). Same origin, so it works on the
+      // firebaseapp.com alias and preview channels too.
+      document.getElementById('play-browser').href =
+        '/?join=' + encodeURIComponent(code) + refQuery;
+
+      // Referrer payload carries the code (and optional ref) through a fresh
+      // Play install so the app can pop the join dialog on first launch.
+      var referrerPayload = 'invite_code=' + code + (ref ? '&ref=' + ref : '');
       var playUrl = 'https://play.google.com/store/apps/details?id=' + PACKAGE +
         '&referrer=' + encodeURIComponent(referrerPayload);
-      document.getElementById('get-play').href = playUrl;
 
       var ua = navigator.userAgent || '';
       var isAndroid = /android/i.test(ua);
+      // iPadOS 13+ reports itself as a Mac; touch support gives it away.
+      var isIOS = /iPhone|iPad|iPod/i.test(ua) ||
+        (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+
+      var openBtn = document.getElementById('open-app');
+      var hint = document.getElementById('invite-hint');
 
       if (isAndroid) {
+        var getPlay = document.getElementById('get-play');
+        getPlay.href = playUrl;
+        getPlay.classList.remove('hidden');
         // Android intent URL: opens the app if installed, otherwise falls
-        // back to the Play Store (still carrying the referrer). The ref rides
-        // along on the deep link so an installed app can auto-friend too.
-        var intentQuery = 'code=' + encodeURIComponent(code) +
-          (ref ? '&ref=' + encodeURIComponent(ref) : '');
-        var intentUrl = 'intent://join?' + intentQuery +
-          '#Intent;scheme=taskcaster;package=' + PACKAGE +
+        // back to the Play Store (still carrying the referrer).
+        var intentUrl = 'intent://join?code=' + encodeURIComponent(code) +
+          refQuery + '#Intent;scheme=taskcaster;package=' + PACKAGE +
           ';S.browser_fallback_url=' + encodeURIComponent(playUrl) + ';end';
-        var openBtn = document.getElementById('open-app');
         openBtn.href = intentUrl;
         openBtn.classList.remove('hidden');
-        document.getElementById('invite-hint').textContent =
-          'No app yet? "Open in app" sends you to Google Play and brings ' +
-          'you straight into the game after install.';
-        // Best-effort auto-open. Browsers usually require a tap for intent://
-        // navigation, so this may be silently ignored — the buttons are the
-        // reliable path.
-        setTimeout(function () {
-          try { window.location.href = intentUrl; } catch (e) { /* noop */ }
-        }, 600);
+        hint.textContent =
+          'Installing from Google Play? You land straight in this game ' +
+          'after install.';
+      } else if (isIOS) {
+        var getAppStore = document.getElementById('get-appstore');
+        getAppStore.href = APP_STORE_URL;
+        getAppStore.classList.remove('hidden');
+        // Universal Links already open the installed app when this link is
+        // tapped in Messages/Notes/Mail. This page shows when the app is not
+        // installed or the link was opened inside Safari, so offer the custom
+        // scheme as an explicit "I already have it" button.
+        openBtn.href = 'taskcaster://join?code=' + encodeURIComponent(code) +
+          refQuery;
+        openBtn.textContent = 'I have the app: open it';
+        openBtn.classList.remove('hidden');
+        hint.textContent =
+          'New to TaskCaster? After installing, open this link again or ' +
+          'enter code ' + code + ' under "Join Game".';
       } else {
-        document.getElementById('invite-hint').textContent =
-          'On iPhone or desktop? Grab the app on your Android phone, or ' +
-          'open TaskCaster and enter code ' + code + ' under "Join Game".';
+        // Desktop: playing in the browser is the whole story; store links
+        // are for sending to a phone later.
+        hint.innerHTML = '';
+        hint.appendChild(document.createTextNode('On your phone? Get the app for '));
+        var a1 = document.createElement('a');
+        a1.href = APP_STORE_URL; a1.textContent = 'iPhone'; a1.style.color = 'inherit';
+        var a2 = document.createElement('a');
+        a2.href = playUrl; a2.textContent = 'Android'; a2.style.color = 'inherit';
+        hint.appendChild(a1);
+        hint.appendChild(document.createTextNode(' or '));
+        hint.appendChild(a2);
+        hint.appendChild(document.createTextNode(' and enter code ' + code + '.'));
       }
     })();
   </script>

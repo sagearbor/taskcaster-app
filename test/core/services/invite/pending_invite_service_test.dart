@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taskcaster_app/core/services/invite/invite_link_parser.dart';
 import 'package:taskcaster_app/core/services/invite/pending_invite_service.dart';
 
 void main() {
@@ -198,6 +199,76 @@ void main() {
 
       expect(service.consume(), isNull);
       expect(notified, 1, reason: 'consuming nothing should not notify');
+    });
+  });
+
+  group('PendingInviteService — universal / app links (WP-07)', () {
+    test('https /join/ link and its ref become the pending invite', () async {
+      final service = buildService(
+        initialLink: Uri.parse(
+            'https://taskmaster-app-3d480.web.app/join/?code=ABC234&ref=u1'),
+      );
+      await service.init();
+
+      expect(service.pendingCode, 'ABC234');
+      expect(service.pendingRef, 'u1');
+      expect(service.pendingLink, isNull);
+    });
+
+    test('share routes are held as pendingLink, not as an invite', () async {
+      final service = buildService();
+      await service.init();
+
+      links.add(Uri.parse('https://taskmaster-app-3d480.web.app/p/post123'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(service.pendingCode, isNull);
+      expect(service.pendingLink, const FeedPostLink('post123'));
+      expect(service.consumeLink(), const FeedPostLink('post123'));
+      expect(service.pendingLink, isNull);
+      expect(service.consumeLink(), isNull);
+    });
+  });
+
+  group('PendingInviteService — web launch URL', () {
+    PendingInviteService webService(String url, {List<int>? linkCalls}) {
+      return PendingInviteService(
+        isWeb: true,
+        isAndroid: false,
+        webLaunchUri: () => Uri.parse(url),
+        getInitialLink: () async {
+          linkCalls?.add(1);
+          return null;
+        },
+        uriLinkStream: links.stream,
+        getInstallReferrer: () async => null,
+      );
+    }
+
+    test('reads ?join= from the page URL (Play in browser)', () async {
+      final calls = <int>[];
+      final service = webService(
+          'https://taskmaster-app-3d480.web.app/?join=abc234&ref=u9#/',
+          linkCalls: calls);
+      await service.init();
+
+      expect(service.pendingCode, 'ABC234');
+      expect(service.pendingRef, 'u9');
+      expect(service.source, PendingInviteSource.link);
+      expect(calls, isEmpty, reason: 'app_links is not used on web');
+    });
+
+    test('accepts our other origins (firebaseapp.com, localhost)', () async {
+      final service = webService('http://localhost:5000/?join=QRS789');
+      await service.init();
+      expect(service.pendingCode, 'QRS789');
+    });
+
+    test('a plain page load leaves nothing pending', () async {
+      final service = webService('https://taskmaster-app-3d480.web.app/#/');
+      await service.init();
+      expect(service.pendingCode, isNull);
+      expect(service.pendingLink, isNull);
     });
   });
 }

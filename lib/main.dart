@@ -132,7 +132,9 @@ class TaskCasterApp extends StatelessWidget {
           darkTheme: AppTheme.darkTheme,
           themeMode: ThemeController.instance.themeMode,
           debugShowCheckedModeBanner: false,
-          home: const AuthScreen(),
+          // An invite link (or web ?join=) with nobody signed in skips the
+          // cold open: silent guest sign-in, then the join dialog (WP-07).
+          home: const PendingInviteGuestSignIn(child: AuthScreen()),
         ),
       ),
     );
