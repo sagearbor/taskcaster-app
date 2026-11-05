@@ -232,9 +232,14 @@ void main() {
           .doc('users/d-1/private/profile')
           .set({'email': 'd@example.com'});
       await firestore.doc('users/d-1/friends/f1').set({'uid': 'f1'});
+      await firestore
+          .doc('push_subscriptions/d-1')
+          .set({'fcmTokens': {'tok': 'now'}});
 
       await source().deleteAccount();
 
+      expect((await firestore.doc('push_subscriptions/d-1').get()).exists,
+          isFalse, reason: 'device tokens must not outlive the account');
       expect((await firestore.doc('users/d-1').get()).exists, isFalse);
       expect((await firestore.doc('users/d-1/private/profile').get()).exists,
           isFalse);

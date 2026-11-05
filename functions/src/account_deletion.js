@@ -16,7 +16,9 @@
  *                                      is pulled from graderIds, but the
  *                                      anonymous gradeCount/gradeSum stay so
  *                                      other players' scores do not move
- *   push_subscriptions/{uid}
+ *   push_subscriptions/{uid}           web push targets AND the iOS/Android
+ *                                      FCM device tokens (fcmTokens, moved
+ *                                      here from users/{uid} by WP-12)
  *   Storage submissions/{uid}/         every clip the user uploaded
  *   users/{uid}                        the whole subtree (private/, friends/)
  *   invites the user sent or received
@@ -165,7 +167,7 @@ async function deleteUserData(uid, {db, bucket, FieldValue}) {
   const gradesGiven = await deleteGivenGrades(db, uid, FieldValue);
   const games = await leaveGames(db, uid);
   const invites = await deleteInvites(db, uid);
-  await db.collection(PUSH_SUBSCRIPTIONS).doc(uid).delete();
+  await db.recursiveDelete(db.collection(PUSH_SUBSCRIPTIONS).doc(uid));
   await db.recursiveDelete(db.collection(USERS).doc(uid));
   await deleteStorageClips(bucket, uid);
 

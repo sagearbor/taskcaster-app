@@ -531,9 +531,11 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     //
     // 1. Delete the Firestore data this user owns WHILE still authenticated
     //    — security rules only allow a user to write their own users/{uid}
-    //    doc and its friends subcollection. Deleting the doc removes the
-    //    fcmTokens map too (it's a field on the doc, not a separate
-    //    collection). The reciprocal edge in another user's own friends
+    //    doc, its friends and private subcollections, and their
+    //    push_subscriptions/{uid} doc (device tokens and web push targets).
+    //    The server function deletes these too; doing it here as well means
+    //    the device stops getting pushes even before it runs. The reciprocal
+    //    edge in another user's own friends
     //    subcollection is theirs to keep or remove (self-write only, see
     //    firestore.rules) — it is simply left pointing at a uid that no
     //    longer resolves to an account.
@@ -555,6 +557,7 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
       batch.delete(doc.reference);
     }
     batch.delete(_privateProfile(uid));
+    batch.delete(_firestore.collection('push_subscriptions').doc(uid));
     batch.delete(userDoc);
     await batch.commit();
   }

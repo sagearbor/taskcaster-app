@@ -96,7 +96,10 @@ test('deleting an account removes its data in one trigger run (emulator)', {skip
   await db.doc('feed_posts/mine/grades/other').set({score: 4});
   await db.doc('feed_posts/theirs').set({userId: 'other', gradeCount: 1, gradeSum: 5, graderIds: [uid]});
   await db.doc(`feed_posts/theirs/grades/${uid}`).set({score: 5});
-  await db.doc(`push_subscriptions/${uid}`).set({subs: {k: {endpoint: 'https://x'}}});
+  await db.doc(`push_subscriptions/${uid}`).set({
+    subs: {k: {endpoint: 'https://x'}},
+    fcmTokens: {'device-token-1': new Date().toISOString()},
+  });
   await db.doc(`users/${uid}`).set({displayName: 'Doomed'});
   await db.doc(`users/${uid}/private/profile`).set({email: 'd@example.com'});
   await db.doc(`users/${uid}/friends/other`).set({uid: 'other'});

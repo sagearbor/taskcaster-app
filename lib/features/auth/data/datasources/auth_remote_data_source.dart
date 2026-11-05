@@ -54,7 +54,8 @@ abstract class AuthRemoteDataSource {
   List<String> getCurrentUserProviderIds();
 
   /// Permanently delete the signed-in user's owned Firestore data (profile
-  /// doc — including its fcmTokens map — and friend links), then the
+  /// doc, private profile, friend links and push_subscriptions/{uid}), then
+  /// the
   /// Firebase Auth account itself. Throws [FirebaseAuthException] with code
   /// 'requires-recent-login' if the session is too old; call
   /// [reauthenticate] and retry in that case.
