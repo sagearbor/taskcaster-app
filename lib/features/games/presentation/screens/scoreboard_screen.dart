@@ -30,7 +30,7 @@ class ScoreboardScreen extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
+              gradient: context.tokens.heroGradient,
               borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(24),
                 bottomRight: Radius.circular(24),
@@ -41,7 +41,7 @@ class ScoreboardScreen extends StatelessWidget {
                 Text(
                   game.gameName,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
+                    color: context.tokens.onHero,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
@@ -50,7 +50,7 @@ class ScoreboardScreen extends StatelessWidget {
                 Text(
                   '${game.players.length} players • ${game.tasks.length} tasks',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white.withOpacity(0.9),
+                    color: context.tokens.onHero.withOpacity(0.9),
                   ),
                 ),
                 if (game.isCompleted) ...[
@@ -58,13 +58,13 @@ class ScoreboardScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: context.tokens.onHero.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
                       'Game Completed',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.white,
+                        color: context.tokens.onHero,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -189,7 +189,7 @@ class _WinnerPodium extends StatelessWidget {
               player: players[1],
               rank: 2,
               height: 100,
-              color: Colors.grey[400]!,
+              color: context.tokens.medalSilver,
             ),
           
           const SizedBox(width: 8),
@@ -200,7 +200,7 @@ class _WinnerPodium extends StatelessWidget {
               player: players[0],
               rank: 1,
               height: 140,
-              color: Colors.amber[600]!,
+              color: context.tokens.medalGold,
             ),
           
           const SizedBox(width: 8),
@@ -211,7 +211,7 @@ class _WinnerPodium extends StatelessWidget {
               player: players[2],
               rank: 3,
               height: 80,
-              color: Colors.brown[400]!,
+              color: context.tokens.medalBronze,
             ),
         ],
       ),
@@ -242,8 +242,8 @@ class _PodiumPosition extends StatelessWidget {
           backgroundColor: color,
           child: Text(
             player.displayName.isNotEmpty ? player.displayName[0].toUpperCase() : 'P',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: context.tokens.onMedal,
               fontWeight: FontWeight.bold,
               fontSize: 18,
             ),
@@ -279,8 +279,8 @@ class _PodiumPosition extends StatelessWidget {
           child: Center(
             child: Text(
               '$rank',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: context.tokens.onMedal,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -311,19 +311,19 @@ class _PlayerScoreCard extends StatelessWidget {
     IconData? rankIcon;
     
     if (rank == 1) {
-      rankColor = Colors.amber[700];
+      rankColor = context.tokens.medalGold;
       rankIcon = Icons.emoji_events;
     } else if (rank == 2) {
-      rankColor = Colors.grey[600];
+      rankColor = context.tokens.medalSilver;
       rankIcon = Icons.military_tech;
     } else if (rank == 3) {
-      rankColor = Colors.brown[400];
+      rankColor = context.tokens.medalBronze;
       rankIcon = Icons.military_tech;
     }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      color: isWinner ? Colors.amber.withOpacity(0.1) : null,
+      color: isWinner ? context.tokens.gold.withOpacity(0.1) : null,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -333,16 +333,16 @@ class _PlayerScoreCard extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: rankColor ?? Colors.grey[400],
+                color: rankColor ?? Theme.of(context).colorScheme.surfaceContainerHighest,
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: rankIcon != null
-                    ? Icon(rankIcon, color: Colors.white, size: 20)
+                    ? Icon(rankIcon, color: context.tokens.onMedal, size: 20)
                     : Text(
                         '$rank',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -376,7 +376,7 @@ class _PlayerScoreCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: (rankColor ?? Theme.of(context).colorScheme.primary).withOpacity(0.1),
+                color: (rankColor ?? Theme.of(context).colorScheme.primary).withOpacity(0.16),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: rankColor ?? Theme.of(context).colorScheme.primary,
@@ -386,7 +386,7 @@ class _PlayerScoreCard extends StatelessWidget {
                 '${player.totalScore} pts',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: rankColor ?? Theme.of(context).colorScheme.primary,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
             ),

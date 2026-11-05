@@ -6,6 +6,7 @@ import '../../../../core/models/task.dart';
 import '../../../../core/models/submission.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../games/presentation/bloc/game_detail_bloc.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class VideoTaskSubmission extends StatefulWidget {
   final Task task;
@@ -100,9 +101,9 @@ class _VideoTaskSubmissionState extends State<VideoTaskSubmission> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Video submitted successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: context.tokens.success,
           ),
         );
         Navigator.of(context).pop();
@@ -112,7 +113,7 @@ class _VideoTaskSubmissionState extends State<VideoTaskSubmission> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to submit video: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -141,7 +142,7 @@ class _VideoTaskSubmissionState extends State<VideoTaskSubmission> {
                 children: [
                   Icon(
                     Icons.videocam,
-                    color: Colors.red[700],
+                    color: Theme.of(context).colorScheme.error,
                     size: 24,
                   ),
                   const SizedBox(width: 8),
@@ -158,22 +159,22 @@ class _VideoTaskSubmissionState extends State<VideoTaskSubmission> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: context.tokens.info.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  border: Border.all(color: context.tokens.info.withOpacity(0.3)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.info_outline, color: Colors.blue[700]),
+                        Icon(Icons.info_outline, color: context.tokens.info),
                         const SizedBox(width: 8),
                         Text(
                           'How to submit',
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue[300],
+                            color: context.tokens.info,
                           ),
                         ),
                       ],
@@ -185,7 +186,7 @@ class _VideoTaskSubmissionState extends State<VideoTaskSubmission> {
                       '3. Copy the share link\n'
                       '4. Paste the link below and submit',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.blue[700],
+                        color: context.tokens.info,
                       ),
                     ),
                   ],
@@ -212,19 +213,19 @@ class _VideoTaskSubmissionState extends State<VideoTaskSubmission> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.1),
+                    color: context.tokens.gold.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.amber),
+                    border: Border.all(color: context.tokens.gold),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.edit, color: Colors.amber[700]),
+                      Icon(Icons.edit, color: context.tokens.goldText),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'You can update your submission until it\'s judged',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.amber[700],
+                            color: context.tokens.goldText,
                           ),
                         ),
                       ),
@@ -260,12 +261,12 @@ class _VideoTaskSubmissionState extends State<VideoTaskSubmission> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(0.1),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.lock, color: Colors.grey[600]),
+                      Icon(Icons.lock, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/services/push/web_push_service.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// "Want a ping when someone grades this?" — shown on the Posted screen,
 /// after the player's first post and nowhere else.
@@ -134,7 +135,7 @@ class _PushOptInCardState extends State<PushOptInCard> {
                 ? "That didn't take — you can try again."
                 : 'One notification per clip. Nothing else, ever.',
             style: TextStyle(
-              color: _failed ? Colors.amberAccent : Colors.white70,
+              color: _failed ? context.tokens.gold : Colors.white70,
               fontSize: 13,
             ),
           ),
@@ -146,7 +147,7 @@ class _PushOptInCardState extends State<PushOptInCard> {
                   onPressed: working ? null : _enable,
                   style: FilledButton.styleFrom(
                     backgroundColor: Colors.white,
-                    foregroundColor: Colors.deepPurple,
+                    foregroundColor: Theme.of(context).colorScheme.primary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),

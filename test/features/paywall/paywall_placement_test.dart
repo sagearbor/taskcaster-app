@@ -217,7 +217,7 @@ void main() {
     expect(find.text('theirs'), findsOneWidget, reason: 'a post to grade');
     await tester.tap(find.text('4').first);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('graded 1'), findsOneWidget);
+    expect(find.text('✓ 1 graded'), findsOneWidget);
     expect(launcher.presentations, isEmpty);
   });
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
+
 /// Pure/stateless "big digits" countdown — the hero of the task screen once
 /// the player has hit Start. Takes plain values so it is trivially unit- and
 /// widget-testable; the ticking (a Timer keyed off `startedAt`) lives in the
@@ -21,9 +23,6 @@ class CountdownDisplay extends StatelessWidget {
     this.isLate = false,
   });
 
-  static const Color _normal = Color(0xFF16A34A);
-  static const Color _urgent = Color(0xFFE0395E);
-
   String _format(int seconds) {
     final clamped = seconds < 0 ? 0 : seconds;
     final minutes = clamped ~/ 60;
@@ -33,38 +32,42 @@ class CountdownDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final scheme = Theme.of(context).colorScheme;
     if (isLate) {
+      final late = tokens.late;
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
             decoration: BoxDecoration(
-              color: _urgent.withOpacity(0.14),
+              color: late.withOpacity(0.14),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _urgent, width: 2),
+              border: Border.all(color: late, width: 2),
             ),
-            child: const Text(
+            child: Text(
               'LATE',
               style: TextStyle(
                 fontSize: 40,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 2,
-                color: _urgent,
+                color: late,
               ),
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Posting late still counts — send it',
-            style: TextStyle(fontSize: 13, color: _urgent),
+            style: TextStyle(fontSize: 13, color: late),
           ),
         ],
       );
     }
 
     final urgent = remainingSeconds <= 10;
-    final color = urgent ? _urgent : _normal;
+    // Brand violet while there is time; the error colour for the last 10 s.
+    final color = urgent ? scheme.error : scheme.primary;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -72,6 +75,7 @@ class CountdownDisplay extends StatelessWidget {
         Text(
           _format(remainingSeconds),
           style: TextStyle(
+            fontFamily: 'Fredoka',
             fontSize: 76,
             fontWeight: FontWeight.w800,
             fontFeatures: const [FontFeature.tabularFigures()],

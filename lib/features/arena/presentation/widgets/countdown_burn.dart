@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
+
 /// The TASK clock, drawn over a clip in the bottom-right corner.
 ///
 /// Every in-app video rendering — the pre-post preview, the Arena card and
@@ -108,15 +110,14 @@ class CountdownBurn extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: burning
-            ? const Color(0xFFE0395E).withOpacity(0.92)
+            ? AppTheme.errorColor.withOpacity(0.92)
             : Colors.black.withOpacity(0.55),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
         text,
         style: const TextStyle(
-          // Monospace so the digits do not jitter as the clock runs.
-          fontFamily: 'monospace',
+          // Tabular figures so the digits do not jitter as the clock runs.
           fontFeatures: [FontFeature.tabularFigures()],
           fontSize: 13,
           fontWeight: FontWeight.w700,

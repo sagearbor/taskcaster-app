@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_theme.dart';
 
 /// Consistent error UI component with retry functionality
 class ErrorView extends StatelessWidget {
@@ -7,6 +8,10 @@ class ErrorView extends StatelessWidget {
   final VoidCallback? onRetry;
   final IconData icon;
   final Color? iconColor;
+
+  /// Tint the icon with the theme's warning token (e.g. offline) instead of
+  /// the error colour.
+  final bool warning;
 
   /// Marks a non-error, "muted" state (empty / not-found) so the icon falls
   /// back to the theme's neutral colour instead of the error colour.
@@ -19,6 +24,7 @@ class ErrorView extends StatelessWidget {
     this.onRetry,
     this.icon = Icons.error_outline,
     this.iconColor,
+    this.warning = false,
     bool neutral = false,
   }) : _neutral = neutral;
 
@@ -31,7 +37,7 @@ class ErrorView extends StatelessWidget {
       message: customMessage ?? 'Connection error',
       details: 'Please check your internet connection and try again.',
       icon: Icons.wifi_off,
-      iconColor: Colors.orange,
+      warning: true,
       onRetry: onRetry,
     );
   }
@@ -45,7 +51,6 @@ class ErrorView extends StatelessWidget {
       message: 'Permission required',
       details: 'This app needs $permission permission to continue.',
       icon: Icons.lock_outline,
-      iconColor: Colors.red,
       onRetry: onRetry,
     );
   }
@@ -93,7 +98,9 @@ class ErrorView extends StatelessWidget {
               icon,
               size: 80,
               color: iconColor ??
-                  (_neutral
+                  (warning
+                      ? context.tokens.warning
+                      : _neutral
                       ? theme.colorScheme.onSurfaceVariant
                       : theme.colorScheme.error.withOpacity(0.6)),
             ),

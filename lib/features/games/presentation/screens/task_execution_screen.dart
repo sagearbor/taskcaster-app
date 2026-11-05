@@ -261,7 +261,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(true),
                   style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
+                    foregroundColor: Theme.of(context).colorScheme.error,
                   ),
                   child: const Text('Leave'),
                 ),
@@ -293,7 +293,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
-                backgroundColor: Colors.red,
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
             );
           }
@@ -423,13 +423,13 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
               width: 100,
               height: 100,
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: context.tokens.success.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.check_circle,
                 size: 64,
-                color: Colors.green,
+                color: context.tokens.success,
               ),
             ),
             const SizedBox(height: 24),
@@ -523,12 +523,12 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Icon(Icons.timer, size: 16, color: Colors.green[400]),
+                            Icon(Icons.timer, size: 16, color: context.tokens.success),
                             const SizedBox(width: 4),
                             Text(
                               'Submitted on time',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.green[400],
+                                    color: context.tokens.success,
                                   ),
                             ),
                           ],
@@ -602,9 +602,9 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
               durationSeconds: state.task.durationSeconds!,
               onTimeExpired: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
+                  SnackBar(
                     content: Text('Time is up! Please submit your video.'),
-                    backgroundColor: Colors.orange,
+                    backgroundColor: context.tokens.warning,
                   ),
                 );
               },
@@ -693,7 +693,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
               border: const OutlineInputBorder(),
               prefixIcon: const Icon(Icons.link),
               suffixIcon: _isUrlValid
-                  ? const Icon(Icons.check_circle, color: Colors.green)
+                  ? Icon(Icons.check_circle, color: context.tokens.success)
                   : IconButton(
                       icon: const Icon(Icons.content_paste),
                       tooltip: 'Paste from clipboard',
@@ -1378,7 +1378,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                   );
             },
             style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
+              foregroundColor: Theme.of(context).colorScheme.error,
             ),
             child: const Text('Skip'),
           ),

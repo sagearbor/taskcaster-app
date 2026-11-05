@@ -44,6 +44,16 @@ class UserAvatar extends StatelessWidget {
     return _palette[hash % _palette.length];
   }
 
+  /// Ink or white, whichever contrasts more with [bg] (WCAG relative
+  /// luminance: white wins below ~0.18). The old fixed 0.55 threshold put
+  /// white initials on gold (2.1:1).
+  static Color foregroundFor(Color bg) {
+    final l = bg.computeLuminance();
+    final onWhite = 1.05 / (l + 0.05);
+    final onInk = (l + 0.05) / (AppTheme.ink.computeLuminance() + 0.05);
+    return onWhite >= onInk ? Colors.white : AppTheme.ink;
+  }
+
   bool get _hasEmoji => avatarEmoji != null && avatarEmoji!.trim().isNotEmpty;
 
   String get _initial =>
@@ -53,8 +63,7 @@ class UserAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = colorFor(displayName);
     // Choose readable foreground based on background luminance.
-    final fg =
-        bg.computeLuminance() > 0.55 ? AppTheme.ink : Colors.white;
+    final fg = foregroundFor(bg);
 
     return Container(
       decoration: borderColor != null

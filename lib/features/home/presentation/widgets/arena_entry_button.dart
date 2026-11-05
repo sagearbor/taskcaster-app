@@ -34,6 +34,9 @@ class ArenaEntryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final count = unreadCount ?? 0;
+    // scheme.primary: deep violet on light, lavender on dark (violetDeep was
+    // unreadable on the dark surface).
+    final primary = Theme.of(context).colorScheme.primary;
     final label =
         tease ? 'Arena — see how others did' : 'Arena — grade the crowd';
     return SizedBox(
@@ -42,8 +45,8 @@ class ArenaEntryButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onTap,
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppTheme.violetDeep,
-          side: const BorderSide(color: AppTheme.violet, width: 1.5),
+          foregroundColor: primary,
+          side: BorderSide(color: primary, width: 1.5),
           padding: const EdgeInsets.symmetric(horizontal: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -51,7 +54,7 @@ class ArenaEntryButton extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.theater_comedy, color: AppTheme.violet),
+            Icon(Icons.theater_comedy, color: primary),
             const SizedBox(width: 10),
             Expanded(
               child: Text(

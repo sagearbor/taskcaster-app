@@ -68,17 +68,11 @@ class _ColdOpenScreenState extends State<ColdOpenScreen> {
                         // just pushed Start further down the screen.
                         const SizedBox(height: 24),
                         Theme(
-                          // The reveal card is designed for a light surface;
-                          // give it one here rather than adapting its colours
-                          // for a dark backdrop everywhere else in the app.
-                          data: Theme.of(context).copyWith(
-                            cardColor: Colors.white,
-                            textTheme:
-                                Theme.of(context).textTheme.apply(
-                                      bodyColor: AppTheme.ink,
-                                      displayColor: AppTheme.ink,
-                                    ),
-                          ),
+                          // The cold open is always the violet stage, so the
+                          // reveal card is always the light card on it — even
+                          // in dark mode (the dark card theme rendered ink text
+                          // on a dark card: invisible).
+                          data: AppTheme.lightTheme,
                           child: TaskRevealCard(
                             title: widget.taskTitle,
                             description: widget.taskDescription,

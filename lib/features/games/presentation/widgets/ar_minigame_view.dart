@@ -8,6 +8,7 @@ import '../../../../core/services/ar/ar_engine.dart';
 import '../../../../core/services/ar/ar_games.dart';
 import '../../../../core/services/ar/ar_minigame_controller.dart';
 import '../../../../core/services/sfx/game_sfx.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/ar_fx.dart';
 
 /// Hosts a live AR mini-game: the platform AR camera view + a score/timer HUD,
@@ -361,7 +362,8 @@ class _ArMinigameViewState extends State<ArMinigameView>
             child: AnimatedOpacity(
               opacity: _controller.bombFlash ? 1 : 0,
               duration: const Duration(milliseconds: 120),
-              child: Container(color: Colors.red.withOpacity(0.35)),
+              child: Container(
+                  color: Theme.of(context).colorScheme.error.withOpacity(0.35)),
             ),
           ),
         ),
@@ -390,8 +392,8 @@ class _Hud extends StatelessWidget {
     final scanning = !controller.objectsSpawned;
     final s = controller.secondsRemaining;
     final timerColor = s <= 5
-        ? Colors.red[700]
-        : (s <= 10 ? Colors.amber[800] : null);
+        ? Theme.of(context).colorScheme.error
+        : (s <= 10 ? context.tokens.warning : null);
     // The bomb legend shows through the pre-roll and the opening seconds, then
     // gets out of the way.
     final elapsed = config.duration.inSeconds - s;
@@ -424,10 +426,10 @@ class _Hud extends StatelessWidget {
                       Row(
                         children: [
                           if (controller.comboActive) ...[
-                            const ArHudPill(
+                            ArHudPill(
                               icon: Icons.local_fire_department,
                               label: '×2',
-                              color: Colors.deepOrange,
+                              color: context.tokens.late,
                             ),
                             const SizedBox(width: 8),
                           ],

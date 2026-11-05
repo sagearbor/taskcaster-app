@@ -691,7 +691,7 @@ class _DebugHud extends StatelessWidget {
           style: const TextStyle(
             color: Colors.greenAccent,
             fontSize: 12,
-            fontFamily: 'monospace',
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

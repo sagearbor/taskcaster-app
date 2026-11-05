@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import 'timer_pill.dart';
 import 'twist_banner.dart';
 
@@ -34,7 +33,8 @@ class TaskRevealCard extends StatelessWidget {
         padding: const EdgeInsets.all(20.0),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.violet, width: 2),
+          border: Border.all(
+              color: Theme.of(context).colorScheme.primary, width: 2),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,7 +44,7 @@ class TaskRevealCard extends StatelessWidget {
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     letterSpacing: 1.5,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.violetDeep,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
             ),
             const SizedBox(height: 12),

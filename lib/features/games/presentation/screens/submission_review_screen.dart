@@ -78,7 +78,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not open URL: $url'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -185,7 +185,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
-                backgroundColor: Colors.red,
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
             );
           }
@@ -206,10 +206,10 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.error_outline,
                     size: 64,
-                    color: Colors.red,
+                    color: Theme.of(context).colorScheme.error,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -271,7 +271,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   color: allJudged
-                      ? Colors.green.withOpacity(0.15)
+                      ? context.tokens.success.withOpacity(0.15)
                       : Theme.of(context).colorScheme.primaryContainer,
                   child: Column(
                     children: [
@@ -287,7 +287,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
                                 .titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  color: allJudged ? Colors.green[800] : null,
+                                  color: allJudged ? context.tokens.success : null,
                                 ),
                           ),
                           if (state.canFinish)
@@ -296,7 +296,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
                                 _showFinishConfirmation(context);
                               },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
+                                backgroundColor: context.tokens.success,
                                 foregroundColor: Colors.white,
                               ),
                               icon: const Icon(Icons.check),
@@ -317,7 +317,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
                           minHeight: 6,
                           backgroundColor: Colors.white.withOpacity(0.5),
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            allJudged ? Colors.green : AppTheme.violet,
+                            allJudged ? context.tokens.success : AppTheme.violet,
                           ),
                         ),
                       ),
@@ -408,18 +408,18 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
+                        color: context.tokens.success.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.star, color: Colors.amber),
+                          Icon(Icons.star, color: context.tokens.gold),
                           const SizedBox(width: 8),
                           Text(
                             'Scored: ${submission.score} pts',
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: Colors.green[700],
+                                  color: context.tokens.success,
                                   fontWeight: FontWeight.bold,
                                 ),
                           ),
@@ -647,7 +647,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('No Scores Given'),
-          icon: const Icon(Icons.warning, color: Colors.orange, size: 48),
+          icon: Icon(Icons.warning, color: context.tokens.warning, size: 48),
           content: const Text(
             'You haven\'t scored any submissions yet. '
             'Please score at least one submission before finishing.',
@@ -693,7 +693,7 @@ class _SubmissionReviewViewState extends State<SubmissionReviewView> {
               context.read<JudgingBloc>().add(const FinishJudging());
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
+              backgroundColor: context.tokens.success,
               foregroundColor: Colors.white,
             ),
             child: const Text('Finish'),

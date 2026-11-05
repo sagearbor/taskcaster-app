@@ -42,26 +42,21 @@ class NextTaskHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Card(
       elevation: 3,
       clipBehavior: Clip.antiAlias,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [AppTheme.violet, AppTheme.coral],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+        decoration: BoxDecoration(gradient: tokens.heroGradient),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               _overline,
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: tokens.onHeroMuted,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
                 fontSize: 12.5,
@@ -70,22 +65,20 @@ class NextTaskHeroCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               _headline,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 22,
-                height: 1.2,
-              ),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: tokens.onHero,
+                    height: 1.15,
+                  ),
             ),
             if (mode == NextTaskHeroMode.hasTask && timerSeconds != null) ...[
               const SizedBox(height: 12),
-              TimerPill(seconds: timerSeconds!),
+              TimerPill(seconds: timerSeconds!, onGradient: true),
             ],
             if (mode == NextTaskHeroMode.allDone) ...[
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'All ten done. Now make your friends do one.',
-                style: TextStyle(color: Colors.white, fontSize: 14.5),
+                style: TextStyle(color: tokens.onHero, fontSize: 14.5),
               ),
             ],
             const SizedBox(height: 18),
@@ -94,7 +87,7 @@ class NextTaskHeroCard extends StatelessWidget {
               child: FilledButton(
                 onPressed: onPrimary,
                 style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
+                  backgroundColor: tokens.onHero,
                   foregroundColor: AppTheme.violetDeep,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
@@ -103,7 +96,7 @@ class NextTaskHeroCard extends StatelessWidget {
                 ),
                 child: Text(
                   _buttonLabel,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(fontSize: 17),
                 ),
               ),
             ),

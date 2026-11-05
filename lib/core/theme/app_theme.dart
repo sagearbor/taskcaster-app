@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'app_tokens.dart';
+
+export 'app_tokens.dart';
+
 /// "Trophy" — playful game-show energy. Deep violet + gold + coral, a rounded
 /// display face (Fredoka) for headings and a clean grotesque (Plus Jakarta
 /// Sans) for body. Fonts are bundled assets (no runtime fetch).
@@ -35,6 +39,17 @@ class AppTheme {
   static const Color onDark = Color(0xFFEDE9F5); // primary text on dark
   static const Color onDarkMuted = Color(0xFFAEA4C6); // secondary text on dark
   static const Color darkError = Color(0xFFFF8A9B); // readable red on dark
+
+  /// Party palette for confetti and other celebration particles.
+  static const List<Color> confetti = [
+    violet,
+    Color(0xFF8B5CF6),
+    coral,
+    gold,
+    goldBright,
+    Color(0xFF14B8A6),
+    Color(0xFF38BDF8),
+  ];
 
   static const String _display = 'Fredoka';
   static const String _body = 'PlusJakartaSans';
@@ -102,12 +117,21 @@ class AppTheme {
       scaffoldBackgroundColor: cream,
       fontFamily: _body,
       textTheme: _textTheme(ink),
+      extensions: const [AppTokens.light],
       appBarTheme: const AppBarTheme(
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: violet,
         foregroundColor: Colors.white,
+        iconTheme: IconThemeData(color: Colors.white),
+        actionsIconTheme: IconThemeData(color: Colors.white),
+        toolbarTextStyle: TextStyle(
+          fontFamily: _body,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+          color: Colors.white,
+        ),
         titleTextStyle: TextStyle(
           fontFamily: _display,
           fontWeight: FontWeight.w600,
@@ -139,6 +163,19 @@ class AppTheme {
               letterSpacing: 0.3),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: violet,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle: const TextStyle(
+              fontFamily: _display,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              letterSpacing: 0.3),
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: violet,
@@ -152,8 +189,8 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: violet,
-          textStyle:
-              const TextStyle(fontFamily: _body, fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+              fontFamily: _display, fontWeight: FontWeight.w600, fontSize: 15),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -229,12 +266,21 @@ class AppTheme {
       scaffoldBackgroundColor: darkBg,
       fontFamily: _body,
       textTheme: _textTheme(onDark),
+      extensions: const [AppTokens.dark],
       appBarTheme: const AppBarTheme(
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: darkAppBar,
         foregroundColor: Colors.white,
+        iconTheme: IconThemeData(color: Colors.white),
+        actionsIconTheme: IconThemeData(color: Colors.white),
+        toolbarTextStyle: TextStyle(
+          fontFamily: _body,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+          color: Colors.white,
+        ),
         titleTextStyle: TextStyle(
           fontFamily: _display,
           fontWeight: FontWeight.w600,
@@ -266,6 +312,19 @@ class AppTheme {
               letterSpacing: 0.3),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: violetLight,
+          foregroundColor: violetDeep,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle: const TextStyle(
+              fontFamily: _display,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              letterSpacing: 0.3),
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: violetLight,
@@ -279,8 +338,8 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: violetLight,
-          textStyle:
-              const TextStyle(fontFamily: _body, fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+              fontFamily: _display, fontWeight: FontWeight.w600, fontSize: 15),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
