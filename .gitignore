@@ -71,3 +71,6 @@ console-errors.txt
 
 # Claude Code agent worktrees
 .claude/
+
+# Golden test images are test fixtures, not stray screenshots.
+!test/**/goldens/*.png
