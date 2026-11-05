@@ -122,7 +122,17 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
           .watchQueue(viewerId: viewerId, unlockedTaskIds: queryIds)
           .listen(
         (posts) => controller.add(_ArenaSnapshot(ids, posts)),
-        onError: controller.addError,
+        onError: (Object error, StackTrace stack) {
+          if (ids.isEmpty) {
+            // The tease is a nicety: a newcomer whose tease read fails
+            // (offline, a missing index) gets the empty tease (finale +
+            // "Your turn"), never an error page.
+            debugPrint('ArenaBloc tease read failed: $error');
+            controller.add(_ArenaSnapshot(ids, const []));
+            return;
+          }
+          controller.addError(error, stack);
+        },
       );
     }
 

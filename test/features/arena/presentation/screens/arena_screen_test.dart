@@ -171,6 +171,20 @@ void main() {
     expect(find.text('Next (2/2)'), findsOneWidget);
   });
 
+  testWidgets('a failed tease read shows the empty tease, not an error page',
+      (tester) async {
+    await pumpArena(tester);
+    await tester.pump();
+    unlockedController.add(<String>{});
+    await tester.pump();
+    queueController.addError(Exception('FAILED_PRECONDITION: needs an index'));
+    await tester.pump();
+
+    expect(find.text('Something went wrong'), findsNothing);
+    expect(find.text("Post yours to unlock everyone else's"), findsOneWidget);
+    expect(find.text('Your turn: 30 s'), findsOneWidget);
+  });
+
   testWidgets('Your turn pops the Arena with yourTurnResult', (tester) async {
     tester.view.physicalSize = const Size(800, 2000);
     tester.view.devicePixelRatio = 1.0;
