@@ -32,6 +32,15 @@ void main() {
       expect(current?.avatarEmoji, '🏆');
     });
 
+    test('Google/Apple from a guest keeps the same uid (mock mirrors link)',
+        () async {
+      final guest = await repository.signInAnonymously();
+      final viaGoogle = await repository.signInWithGoogle();
+      expect(viaGoogle.id, guest.id);
+      expect(repository.isCurrentUserAnonymous(), isFalse);
+      expect(repository.takeSignInNotice(), isNull);
+    });
+
     test('upgradeGuestAccount keeps the same uid (preserves data)', () async {
       final guest = await repository.signInAnonymously();
       expect(repository.isCurrentUserAnonymous(), isTrue);

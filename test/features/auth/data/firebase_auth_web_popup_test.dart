@@ -30,6 +30,11 @@ void main() {
     expect(auth.currentUser?.uid, 'web-uid');
     final doc = await firestore.collection('users').doc('web-uid').get();
     expect(doc.exists, isTrue, reason: 'profile doc must be upserted');
-    expect(doc.data()?['email'], 'web@example.com');
+    // The public doc is readable by every signed-in user, so the email lives
+    // in the owner-only private profile instead.
+    expect(doc.data()!.containsKey('email'), isFalse);
+    final private =
+        await firestore.doc('users/web-uid/private/profile').get();
+    expect(private.data()?['email'], 'web@example.com');
   });
 }

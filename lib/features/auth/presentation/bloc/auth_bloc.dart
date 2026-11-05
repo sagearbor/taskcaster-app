@@ -102,7 +102,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(AuthLoading());
     try {
       final user = await authRepository.signInWithGoogle();
-      emit(AuthAuthenticated(user: user));
+      emit(AuthAuthenticated(
+        user: user,
+        notice: authRepository.takeSignInNotice(),
+      ));
     } catch (e) {
       emit(_authError('Google sign-in', e));
     }
@@ -113,7 +116,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(AuthLoading());
     try {
       final user = await authRepository.signInWithApple();
-      emit(AuthAuthenticated(user: user));
+      emit(AuthAuthenticated(
+        user: user,
+        notice: authRepository.takeSignInNotice(),
+      ));
     } catch (e) {
       emit(_authError('Apple sign-in', e));
     }

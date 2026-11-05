@@ -153,6 +153,26 @@ void main() {
       );
 
       blocTest<AuthBloc, AuthState>(
+        'carries the "existing account" notice when a guest could not be '
+        'linked',
+        build: () {
+          when(() => mockAuthRepository.signInWithGoogle())
+              .thenAnswer((_) async => testUser);
+          when(() => mockAuthRepository.takeSignInNotice())
+              .thenReturn('Signed in to your existing account');
+          return authBloc;
+        },
+        act: (bloc) => bloc.add(GoogleSignInRequested()),
+        expect: () => [
+          AuthLoading(),
+          AuthAuthenticated(
+            user: testUser,
+            notice: 'Signed in to your existing account',
+          ),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthState>(
         'emits [AuthLoading, AuthError] when Google sign in is cancelled',
         build: () {
           when(() => mockAuthRepository.signInWithGoogle())

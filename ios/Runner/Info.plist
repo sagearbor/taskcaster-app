@@ -22,6 +22,35 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<!-- URL schemes. The first is REVERSED_CLIENT_ID from
+	     GoogleService-Info.plist: GoogleSignIn on iOS hands the OAuth result
+	     back through it and throws "missing support for the following URL
+	     schemes" (killing the app) when it is absent. Keep it in sync if the
+	     iOS OAuth client is ever regenerated. The second is the app's own
+	     scheme for invite deep links (taskcaster://...). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>google-sign-in</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.488967944620-lhugdf44nsemgruva1s0p8kkpo2cd6mc</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.sagearbor.taskcaster</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>taskcaster</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

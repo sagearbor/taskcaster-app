@@ -11,6 +11,12 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'auth_remote_data_source.dart';
 
+/// Asks Apple for an ID credential bound to [hashedNonce]. The production
+/// implementation is [SignInWithApple.getAppleIDCredential]; tests inject a
+/// fake so the link-vs-sign-in branch can run off-device.
+typedef AppleCredentialRequest = Future<AuthorizationCredentialAppleID>
+    Function(String hashedNonce);
+
 class FirebaseAuthDataSource implements AuthRemoteDataSource {
   final firebase_auth.FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
@@ -42,17 +48,159 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
   // avatar emoji once it has been loaded via getCurrentUserProfile().
   String? _cachedAvatarEmoji;
 
+  final AppleCredentialRequest _requestAppleCredential;
+
+  /// Set when a guest's Google/Apple sign-in could not be linked because that
+  /// Google/Apple identity already belongs to another account, so the session
+  /// switched to that account instead. Read once via [takeSignInNotice].
+  String? _signInNotice;
+
+  /// The one-line message shown when a guest lands in an existing account.
+  static const String existingAccountNotice =
+      'Signed in to your existing account';
+
   FirebaseAuthDataSource({
     firebase_auth.FirebaseAuth? firebaseAuth,
     FirebaseFirestore? firestore,
     GoogleSignIn? googleSignIn,
     bool? useWebPopup,
+    AppleCredentialRequest? appleCredentialRequest,
   })  : _firebaseAuth = firebaseAuth ?? firebase_auth.FirebaseAuth.instance,
         _firestore = firestore ?? FirebaseFirestore.instance,
         _googleSignIn = googleSignIn ?? GoogleSignIn(),
-        _useWebPopup = useWebPopup ?? kIsWeb;
+        _useWebPopup = useWebPopup ?? kIsWeb,
+        _requestAppleCredential =
+            appleCredentialRequest ?? _defaultAppleCredentialRequest;
 
   static const String _usersCollection = 'users';
+
+  /// users/{uid} is readable by every signed-in user (it carries the display
+  /// name and avatar other players see). Anything personal (today, the email
+  /// address) lives in users/{uid}/private/profile instead, which
+  /// firestore.rules restricts to the owner.
+  static const String _privateCollection = 'private';
+  static const String _privateProfileDoc = 'profile';
+
+  DocumentReference<Map<String, dynamic>> _publicUserDoc(String uid) =>
+      _firestore.collection(_usersCollection).doc(uid);
+
+  DocumentReference<Map<String, dynamic>> _privateProfile(String uid) =>
+      _publicUserDoc(uid).collection(_privateCollection).doc(_privateProfileDoc);
+
+  static Future<AuthorizationCredentialAppleID> _defaultAppleCredentialRequest(
+      String hashedNonce) {
+    return SignInWithApple.getAppleIDCredential(
+      scopes: const [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
+      nonce: hashedNonce,
+      // Required on Android (and web): Apple has no native SDK there, so the
+      // sign-in runs through Apple's web OAuth page. The clientId is the
+      // Services ID and redirectUri is the Firebase auth handler.
+      webAuthenticationOptions: WebAuthenticationOptions(
+        clientId: _appleServiceId,
+        redirectUri: Uri.parse(_appleRedirectUri),
+      ),
+    );
+  }
+
+  @override
+  String? takeSignInNotice() {
+    final notice = _signInNotice;
+    _signInNotice = null;
+    return notice;
+  }
+
+  /// Link error codes Firebase returns when the Google/Apple identity being
+  /// linked already belongs to a different (non-guest) account.
+  static bool _isAlreadyInUse(firebase_auth.FirebaseAuthException e) =>
+      e.code == 'credential-already-in-use' ||
+      e.code == 'email-already-in-use';
+
+  /// Sign in with [credential], but if the current session is a guest, LINK
+  /// the credential to it instead, so the uid (and with it the guest's games,
+  /// posts and grades) carries over to the permanent account.
+  /// signInWithCredential from a guest would mint a brand-new uid and orphan
+  /// everything the guest made.
+  ///
+  /// If the identity is already attached to another account, the guest
+  /// cannot be merged into it; we sign in to that account (the player's
+  /// "real" one) and leave a notice for the UI.
+  Future<firebase_auth.User> _linkOrSignIn(
+      firebase_auth.AuthCredential credential) async {
+    _signInNotice = null;
+    final current = _firebaseAuth.currentUser;
+    if (current != null && current.isAnonymous) {
+      try {
+        final result = await current.linkWithCredential(credential);
+        return result.user ?? _firebaseAuth.currentUser ?? current;
+      } on firebase_auth.FirebaseAuthException catch (e) {
+        if (!_isAlreadyInUse(e)) rethrow;
+        // Firebase hands back a fresh credential on iOS/Android (Apple's
+        // nonce-bound token cannot be replayed); fall back to ours.
+        final result =
+            await _firebaseAuth.signInWithCredential(e.credential ?? credential);
+        _signInNotice = existingAccountNotice;
+        return result.user!;
+      }
+    }
+    final result = await _firebaseAuth.signInWithCredential(credential);
+    return result.user!;
+  }
+
+  /// Web counterpart of [_linkOrSignIn]: the OAuth popup flow.
+  Future<firebase_auth.User> _linkOrSignInWithPopup(
+      firebase_auth.AuthProvider provider) async {
+    _signInNotice = null;
+    final current = _firebaseAuth.currentUser;
+    if (current != null && current.isAnonymous) {
+      try {
+        final result = await current.linkWithPopup(provider);
+        return result.user ?? _firebaseAuth.currentUser ?? current;
+      } on firebase_auth.FirebaseAuthException catch (e) {
+        if (!_isAlreadyInUse(e)) rethrow;
+        final result = e.credential != null
+            ? await _firebaseAuth.signInWithCredential(e.credential!)
+            : await _firebaseAuth.signInWithPopup(provider);
+        _signInNotice = existingAccountNotice;
+        return result.user!;
+      }
+    }
+    final result = await _firebaseAuth.signInWithPopup(provider);
+    return result.user!;
+  }
+
+  /// After a guest is linked, the top-level displayName can still be empty
+  /// (the provider's name only lands in providerData). Copy it up so the
+  /// profile doc and the app bar show the real name.
+  Future<firebase_auth.User> _adoptProviderName(firebase_auth.User user) async {
+    if (user.displayName != null && user.displayName!.trim().isNotEmpty) {
+      return user;
+    }
+    final fromProvider = user.providerData
+        .map((p) => p.displayName)
+        .whereType<String>()
+        .firstWhere((n) => n.trim().isNotEmpty, orElse: () => '');
+    if (fromProvider.isEmpty) return user;
+    try {
+      await user.updateDisplayName(fromProvider.trim());
+      await user.reload();
+    } catch (_) {
+      // Cosmetic; never fail a sign-in over it.
+    }
+    return _firebaseAuth.currentUser ?? user;
+  }
+
+  /// The account's email, falling back to the linked provider's when the
+  /// top-level field has not been populated yet (fresh link).
+  static String? _emailOf(firebase_auth.User user) {
+    if (user.email != null && user.email!.isNotEmpty) return user.email;
+    for (final p in user.providerData) {
+      if (p.email != null && p.email!.isNotEmpty) return p.email;
+    }
+    return null;
+  }
 
   @override
   Stream<String?> get authStateChanges {
@@ -94,11 +242,12 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
       // Web: Firebase-hosted OAuth popup. No google_sign_in plugin involved,
       // so no web client id / GIS script configuration is needed beyond the
       // Google provider being enabled in the Firebase console.
+      // A guest is linked (same uid) rather than signed in afresh.
       final provider = firebase_auth.GoogleAuthProvider()
         ..addScope('email')
         ..setCustomParameters({'prompt': 'select_account'});
-      final result = await _firebaseAuth.signInWithPopup(provider);
-      final user = result.user!;
+      final user =
+          await _adoptProviderName(await _linkOrSignInWithPopup(provider));
       _cachedAvatarEmoji = null;
       await _upsertUserDoc(user);
       return user.uid;
@@ -120,9 +269,9 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
       idToken: googleAuth.idToken,
     );
 
-    // 3. Exchange the Google credential for a Firebase session.
-    final result = await _firebaseAuth.signInWithCredential(credential);
-    final user = result.user!;
+    // 3. Exchange the Google credential for a Firebase session, linking it
+    //    to the current guest, if there is one, so their uid survives.
+    final user = await _adoptProviderName(await _linkOrSignIn(credential));
     _cachedAvatarEmoji = null;
     await _upsertUserDoc(user);
     return user.uid;
@@ -136,20 +285,7 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     final rawNonce = _generateNonce();
     final hashedNonce = _sha256(rawNonce);
 
-    final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: const [
-        AppleIDAuthorizationScopes.email,
-        AppleIDAuthorizationScopes.fullName,
-      ],
-      nonce: hashedNonce,
-      // Required on Android (and web): Apple has no native SDK there, so the
-      // sign-in runs through Apple's web OAuth page. The clientId is the
-      // Services ID and redirectUri is the Firebase auth handler.
-      webAuthenticationOptions: WebAuthenticationOptions(
-        clientId: _appleServiceId,
-        redirectUri: Uri.parse(_appleRedirectUri),
-      ),
-    );
+    final appleCredential = await _requestAppleCredential(hashedNonce);
 
     final oauthCredential =
         firebase_auth.OAuthProvider('apple.com').credential(
@@ -158,8 +294,8 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
       accessToken: appleCredential.authorizationCode,
     );
 
-    final result = await _firebaseAuth.signInWithCredential(oauthCredential);
-    final user = result.user!;
+    // Link to the current guest when there is one (keeps the uid).
+    final user = await _linkOrSignIn(oauthCredential);
 
     // Apple only returns the full name on the FIRST authorization, and never
     // in the identity token — so set it on the Firebase user when present.
@@ -223,6 +359,9 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
           await _firestore.collection(_usersCollection).doc(user.uid).get();
       final data = doc.data();
       if (data != null) {
+        if (data.containsKey('email')) {
+          await _migrateEmailToPrivate(user, data['email']);
+        }
         avatarEmoji = data['avatarEmoji'] as String?;
         final created = data['createdAt'];
         if (created is Timestamp) {
@@ -243,6 +382,27 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
       'avatarEmoji': avatarEmoji,
       if (createdAt != null) 'createdAt': createdAt.toIso8601String(),
     };
+  }
+
+  /// A session restored from disk never goes through a sign-in method, so the
+  /// public-email cleanup also runs the first time the profile is read.
+  Future<void> _migrateEmailToPrivate(
+      firebase_auth.User user, Object? publicEmail) async {
+    try {
+      final email = _emailOf(user) ??
+          (publicEmail is String && publicEmail.isNotEmpty ? publicEmail : null);
+      final batch = _firestore.batch();
+      if (email != null) {
+        batch.set(_privateProfile(user.uid), {
+          'email': email,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      batch.update(_publicUserDoc(user.uid), {'email': FieldValue.delete()});
+      await batch.commit();
+    } catch (_) {
+      // Retried on the next read; never block loading the profile.
+    }
   }
 
   @override
@@ -267,11 +427,18 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     if (avatarEmoji != null) {
       update['avatarEmoji'] = avatarEmoji.isEmpty ? null : avatarEmoji;
     }
-    if (user.email != null) update['email'] = user.email;
-    await _firestore
-        .collection(_usersCollection)
-        .doc(user.uid)
-        .set(update, SetOptions(merge: true));
+    // Never on the public doc: see [_privateProfile].
+    update['email'] = FieldValue.delete();
+    final batch = _firestore.batch();
+    batch.set(_publicUserDoc(user.uid), update, SetOptions(merge: true));
+    final email = _emailOf(user);
+    if (email != null) {
+      batch.set(_privateProfile(user.uid), {
+        'email': email,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+    await batch.commit();
   }
 
   @override
@@ -296,31 +463,48 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     if (displayName.trim().isNotEmpty) {
       await linkedUser.updateDisplayName(displayName.trim());
     }
-    await _firestore.collection(_usersCollection).doc(linkedUser.uid).set({
+    final batch = _firestore.batch();
+    batch.set(_publicUserDoc(linkedUser.uid), {
       'displayName': displayName.trim().isNotEmpty
           ? displayName.trim()
           : email.split('@')[0],
+      'email': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    batch.set(_privateProfile(linkedUser.uid), {
       'email': email,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    await batch.commit();
     return linkedUser.uid;
   }
 
   /// Create/merge the users/{uid} profile doc after a social sign-in so the
-  /// display name + email are persisted (mirrors email/password sign-up).
+  /// display name is persisted (mirrors email/password sign-up). The email
+  /// goes to the owner-only users/{uid}/private/profile doc, and any email an
+  /// older build left on the public doc is removed in the same batch: this is
+  /// the "migrate on next sign-in" step.
   Future<void> _upsertUserDoc(firebase_auth.User user) async {
     try {
-      final fallbackName = user.email != null && user.email!.contains('@')
-          ? user.email!.split('@')[0]
-          : 'Player';
-      await _firestore.collection(_usersCollection).doc(user.uid).set({
+      final email = _emailOf(user);
+      final fallbackName =
+          email != null && email.contains('@') ? email.split('@')[0] : 'Player';
+      final batch = _firestore.batch();
+      batch.set(_publicUserDoc(user.uid), {
         'displayName': (user.displayName != null &&
                 user.displayName!.trim().isNotEmpty)
             ? user.displayName!.trim()
             : fallbackName,
-        if (user.email != null) 'email': user.email,
+        'email': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      if (email != null) {
+        batch.set(_privateProfile(user.uid), {
+          'email': email,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      await batch.commit();
     } catch (_) {
       // Non-fatal: the auth session is valid even if the profile write fails.
     }
@@ -339,11 +523,19 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     if (user == null) {
       throw Exception('No signed-in user to delete');
     }
+    // Everything else the account left behind (feed posts and their grades,
+    // grades it gave, Storage clips, push subscriptions, game memberships)
+    // is removed server-side by the `deleteUserData` auth onDelete Cloud
+    // Function (functions/src/account_deletion.js), which fires once step 2
+    // below succeeds.
+    //
     // 1. Delete the Firestore data this user owns WHILE still authenticated
     //    — security rules only allow a user to write their own users/{uid}
-    //    doc and its friends subcollection. Deleting the doc removes the
-    //    fcmTokens map too (it's a field on the doc, not a separate
-    //    collection). The reciprocal edge in another user's own friends
+    //    doc, its friends and private subcollections, and their
+    //    push_subscriptions/{uid} doc (device tokens and web push targets).
+    //    The server function deletes these too; doing it here as well means
+    //    the device stops getting pushes even before it runs. The reciprocal
+    //    edge in another user's own friends
     //    subcollection is theirs to keep or remove (self-write only, see
     //    firestore.rules) — it is simply left pointing at a uid that no
     //    longer resolves to an account.
@@ -358,16 +550,16 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
   }
 
   Future<void> _deleteOwnedFirestoreData(String uid) async {
-    final userDoc = _firestore.collection(_usersCollection).doc(uid);
+    final userDoc = _publicUserDoc(uid);
     final friends = await userDoc.collection('friends').get();
-    if (friends.docs.isNotEmpty) {
-      final batch = _firestore.batch();
-      for (final doc in friends.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
+    final batch = _firestore.batch();
+    for (final doc in friends.docs) {
+      batch.delete(doc.reference);
     }
-    await userDoc.delete();
+    batch.delete(_privateProfile(uid));
+    batch.delete(_firestore.collection('push_subscriptions').doc(uid));
+    batch.delete(userDoc);
+    await batch.commit();
   }
 
   @override
@@ -417,17 +609,7 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     if (providerIds.contains('apple.com')) {
       final rawNonce = _generateNonce();
       final hashedNonce = _sha256(rawNonce);
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: const [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-        nonce: hashedNonce,
-        webAuthenticationOptions: WebAuthenticationOptions(
-          clientId: _appleServiceId,
-          redirectUri: Uri.parse(_appleRedirectUri),
-        ),
-      );
+      final appleCredential = await _requestAppleCredential(hashedNonce);
       final oauthCredential = firebase_auth.OAuthProvider('apple.com').credential(
         idToken: appleCredential.identityToken,
         rawNonce: rawNonce,

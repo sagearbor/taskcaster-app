@@ -13,6 +13,10 @@ abstract class AuthRepository {
   /// Sign in with Apple (web OAuth flow on Android). Returns the [User].
   Future<User> signInWithApple();
 
+  /// See [AuthRemoteDataSource.takeSignInNotice]: a one-line message to show
+  /// after a Google/Apple sign-in (consumed on read), or null.
+  String? takeSignInNotice();
+
   Future<void> signOut();
   String? getCurrentUserId();
   Future<User?> getCurrentUser();
@@ -35,8 +39,9 @@ abstract class AuthRepository {
   List<String> getCurrentUserProviderIds();
 
   /// Permanently delete the signed-in user's account: their Firestore
-  /// profile doc (and the fcmTokens/friend-links data it and its
-  /// subcollections carry), then the Firebase Auth account itself. May throw
+  /// profile doc and its subcollections, and their push_subscriptions doc),
+  /// then the Firebase Auth account itself; a Cloud Function then removes
+  /// the rest (posts, grades, clips, game seats). May throw
   /// a requires-recent-login auth error — call [reauthenticate] and retry.
   Future<void> deleteAccount();
 
