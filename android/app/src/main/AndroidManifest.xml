@@ -77,6 +77,16 @@
         <!-- ARCore is optional: device shows AR when supported, falls back
              gracefully otherwise. -->
         <meta-data android:name="com.google.ar.core" android:value="optional" />
+        <!-- FCM "you got graded" pushes (functions/src/push.js): a white
+             silhouette for the status bar and the brand purple as accent.
+             POST_NOTIFICATIONS comes from the firebase_messaging plugin's
+             manifest; it is requested on the Posted screen, not at start. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notify" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/ic_launcher_background" />
         <!-- ============================================================
              CLOUD ANCHORS (AR Lab spike) — API KEY GOES HERE.
              The hidden AR Lab screen (Settings > Experimental) tests ARCore

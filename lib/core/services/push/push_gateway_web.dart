@@ -47,8 +47,12 @@ class PlatformPushGateway implements PushGateway {
     }
   }
 
+  /// The browser answers [permission] synchronously; nothing to refresh.
   @override
-  Future<PushSubscription?> subscribe() async {
+  Future<void> refresh() async {}
+
+  @override
+  Future<PushTarget?> subscribe() async {
     try {
       final promise = _subscribe();
       if (promise == null) return null;

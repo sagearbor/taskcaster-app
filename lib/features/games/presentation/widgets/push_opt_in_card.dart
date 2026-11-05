@@ -7,16 +7,17 @@ import '../../../auth/domain/repositories/auth_repository.dart';
 /// "Want a ping when someone grades this?" — shown on the Posted screen,
 /// after the player's first post and nowhere else.
 ///
-/// Timing is the whole point. The browser gives an app exactly ONE chance to
-/// ask: say no and it will not re-prompt, ever, on that origin. Asking at app
-/// start (which is when Android's notification dialog used to fire — see
+/// Timing is the whole point. The browser, and iOS, give an app exactly ONE
+/// chance to ask: say no and the OS will not re-prompt. Asking at app start
+/// (which is when Android's notification dialog used to fire — see
 /// NotificationPrompt) means asking someone who has not yet seen a single
 /// clip. Asking here means asking someone who has just posted and now has a
-/// reason to care whether anyone graded it.
+/// reason to care whether anyone graded it. Same card on web (VAPID) and on
+/// iOS/Android (FCM); [WebPushService] hides the difference.
 ///
-/// Renders nothing at all unless the browser can do push AND has not already
-/// been answered, so it never appears on mobile builds, on Safari without
-/// push, or to someone who already opted in or out.
+/// Renders nothing at all unless the platform can do push AND has not already
+/// been answered, so it never appears on desktop, on Safari without push, or
+/// to someone who already opted in or out.
 class PushOptInCard extends StatefulWidget {
   /// Injectable for tests; defaults to the real service.
   final WebPushService? service;
@@ -42,6 +43,17 @@ class _PushOptInCardState extends State<PushOptInCard> {
   late final WebPushService _service = widget.service ?? WebPushService();
   _CardState _state = _CardState.offering;
   bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // iOS/Android permission is an async platform read; until it lands the
+    // gateway says "unsupported" and the card stays hidden. On web this is
+    // a no-op.
+    _service.refresh().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   Future<void> _enable() async {
     final uid = sl<AuthRepository>().getCurrentUserId();

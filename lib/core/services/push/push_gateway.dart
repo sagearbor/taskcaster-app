@@ -1,9 +1,10 @@
-/// Browser Push API access, behind an interface.
+/// Push permission + subscription, behind one interface for every platform.
 ///
-/// The real implementation is a thin call into `web/push.js` through
-/// js_interop; everything else in the app (and every test) sees only this.
-/// Conditional import picks the web one at compile time so `dart:js_interop`
-/// never reaches a mobile or VM build.
+/// On web the real implementation is a thin call into `web/push.js` through
+/// js_interop (VAPID web push). Everywhere else it is Firebase Cloud Messaging
+/// (`push_gateway_stub.dart`). Everything else in the app (and every test)
+/// sees only this. Conditional import picks the web one at compile time so
+/// `dart:js_interop` never reaches a mobile or VM build.
 library;
 
 import 'push_gateway_stub.dart' if (dart.library.js_interop) 'push_gateway_web.dart';
@@ -24,8 +25,23 @@ enum PushPermission {
   denied,
 }
 
+/// Something the server can push to, as produced by [PushGateway.subscribe]:
+/// a browser subscription on web, an FCM registration token on iOS/Android.
+/// Sealed so the code that persists it has to handle both.
+sealed class PushTarget {
+  const PushTarget();
+}
+
+/// An iOS/Android FCM registration token. The Cloud Function reads these from
+/// `push_subscriptions/{uid}.fcmTokens.{token}`.
+class FcmRegistration extends PushTarget {
+  final String token;
+
+  const FcmRegistration(this.token);
+}
+
 /// A browser push subscription, ready to be persisted for the server to use.
-class PushSubscription {
+class PushSubscription extends PushTarget {
   /// The push service URL this browser listens on.
   final String endpoint;
 
@@ -85,31 +101,40 @@ String stableIdForEndpoint(String endpoint) {
   return hash.toRadixString(16).padLeft(8, '0');
 }
 
-/// The browser Push API, or a no-op on platforms that have none.
+/// The browser Push API on web, Firebase Cloud Messaging on iOS/Android.
 abstract class PushGateway {
-  /// The platform implementation: real on web, no-op everywhere else.
+  /// The platform implementation for the current build.
   factory PushGateway() = PlatformPushGateway;
 
-  /// What the browser says right now, without prompting.
+  /// What the platform says right now, without prompting.
+  ///
+  /// Synchronous so a widget can decide in `build` whether to offer the
+  /// opt-in. On platforms whose permission API is async (iOS/Android) this
+  /// is the value from the last [refresh], and [PushPermission.unsupported]
+  /// until the first one completes, so nothing is offered prematurely.
   PushPermission permission();
 
+  /// Re-read the platform's permission state. Never throws.
+  Future<void> refresh();
+
   /// Prompt (if needed) and subscribe. Null when the player says no, the
-  /// browser cannot, or anything at all goes wrong.
-  Future<PushSubscription?> subscribe();
+  /// platform cannot, or anything at all goes wrong.
+  Future<PushTarget?> subscribe();
 }
 
 /// Test double. Returns whatever it was built with and records the calls.
 class FakePushGateway implements PushGateway {
   PushPermission _permission;
-  final PushSubscription? subscription;
+  final PushTarget? subscription;
   int subscribeCalls = 0;
+  int refreshCalls = 0;
 
   FakePushGateway({
     PushPermission permission = PushPermission.prompt,
     this.subscription,
   }) : _permission = permission;
 
-  /// Lets a test simulate the browser's state changing after a prompt
+  /// Lets a test simulate the platform's state changing after a prompt
   /// (e.g. `prompt` becoming `denied` once the user has refused).
   void setPermission(PushPermission value) => _permission = value;
 
@@ -117,7 +142,10 @@ class FakePushGateway implements PushGateway {
   PushPermission permission() => _permission;
 
   @override
-  Future<PushSubscription?> subscribe() async {
+  Future<void> refresh() async => refreshCalls++;
+
+  @override
+  Future<PushTarget?> subscribe() async {
     subscribeCalls++;
     return subscription;
   }

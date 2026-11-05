@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,9 +29,9 @@ void main() {
     expect(find.text('No thanks'), findsOneWidget);
   });
 
-  testWidgets('renders nothing on a platform without web push', (tester) async {
-    // This is the mobile case: Android and iOS get FCM device-token pushes,
-    // not browser push, so the card must never appear there.
+  testWidgets('renders nothing on a platform without push', (tester) async {
+    // Desktop, Safari without push, or iOS/Android before the async
+    // permission read has landed.
     await tester.pumpWidget(host(serviceWith(PushPermission.unsupported)));
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('Want a ping when someone grades this?'), findsNothing);
@@ -61,4 +63,46 @@ void main() {
     await tester.pumpWidget(host(serviceWith(PushPermission.prompt)));
     expect(find.text('Want a ping when someone grades this?'), findsNothing);
   });
+
+  testWidgets('appears once an async (iOS/Android) permission read says "ask"',
+      (tester) async {
+    final gateway = _SlowGateway();
+    await tester.pumpWidget(host(WebPushService(
+      gateway: gateway,
+      firestore: FakeFirebaseFirestore(),
+    )));
+    // Before the platform answers: nothing, not a premature prompt.
+    expect(find.text('Want a ping when someone grades this?'), findsNothing);
+    gateway.answer(PushPermission.prompt);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Want a ping when someone grades this?'), findsOneWidget);
+  });
+}
+
+/// A gateway whose permission read completes only when the test says so,
+/// like FirebaseMessaging.getNotificationSettings on a device.
+class _SlowGateway implements PushGateway {
+  PushPermission _p = PushPermission.unsupported;
+  final _pending = <void Function()>[];
+
+  void answer(PushPermission p) {
+    _p = p;
+    for (final f in _pending) {
+      f();
+    }
+  }
+
+  @override
+  PushPermission permission() => _p;
+
+  @override
+  Future<void> refresh() {
+    final c = Completer<void>();
+    _pending.add(c.complete);
+    return c.future;
+  }
+
+  @override
+  Future<PushTarget?> subscribe() async => null;
 }
