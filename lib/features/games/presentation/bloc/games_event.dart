@@ -52,8 +52,17 @@ class DeleteGame extends GamesEvent {
 ///
 /// Idempotent: a user only ever has one starter game. Emits
 /// [StarterPackReady] with the game id and the task they should be on.
+///
+/// [taskId] (WP-09 share links) opens THAT task instead of the next
+/// unsubmitted one, when the starter game has it (an older starter game may
+/// carry pre-v2 ids; it then falls back to the usual next task).
 class StartStarterPack extends GamesEvent {
-  const StartStarterPack();
+  final String? taskId;
+
+  const StartStarterPack({this.taskId});
+
+  @override
+  List<Object> get props => [taskId ?? ''];
 }
 
 /// "Challenge friends": create a friend game (lobby, creator judges) seeded

@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -12,6 +11,7 @@ import '../../../../core/models/task.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
+import '../../../tasks/data/datasources/starter_pack_data.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../../../../core/services/ar/ar_games.dart';
 import '../../../../core/di/service_locator.dart';
@@ -35,9 +35,7 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     required this.authRepository,
     this.feedRepository,
   }) : super(GamesInitial()) {
-    // restartable(): each LoadGames cancels the previous subscription, so the
-    // create/join/delete handlers re-adding it never stack listeners.
-    on<LoadGames>(_onLoadGames, transformer: restartable());
+    on<LoadGames>(_onLoadGames);
     on<CreateGame>(_onCreateGame);
     on<JoinGame>(_onJoinGame);
     on<DeleteGame>(_onDeleteGame);
@@ -146,26 +144,14 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
         initializedTasks[0] = initializedTasks[0].copyWith(deadline: firstTaskDeadline);
       }
 
-      // createGame seeds the doc with a fresh invite code that no other game
-      // holds (GameRepositoryImpl retries until it is unique); read it back
-      // so the full write below keeps that code rather than minting one.
-      final gameId = await gameRepository.createGame(
-        gameName,
-        user.id,
-        user.id,
-      );
-      final created = await gameRepository.getGameStream(gameId).first;
-      if (created == null) {
-        throw Exception('Quick Play game vanished right after it was created');
-      }
-
+      // Create game object
       final game = Game(
-        id: gameId,
+        id: '', // Firestore will generate
         gameName: gameName,
         creatorId: user.id,
         judgeId: user.id, // Creator is judge in Quick Play
         status: GameStatus.inProgress, // Skip lobby!
-        inviteCode: created.inviteCode,
+        inviteCode: _generateInviteCode(),
         players: [
           Player(
             userId: user.id,
@@ -178,13 +164,19 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
         createdAt: DateTime.now(),
         mode: GameMode.async,
         settings: GameSettings.quickPlay(),
-        // Friends may still join a Quick Play game mid-way (see
-        // GameRepository.joinGame and the games rule).
-        gameKind: Game.kindQuick,
       );
 
-      // Then write the full game (tasks, in progress) over the seed doc.
-      await gameRepository.updateGame(gameId, game);
+      // Create in Firestore via updateGame (since createGame doesn't support full Game objects)
+      // First create basic game
+      final gameId = await gameRepository.createGame(
+        gameName,
+        user.id,
+        user.id,
+      );
+
+      // Then update with full game data including tasks
+      final completeGame = game.copyWith(id: gameId);
+      await gameRepository.updateGame(gameId, completeGame);
 
       emit(QuickPlaySuccess(gameId: gameId));
     } catch (e) {
@@ -251,13 +243,22 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       }
 
       final String gameId;
-      final int taskIndex;
+      int taskIndex;
+      final List<String> taskIds;
       if (starter != null) {
         gameId = starter.id;
         taskIndex = _firstUnsubmittedIndex(starter, user.id);
+        taskIds = [for (final t in starter.tasks) t.id];
       } else {
         gameId = await gameRepository.createStarterGame(user);
         taskIndex = 0;
+        taskIds = [for (final t in StarterPackData.tasks()) t.id];
+      }
+      // A share link's task (WP-09) wins over "next unsubmitted".
+      final wanted = event.taskId;
+      if (wanted != null) {
+        final i = taskIds.indexOf(wanted);
+        if (i >= 0) taskIndex = i;
       }
 
       // Best-effort: the Arena should never look empty to a first-time player.
@@ -329,6 +330,12 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     final adj = adjectives[random.nextInt(adjectives.length)];
     final noun = nouns[random.nextInt(nouns.length)];
     return '$adj $noun #${random.nextInt(9999).toString().padLeft(4, '0')}';
+  }
+
+  String _generateInviteCode() {
+    final random = Random();
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    return List.generate(6, (_) => chars[random.nextInt(chars.length)]).join();
   }
 
   List<Task> _getRandomTasks({required int count}) {

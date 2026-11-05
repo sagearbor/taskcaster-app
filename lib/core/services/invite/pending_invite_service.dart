@@ -62,10 +62,9 @@ class PendingInviteService extends ChangeNotifier {
   PendingInviteSource? _source;
   DeepLink? _pendingLink;
 
-  /// A non-join deep link (`/p/`, `/t/`, `/c/`) waiting for a screen to open
-  /// it. Reserved for WP-09 share pages: nothing consumes it yet, so today
-  /// such a link simply opens the app on Home. Join links never land here;
-  /// they go to [pendingCode].
+  /// A non-join deep link (`/p/`, `/t/`, `/c/`, web `/?task=`) waiting for a
+  /// screen to open it. PendingShareGate (WP-09) consumes it once someone is
+  /// signed in. Join links never land here; they go to [pendingCode].
   DeepLink? get pendingLink => _pendingLink;
 
   /// Returns [pendingLink] (or null) and clears it.

@@ -70,6 +70,24 @@ void main() {
       expect(parse('$host/c/ch1/'), const ChallengeLink('ch1'));
     });
 
+    test('WP-09: /t/<taskId>?from=<postId> carries the answered post', () {
+      expect(parse('$host/t/starter-03?from=post_1'),
+          const TaskLink('starter-03', fromPostId: 'post_1'));
+      expect(parse('$host/t/starter-03?from=bad%20id'),
+          const TaskLink('starter-03'));
+    });
+
+    test('WP-09: web root ?task= (a share page\'s "Your turn")', () {
+      expect(parse('$host/?task=starter-09-v2&from=abc', anyHost: true),
+          const TaskLink('starter-09-v2', fromPostId: 'abc'));
+      expect(parse('http://localhost:5000/?task=starter-03', anyHost: true),
+          const TaskLink('starter-03'));
+      expect(parse('$host/?task=bad%20id'), isNull);
+      // A join code still wins at the root.
+      expect(parse('$host/?join=ABC234&task=starter-03'),
+          const JoinGameLink('ABC234'));
+    });
+
     test('rejects missing, extra or unsafe ids', () {
       expect(parse('$host/p/'), isNull);
       expect(parse('$host/p/a/b'), isNull);
@@ -174,7 +192,17 @@ void main() {
       expect(headerSources, contains('/.well-known/apple-app-site-association'));
       expect(headerSources, contains('/.well-known/assetlinks.json'));
 
-      final rewrite = (hosting['rewrites'] as List).single as Map;
+      final rewrites = (hosting['rewrites'] as List).cast<Map>();
+      // WP-09: the share routes go to the sharePage function, BEFORE the
+      // SPA catch-all (Hosting takes the first match).
+      final catchAllAt = rewrites.indexWhere((r) => r['regex'] != null);
+      for (final route in ['/p/**', '/c/**', '/t/**', '/f/**']) {
+        final at = rewrites.indexWhere((r) => r['source'] == route);
+        expect(at, isNonNegative, reason: '$route must be rewritten');
+        expect(at, lessThan(catchAllAt));
+        expect((rewrites[at]['function'] as Map)['functionId'], 'sharePage');
+      }
+      final rewrite = rewrites[catchAllAt];
       final re = RegExp(rewrite['regex'] as String);
       expect(re.hasMatch('/'), isTrue);
       expect(re.hasMatch('/join/ABC234'), isTrue);

@@ -18,8 +18,6 @@ import 'package:taskcaster_app/features/games/presentation/screens/task_executio
 import 'package:taskcaster_app/features/games/presentation/widgets/countdown_display.dart';
 import 'package:taskcaster_app/features/games/presentation/widgets/task_countdown.dart';
 
-import '../../../../helpers/atomic_task_writes.dart';
-
 class MockGameRepository extends Mock implements GameRepository {}
 
 class FakeGame extends Fake implements Game {}
@@ -31,7 +29,6 @@ void main() {
   late MockGameRepository repo;
   late FakeVideoCapture videoCapture;
   late FakePhotoCapture photoCapture;
-  late List<Game> written;
 
   setUpAll(() => registerFallbackValue(FakeGame()));
 
@@ -78,8 +75,7 @@ void main() {
     photoCapture = FakePhotoCapture();
     sl.registerLazySingleton<VideoCapture>(() => videoCapture);
     sl.registerLazySingleton<PhotoCapture>(() => photoCapture);
-    written = [];
-    stubAtomicTaskWrites(repo, onWrite: written.add);
+    when(() => repo.updateGame(any(), any())).thenAnswer((_) async {});
   });
 
   Future<void> pump(
@@ -116,8 +112,10 @@ void main() {
   }
 
   PlayerTaskStatus stampedStatus() {
-    expect(written, hasLength(1));
-    return written.single.tasks.single.playerStatuses['user1']!;
+    final game = verify(() => repo.updateGame('game1', captureAny()))
+        .captured
+        .single as Game;
+    return game.tasks.single.playerStatuses['user1']!;
   }
 
   testWidgets('autoStart lands on the task with the full clock, not counting',
@@ -135,7 +133,7 @@ void main() {
     expect(find.text('No hands in the shot.'), findsOneWidget);
     expect(find.textContaining('Film it'), findsOneWidget);
     // Nothing was stamped.
-    verifyNever(() => repo.updateTaskAtomically(any(), any(), any()));
+    verifyNever(() => repo.updateGame(any(), any()));
   });
 
   testWidgets('Film it stamps startedAt as the camera opens', (tester) async {
@@ -171,7 +169,7 @@ void main() {
 
     expect(find.text('The clock starts when you start typing.'),
         findsOneWidget);
-    verifyNever(() => repo.updateTaskAtomically(any(), any(), any()));
+    verifyNever(() => repo.updateGame(any(), any()));
 
     await tester.tap(find.byType(TextField));
     await tester.pump(const Duration(milliseconds: 100));
@@ -189,6 +187,6 @@ void main() {
 
     expect(find.byKey(const Key('starter-clock-waiting')), findsOneWidget);
     expect(find.textContaining('Film it'), findsOneWidget);
-    verifyNever(() => repo.updateTaskAtomically(any(), any(), any()));
+    verifyNever(() => repo.updateGame(any(), any()));
   });
 }

@@ -45,18 +45,6 @@ class TaskExecutionLoaded extends TaskExecutionState {
       ];
 }
 
-/// A photo / text / link attempt is being posted. Emitted the instant Post it
-/// is tapped (before any network call), so the button cannot be tapped twice.
-class TaskExecutionSubmitting extends TaskExecutionState {
-  /// The task being submitted, so the screen can keep it on screen.
-  final Task task;
-
-  const TaskExecutionSubmitting({required this.task});
-
-  @override
-  List<Object?> get props => [task];
-}
-
 /// A clip is on its way to the bucket. The only state with a progress value —
 /// photo and text submissions are inline and never reach it.
 ///

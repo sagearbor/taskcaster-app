@@ -12,7 +12,6 @@ import 'package:taskcaster_app/features/games/domain/repositories/game_repositor
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_bloc.dart';
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_event.dart';
 import 'package:taskcaster_app/features/games/presentation/screens/task_execution_screen.dart';
-import '../../../../helpers/atomic_task_writes.dart';
 
 class MockGameRepository extends Mock implements GameRepository {}
 
@@ -130,7 +129,7 @@ void main() {
         (tester) async {
       when(() => mockRepo.getGameStream('game1'))
           .thenAnswer((_) => Stream.value(buildGame()));
-      stubAtomicTaskWrites(mockRepo, onWrite: (_) {});
+      when(() => mockRepo.updateGame(any(), any())).thenAnswer((_) async {});
 
       // Put a link on the (mock) clipboard.
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -175,7 +174,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('Submission successful! ✅'), findsOneWidget);
-      verify(() => mockRepo.updateTaskAtomically('game1', 0, any())).called(1);
+      verify(() => mockRepo.updateGame('game1', any())).called(1);
 
       // Let the auto-close timer fire.
       await tester.pump(const Duration(milliseconds: 700));

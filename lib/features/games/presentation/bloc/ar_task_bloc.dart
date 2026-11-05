@@ -1,9 +1,10 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/models/player_task_status.dart';
+import '../../../../core/models/task.dart';
 import '../../../../core/services/ar/ar_capability_service.dart';
 import '../../domain/repositories/game_repository.dart';
-import 'task_execution_bloc.dart' show skipPlayer;
 
 // ---------------------------------------------------------------------------
 // Events
@@ -216,11 +217,31 @@ class ArTaskBloc extends Bloc<ArTaskEvent, ArTaskState> {
         return;
       }
 
-      // Only this player's status changes, on the freshest copy of the task.
-      await gameRepository.updateTaskAtomically(
+      final task = game.tasks[taskIndex];
+      final currentStatus = task.getPlayerStatus(userId) ??
+          PlayerTaskStatus(playerId: userId, state: TaskPlayerState.not_started);
+
+      final updatedStatuses = {
+        ...task.playerStatuses,
+        userId: currentStatus.copyWith(state: TaskPlayerState.skipped),
+      };
+
+      final allDone = updatedStatuses.values
+          .every((s) => s.hasSubmitted || s.state == TaskPlayerState.skipped);
+
+      final updatedTask = task.copyWith(
+        playerStatuses: updatedStatuses,
+        status: allDone
+            ? TaskStatus.ready_to_judge
+            : TaskStatus.waiting_for_submissions,
+      );
+
+      final updatedTasks = List<Task>.from(game.tasks);
+      updatedTasks[taskIndex] = updatedTask;
+
+      await gameRepository.updateGame(
         gameId,
-        taskIndex,
-        (fresh) => skipPlayer(fresh, userId),
+        game.copyWith(tasks: updatedTasks),
       );
       emit(const ArTaskSubmitted());
     } catch (e) {

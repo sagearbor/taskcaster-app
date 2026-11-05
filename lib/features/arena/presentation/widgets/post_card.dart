@@ -41,6 +41,10 @@ class PostCard extends StatefulWidget {
   /// never stalls a playlist.
   final VoidCallback? onVideoEnded;
 
+  /// WP-09: when set, a share button sits in the footer. Pass it only for the
+  /// viewer's OWN posts (sharing makes a friend-game post public).
+  final VoidCallback? onShare;
+
   const PostCard({
     super.key,
     required this.post,
@@ -48,6 +52,7 @@ class PostCard extends StatefulWidget {
     this.autoPlay = true,
     this.loopVideo = true,
     this.onVideoEnded,
+    this.onShare,
   });
 
   @override
@@ -173,6 +178,14 @@ class _PostCardState extends State<PostCard> {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
+                    if (widget.onShare != null)
+                      IconButton(
+                        key: const Key('post-card-share'),
+                        tooltip: 'Share your attempt',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.ios_share_rounded, size: 20),
+                        onPressed: widget.onShare,
+                      ),
                   ],
                 ),
                 Text(

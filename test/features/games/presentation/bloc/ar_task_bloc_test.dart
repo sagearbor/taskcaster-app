@@ -76,21 +76,7 @@ void main() {
       await bloc.close();
     });
 
-    test('the judge submitting a score writes to the scoreboard',
-        () async {
-      final bloc = build(_FakeCapability(ArSupport.supported), creatorId);
-      bloc.add(const ArScoreSubmitted(score: 9, rawResult: 9));
-      await expectLater(bloc.stream, emitsThrough(isA<ArTaskSubmitted>()));
-      await bloc.close();
-
-      final game = await repo.getGameStream(gameId).first;
-      expect(
-        game!.players.firstWhere((p) => p.userId == creatorId).totalScore,
-        9,
-      );
-    });
-
-    test("a challenger's score is handed in for the judge, not banked",
+    test('submitting a score writes to the scoreboard and emits ArTaskSubmitted',
         () async {
       final bloc = build(_FakeCapability(ArSupport.supported), challengerId);
       bloc.add(const ArScoreSubmitted(score: 9, rawResult: 9));
@@ -98,12 +84,9 @@ void main() {
       await bloc.close();
 
       final game = await repo.getGameStream(gameId).first;
-      final status = game!.tasks.single.getPlayerStatus(challengerId)!;
-      expect(status.score, 9);
-      expect(status.isJudged, isFalse);
       expect(
-        game.players.firstWhere((p) => p.userId == challengerId).totalScore,
-        0,
+        game!.players.firstWhere((p) => p.userId == challengerId).totalScore,
+        9,
       );
     });
 

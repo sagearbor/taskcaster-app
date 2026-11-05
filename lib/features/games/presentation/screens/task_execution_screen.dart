@@ -18,6 +18,7 @@ import '../../../../core/widgets/error_view.dart';
 import '../../../arena/domain/models/feed_post.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
 import '../../../arena/presentation/screens/arena_screen.dart';
+import '../../../arena/presentation/widgets/share_attempt_button.dart';
 import '../../../arena/presentation/widgets/watch_together_button.dart';
 import '../widgets/clip_preview.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -53,11 +54,16 @@ class TaskExecutionScreen extends StatelessWidget {
   /// player never has to tap Start twice.
   final bool autoStart;
 
+  /// WP-09: the feed post this attempt answers (a share link's "Your turn").
+  /// The Posted screen then shows the two side by side.
+  final String? challengeFromPostId;
+
   const TaskExecutionScreen({
     super.key,
     required this.gameId,
     required this.taskIndex,
     this.autoStart = false,
+    this.challengeFromPostId,
   });
 
   @override
@@ -80,6 +86,7 @@ class TaskExecutionScreen extends StatelessWidget {
         taskIndex: taskIndex,
         userId: userId,
         autoStart: autoStart,
+        challengeFromPostId: challengeFromPostId,
       ),
     );
   }
@@ -90,6 +97,7 @@ class TaskExecutionView extends StatefulWidget {
   final int taskIndex;
   final String userId;
   final bool autoStart;
+  final String? challengeFromPostId;
 
   const TaskExecutionView({
     super.key,
@@ -97,6 +105,7 @@ class TaskExecutionView extends StatefulWidget {
     required this.taskIndex,
     required this.userId,
     this.autoStart = false,
+    this.challengeFromPostId,
   });
 
   @override
@@ -269,6 +278,9 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                     taskTitle: task.title,
                     feedPostId: state.feedPostId,
                     isLate: state.isLate,
+                    challengeFromPostId: widget.challengeFromPostId,
+                    taskId: task.id,
+                    userId: widget.userId,
                   ),
                 ),
               );
@@ -1177,7 +1189,15 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
               stream: sl<FeedRepository>().watchPost(submission!.feedPostId!),
               builder: (context, snapshot) {
                 final post = snapshot.data;
-                return _SubmittedEntryCard(post: post, submission: submission);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SubmittedEntryCard(post: post, submission: submission),
+                    const SizedBox(height: 16),
+                    // WP-09: your own entry can always leave the app.
+                    ShareAttemptButton(post: post),
+                  ],
+                );
               },
             )
           else if (submission != null)

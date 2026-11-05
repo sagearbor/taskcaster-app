@@ -14,100 +14,6 @@ service cloud.firestore {
     }
 
     // ---- Games ----
-    // Who may change what (WP-02). Scores live in players[].totalScore and
-    // are written only by the judge or the creator. Rules cannot walk the
-    // per-task maps inside `tasks`, so the app re-reads the game inside a
-    // transaction and changes only the caller's own entries there.
-
-    // Top-level fields this update changes.
-    function gameChangedKeys() {
-      return request.resource.data.diff(resource.data).affectedKeys();
-    }
-
-    function gamePlayers(data) {
-      return data.get('players', []);
-    }
-
-    function gamePlayerIds(data) {
-      return data.get('playerIds', []);
-    }
-
-    // Already on the flat roster of uids.
-    function isGameMember() {
-      return gamePlayerIds(resource.data) is list &&
-             request.auth.uid in gamePlayerIds(resource.data);
-    }
-
-    // The judge: full rights, except handing the game (or the judge's chair,
-    // or the invite code) to someone else.
-    function isJudgeUpdate() {
-      return request.auth.uid == resource.data.judgeId &&
-             !gameChangedKeys().hasAny(['creatorId', 'judgeId', 'inviteCode']);
-    }
-
-    // A player records their own start / submission / skip. Only `tasks`
-    // moves: not the roster, not the scores, not status or ownership.
-    function isPlayerTaskUpdate() {
-      return isGameMember() && gameChangedKeys().hasOnly(['tasks']);
-    }
-
-    // A player leaves: exactly their own roster entry and uid go, every other
-    // entry stays byte-for-byte (so nobody's score moves on the way out), and
-    // their per-task statuses may be dropped from `tasks`.
-    function isLeave() {
-      let before = gamePlayers(resource.data);
-      let after = gamePlayers(request.resource.data);
-      let removed = before.removeAll(after);
-      return isGameMember() &&
-             gameChangedKeys().hasOnly(['players', 'playerIds', 'tasks']) &&
-             gamePlayerIds(request.resource.data) ==
-               gamePlayerIds(resource.data).removeAll([request.auth.uid]) &&
-             after.size() == before.size() - 1 &&
-             before.hasAll(after) &&
-             removed.size() == 1 &&
-             removed[0].userId == request.auth.uid;
-    }
-
-    // Lobby games take new players; Quick Play and the Starter Pack are
-    // created in progress and still do.
-    function isJoinable() {
-      return resource.data.status == 'lobby' ||
-             resource.data.get('gameKind', null) in ['quick', 'starter'];
-    }
-
-    function underMaxPlayers(count) {
-      let maxPlayers = resource.data.get('settings', {}).get('maxPlayers', null);
-      return maxPlayers == null || count <= maxPlayers;
-    }
-
-    // A non-member joins: appends exactly themselves, at score 0, to both
-    // rosters, and changes nothing else.
-    function isJoin() {
-      let before = gamePlayers(resource.data);
-      let after = gamePlayers(request.resource.data);
-      let added = after.removeAll(before);
-      return !isGameMember() &&
-             isJoinable() &&
-             gameChangedKeys().hasOnly(['players', 'playerIds']) &&
-             gamePlayerIds(request.resource.data) ==
-               gamePlayerIds(resource.data).concat([request.auth.uid]) &&
-             after.size() == before.size() + 1 &&
-             after.hasAll(before) &&
-             added.size() == 1 &&
-             added[0].keys().hasOnly(['userId', 'displayName', 'totalScore']) &&
-             added[0].userId == request.auth.uid &&
-             added[0].totalScore == 0 &&
-             underMaxPlayers(after.size());
-    }
-
-    // Cloning a public template bumps its popularity counter by exactly one.
-    function isCloneCountBump() {
-      return resource.data.get('isPublic', false) == true &&
-             gameChangedKeys().hasOnly(['cloneCount']) &&
-             request.resource.data.cloneCount ==
-               resource.data.get('cloneCount', 0) + 1;
-    }
-
     // Read: any signed-in user (needed for join-by-invite-code lookups).
     // Privacy of individual video submissions is enforced at the app level.
     match /games/{gameId} {
@@ -117,15 +23,22 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
                        request.resource.data.creatorId == request.auth.uid;
 
+      // The creator and judge have full update rights (scores, status, tasks).
+      // Now that games carry a flat playerIds array, an actual participant is
+      // also allowed to update (submitting answers, AR results). Anyone else
+      // may still write ONLY if they leave ownership/judge/invite code intact —
+      // this is what lets a NOT-yet-member join (they add themselves to
+      // players/playerIds without changing ownership) and blocks hijacking.
       allow update: if isSignedIn() && (
-        // Creator: full rights, but the game stays theirs.
-        (request.auth.uid == resource.data.creatorId &&
-         !gameChangedKeys().hasAny(['creatorId'])) ||
-        isJudgeUpdate() ||
-        isPlayerTaskUpdate() ||
-        isLeave() ||
-        isJoin() ||
-        isCloneCountBump()
+        // Owner / judge: full rights.
+        request.auth.uid == resource.data.creatorId ||
+        request.auth.uid == resource.data.judgeId ||
+        // Existing participant (member of the flat playerIds list).
+        (resource.data.playerIds is list &&
+         request.auth.uid in resource.data.playerIds) ||
+        // Non-member (e.g. a joining player) may write only without seizing
+        // ownership, swapping the judge, or rewriting the invite code.
+        (unchanged('creatorId') && unchanged('judgeId') && unchanged('inviteCode'))
       );
 
       // Only the creator can delete a game.
@@ -272,15 +185,26 @@ service cloud.firestore {
                            resource.data.get('tapCount', 0));
       }
 
-      // The author's own edits: the free-text fields, plus the
-      // grade-to-get-graded boost, which only ever switches on. Counters,
-      // identity, media pointers and timestamps are immutable.
+      // The author's own edits: the free-text fields, the WP-09 public-share
+      // switch (either way, a bool), plus the grade-to-get-graded boost,
+      // which only ever switches on. Counters, identity, media pointers and
+      // timestamps are immutable.
       function ownerEdit() {
         return request.auth.uid == resource.data.userId &&
-               affected().hasOnly(['caption', 'text', 'boosted']) &&
+               affected().hasOnly(['caption', 'text', 'boosted', 'shareable']) &&
+               shareableOk() &&
                (!affected().hasAny(['boosted']) ||
                 (resource.data.get('boosted', false) == false &&
                  request.resource.data.boosted == true));
+      }
+
+      // WP-09: `shareable` decides whether the public /p/ share page renders
+      // this post (functions/src/share_page.js). Absent = the default (public
+      // for Starter Pack posts, private for friend games); when present it
+      // must be a bool.
+      function shareableOk() {
+        return !request.resource.data.keys().hasAny(['shareable']) ||
+               request.resource.data.shareable is bool;
       }
 
       // A video post's Storage object must actually live under the poster's
@@ -327,6 +251,7 @@ service cloud.firestore {
                        request.resource.data.get('isHouse', false) == false &&
                        ownVideoPathOk() &&
                        noServerPlaybackFields() &&
+                       shareableOk() &&
                        freshCounters();
 
       allow update: if isSignedIn() && (ownerEdit() || gradeBump() || tapBump());
@@ -350,6 +275,28 @@ service cloud.firestore {
                          request.auth.uid in getAfter(postPath()).data.get('graderIds', []);
         allow update, delete: if false;
       }
+    }
+
+    // ---- Share attributions (WP-09) ----
+    // share_attributions/{uid}: "this player's first post answered a shared
+    // challenge" — feeds a later "X took your challenge" push. Written once by
+    // the new player, as themselves, pointing at their own post and at a post
+    // that exists; never edited, never read by clients (the Admin SDK reads
+    // it server-side). Create-only, so only the FIRST challenge counts.
+    match /share_attributions/{uid} {
+      allow read: if false;
+      allow create: if isSignedIn() &&
+                       request.auth.uid == uid &&
+                       request.resource.data.keys().hasOnly(
+                         ['fromPostId', 'postId', 'taskId', 'createdAt']) &&
+                       request.resource.data.fromPostId is string &&
+                       request.resource.data.postId is string &&
+                       request.resource.data.taskId is string &&
+                       request.resource.data.fromPostId != request.resource.data.postId &&
+                       request.resource.data.createdAt == request.time &&
+                       exists(/databases/$(database)/documents/feed_posts/$(request.resource.data.fromPostId)) &&
+                       get(/databases/$(database)/documents/feed_posts/$(request.resource.data.postId)).data.userId == uid;
+      allow update, delete: if false;
     }
 
     // ---- Montages ----

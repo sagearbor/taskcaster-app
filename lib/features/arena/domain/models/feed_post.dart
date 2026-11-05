@@ -139,6 +139,13 @@ class FeedPost extends Equatable {
   /// posts with the same counters are the same post as far as the UI cares.
   final List<String> graderIds;
 
+  /// The owner's public-share switch (audit WP-09): whether the public
+  /// `/p/<id>` and `/c/<id>` pages may render this post. Null means "never
+  /// set", which the share page reads as public for Starter Pack and house
+  /// posts (public by design) and private for friend-game posts. Sharing
+  /// your own post from the app sets it to true.
+  final bool? shareable;
+
   const FeedPost({
     required this.id,
     required this.gameId,
@@ -171,6 +178,7 @@ class FeedPost extends Equatable {
     this.clockOffsetSeconds,
     this.timerSeconds,
     this.graderIds = const [],
+    this.shareable,
   });
 
   /// Parses a stored post. Defensive by design: one bad document must never
@@ -222,6 +230,7 @@ class FeedPost extends Equatable {
       graderIds: map['graderIds'] is List
           ? (map['graderIds'] as List).whereType<String>().toList()
           : const [],
+      shareable: map['shareable'] is bool ? map['shareable'] as bool : null,
     );
   }
 
@@ -290,6 +299,8 @@ class FeedPost extends Equatable {
       'clockOffsetSeconds': clockOffsetSeconds,
       'timerSeconds': timerSeconds,
       'graderIds': graderIds,
+      // Only written when decided: an absent key keeps the server default.
+      if (shareable != null) 'shareable': shareable,
     };
   }
 
@@ -325,6 +336,7 @@ class FeedPost extends Equatable {
     int? clockOffsetSeconds,
     int? timerSeconds,
     List<String>? graderIds,
+    bool? shareable,
   }) {
     return FeedPost(
       id: id ?? this.id,
@@ -358,6 +370,7 @@ class FeedPost extends Equatable {
       clockOffsetSeconds: clockOffsetSeconds ?? this.clockOffsetSeconds,
       timerSeconds: timerSeconds ?? this.timerSeconds,
       graderIds: graderIds ?? this.graderIds,
+      shareable: shareable ?? this.shareable,
     );
   }
 
@@ -418,5 +431,6 @@ class FeedPost extends Equatable {
         videoDurationSeconds,
         clockOffsetSeconds,
         timerSeconds,
+        shareable,
       ];
 }
