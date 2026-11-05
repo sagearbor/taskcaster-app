@@ -3,12 +3,14 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/widgets/backend_unavailable_screen.dart';
 import 'core/theme/theme_controller.dart';
 import 'core/di/service_locator.dart';
 import 'core/services/invite/pending_invite_service.dart';
@@ -26,21 +28,45 @@ import 'features/tasks/data/datasources/starter_pack_data.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Try to bring up Firebase. If it isn't configured for this platform yet
-  // (e.g. Android before `flutterfire configure`, see docs/MOBILE_SETUP.md),
-  // fall back to mock services so the app still launches and is fully playable
-  // instead of crashing on startup.
-  var useMock = false;
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    await _initFirebase();
   } catch (e) {
-    debugPrint('Firebase unavailable — starting in offline/demo mode: $e');
-    useMock = true;
+    if (!kDebugMode) {
+      // Release/profile: never fall back to mocks. A mock app looks playable
+      // but saves nothing and cannot play with anyone, which would hide a
+      // broken platform config (e.g. a bad GoogleService-Info.plist) behind
+      // a working-looking UI. Show an honest error with Retry instead; a
+      // successful retry continues the normal startup below.
+      debugPrint('Firebase unavailable: $e');
+      await ThemeController.instance.load();
+      runApp(_BackendUnavailableApp(onRetry: () async {
+        await _initFirebase();
+        await _startApp(useMockServices: false);
+      }));
+      return;
+    }
+    // Debug only: if Firebase isn't configured for this platform yet (see
+    // docs/MOBILE_SETUP.md), fall back to mock services so the app still
+    // launches for local UI work instead of crashing on startup.
+    debugPrint('Firebase unavailable — DEBUG build, starting on mocks: $e');
+    await _startApp(useMockServices: true);
+    return;
   }
 
-  await ServiceLocator.init(useMockServices: useMock);
+  await _startApp(useMockServices: false);
+}
+
+Future<void> _initFirebase() async {
+  // A previous attempt may have registered the default app before failing
+  // later on; initialising it twice would throw duplicate-app.
+  if (Firebase.apps.isNotEmpty) return;
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+}
+
+Future<void> _startApp({required bool useMockServices}) async {
+  await ServiceLocator.init(useMockServices: useMockServices);
 
   // Start capturing friend-invite deep links / install referrer immediately
   // (fire-and-forget: never blocks or crashes startup — the service swallows
@@ -63,6 +89,25 @@ void main() async {
   // sees is the first task rather than a permission dialog on a blank window.
 
   runApp(const TaskCasterApp());
+}
+
+/// Release-build startup failure shell: just the themed error screen.
+class _BackendUnavailableApp extends StatelessWidget {
+  final Future<void> Function() onRetry;
+
+  const _BackendUnavailableApp({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'TaskCaster',
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeController.instance.themeMode,
+      debugShowCheckedModeBanner: false,
+      home: BackendUnavailableScreen(onRetry: onRetry),
+    );
+  }
 }
 
 class TaskCasterApp extends StatelessWidget {

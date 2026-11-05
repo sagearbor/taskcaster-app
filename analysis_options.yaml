@@ -9,6 +9,16 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  # Keep `flutter analyze` (whole project) about our own code: tmp/ holds the
+  # owner's handoff area and agent worktrees (full repo copies), third_party/
+  # is a vendored plugin with its own example app, build/ is generated.
+  exclude:
+    - tmp/**
+    - .claude/**
+    - third_party/**
+    - build/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

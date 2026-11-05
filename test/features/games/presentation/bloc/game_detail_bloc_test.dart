@@ -4,7 +4,6 @@ import 'package:mocktail/mocktail.dart';
 import 'package:taskcaster_app/core/models/game.dart';
 import 'package:taskcaster_app/core/models/game_settings.dart';
 import 'package:taskcaster_app/core/models/player.dart';
-import 'package:taskcaster_app/core/models/task.dart';
 import 'package:taskcaster_app/features/games/domain/repositories/game_repository.dart';
 import 'package:taskcaster_app/features/games/presentation/bloc/game_detail_bloc.dart';
 
@@ -24,45 +23,6 @@ void main() {
   });
 
   group('GameDetailBloc - StartGame', () {
-    final testGame = Game(
-      id: 'game123',
-      gameName: 'Test Game',
-      creatorId: 'creator123',
-      judgeId: 'judge123',
-      inviteCode: 'ABC123',
-      status: GameStatus.lobby,
-      players: [
-        const Player(
-          userId: 'player1',
-          displayName: 'Player 1',
-          totalScore: 0,
-        ),
-        const Player(
-          userId: 'player2',
-          displayName: 'Player 2',
-          totalScore: 0,
-        ),
-      ],
-      tasks: [
-        const Task(
-          id: 'task1',
-          title: 'Test Task 1',
-          description: 'Do something funny',
-          taskType: TaskType.video,
-          submissions: [],
-        ),
-        const Task(
-          id: 'task2',
-          title: 'Test Task 2',
-          description: 'Do something silly',
-          taskType: TaskType.video,
-          submissions: [],
-        ),
-      ],
-      settings: const GameSettings(),
-      createdAt: DateTime.now(),
-    );
-
     blocTest<GameDetailBloc, GameDetailState>(
       'starts game successfully with valid conditions',
       build: () {

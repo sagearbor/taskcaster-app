@@ -121,30 +121,25 @@ class SubmissionProgressWidget extends StatelessWidget {
   ) {
     IconData icon;
     Color iconColor;
-    String statusText;
 
     switch (status.state) {
       case TaskPlayerState.submitted:
       case TaskPlayerState.judged:
         icon = Icons.check_circle;
         iconColor = Colors.green;
-        statusText = 'Submitted';
         break;
       case TaskPlayerState.in_progress:
         icon = Icons.hourglass_empty;
         iconColor = Colors.orange;
-        statusText = 'In Progress';
         break;
       case TaskPlayerState.skipped:
         icon = Icons.skip_next;
         iconColor = Theme.of(context).colorScheme.onSurfaceVariant;
-        statusText = 'Skipped';
         break;
       case TaskPlayerState.not_started:
       default:
         icon = Icons.circle_outlined;
         iconColor = Theme.of(context).colorScheme.onSurfaceVariant;
-        statusText = 'Not Started';
         break;
     }
 

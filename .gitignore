@@ -65,3 +65,6 @@ console-errors.txt
 # directory, not the nested per-device-size iOS ones added alongside it.
 !docs/store/screenshots/*.png
 !docs/store/screenshots/ios/**/*.png
+
+# Firebase CLI deploy cache (local state, differs per machine)
+.firebase/
