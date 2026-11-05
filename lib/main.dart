@@ -91,7 +91,7 @@ Future<void> _startApp({required bool useMockServices}) async {
 
   // App Check (monitor mode). A no-op unless this build was given the
   // APP_CHECK_WEB_KEY / APP_CHECK dart-defines; see AppCheckBootstrap.
-  if (!useMock) await AppCheckBootstrap.activate();
+  if (!useMockServices) await AppCheckBootstrap.activate();
 
   runApp(const TaskCasterApp());
 }
