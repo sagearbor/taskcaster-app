@@ -17,6 +17,32 @@ function bytes(n) {
   return new Uint8Array(n).fill(7);
 }
 
+// yyyyMMdd in UTC, the same key storage.rules builds from request.time and
+// VideoPolicy.dayKey() builds on the client.
+function dayKey(date) {
+  const two = (n) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}${two(date.getUTCMonth() + 1)}${two(date.getUTCDate())}`;
+}
+
+// testEnv.clearStorage() only deletes objects at the bucket ROOT (it calls
+// listAll() on the root and never descends into prefixes), so nested clips
+// like submissions/u1/<day>/0 survived between tests. That never mattered
+// while the create rule ignored existing objects; with the `resource == null`
+// no-overwrite guard it makes every later test's upload to the same slot fail.
+async function clearStorageDeep(testEnv) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const walk = async (r) => {
+      const { items, prefixes } = await listAll(r);
+      await Promise.all(items.map((item) => deleteObject(item)));
+      for (const p of prefixes) {
+        // eslint-disable-next-line no-await-in-loop
+        await walk(p);
+      }
+    };
+    await walk(ref(ctx.storage()));
+  });
+}
+
 describe('storage.rules — submissions/{uid}/{day}/{slot}', function () {
   this.timeout(180000);
   let testEnv;
@@ -26,15 +52,61 @@ describe('storage.rules — submissions/{uid}/{day}/{slot}', function () {
   });
 
   afterEach(async () => {
-    await testEnv.clearStorage();
+    await clearStorageDeep(testEnv);
   });
 
   after(async () => {
     await testEnv.cleanup();
   });
 
-  const DAY = '20260912';
+  // The only writable day folder is TODAY (UTC, server clock). Computed per
+  // run; a run that straddles UTC midnight could flake, which is acceptable.
+  const DAY = dayKey(new Date());
   const path0 = `submissions/u1/${DAY}/0`;
+
+  // WP-04: a made-up date used to give one uid 10 fresh slots per fake day.
+  it('a fake past day (19990101) is denied, even for the owner', async () => {
+    const storage = testEnv.authenticatedContext('u1').storage();
+    await assertFails(
+      uploadBytes(ref(storage, 'submissions/u1/19990101/0'), bytes(1024), {
+        contentType: 'video/mp4',
+      })
+    );
+  });
+
+  it('yesterday and tomorrow are denied (only today is writable)', async () => {
+    const storage = testEnv.authenticatedContext('u1').storage();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    for (const offset of [-DAY_MS, DAY_MS]) {
+      const other = dayKey(new Date(Date.now() + offset));
+      // eslint-disable-next-line no-await-in-loop
+      await assertFails(
+        uploadBytes(ref(storage, `submissions/u1/${other}/0`), bytes(1024), {
+          contentType: 'video/mp4',
+        })
+      );
+    }
+  });
+
+  it('today\'s slot 0 is accepted once; a second write to it is denied', async () => {
+    const storage = testEnv.authenticatedContext('u3').storage();
+    const p = `submissions/u3/${DAY}/0`;
+    await assertSucceeds(
+      uploadBytes(ref(storage, p), bytes(1024), { contentType: 'video/mp4' })
+    );
+    await assertFails(
+      uploadBytes(ref(storage, p), bytes(2048), { contentType: 'video/mp4' })
+    );
+  });
+
+  it('a deeper path under today\'s folder is denied', async () => {
+    const storage = testEnv.authenticatedContext('u1').storage();
+    await assertFails(
+      uploadBytes(ref(storage, `submissions/u1/${DAY}/0/extra`), bytes(1024), {
+        contentType: 'video/mp4',
+      })
+    );
+  });
 
   it('the owner can create at submissions/u1/<day>/0 with contentType video/mp4', async () => {
     const storage = testEnv.authenticatedContext('u1').storage();
@@ -91,33 +163,6 @@ describe('storage.rules — submissions/{uid}/{day}/{slot}', function () {
     );
   });
 
-  // SKIPPED — not a rules bug, an emulator limitation. Per Firebase's own
-  // docs (Granular operations, core-syntax) and firebase/firebase-js-sdk#5079:
-  // `create` governs ALL writes to file *contents*, including an overwrite
-  // of an existing object, UNLESS the bucket has GCS Object Versioning
-  // enabled, in which case a write to an existing path is correctly
-  // evaluated as `update` instead. The production bucket
-  // (gs://taskmaster-app-3d480.firebasestorage.app) DOES have Object
-  // Versioning enabled (paired with a lifecycle rule that expires only
-  // noncurrent versions after 1 day), so in production this write is denied
-  // by `allow update: if false` — see the "OVERWRITE PROTECTION" note at the
-  // top of storage.rules. The Firebase Storage EMULATOR does not implement
-  // Object Versioning, so `resource` is always null on a content write here
-  // and this same-path re-upload is always evaluated (and allowed) under the
-  // `create` rule above regardless of the bucket's real versioning state.
-  // Confirmed against this exact rules file: the second uploadBytes below
-  // currently SUCCEEDS in the emulator. Left skipped, not deleted, because
-  // there is no way to exercise the production behavior locally.
-  it.skip('a second write to an already-created object is denied (create-only)', async () => {
-    const storage = testEnv.authenticatedContext('u1').storage();
-    await assertSucceeds(
-      uploadBytes(ref(storage, path0), bytes(1024), { contentType: 'video/mp4' })
-    );
-    await assertFails(
-      uploadBytes(ref(storage, path0), bytes(2048), { contentType: 'video/mp4' })
-    );
-  });
-
   it('a 33 MiB upload is denied (over the 32 MiB cap)', async () => {
     // ~33 MiB, well under the ~90 s effort budget on the local emulator.
     await assertFails(
@@ -129,27 +174,35 @@ describe('storage.rules — submissions/{uid}/{day}/{slot}', function () {
     );
   });
 
-  it('anyone, even unauthenticated, can read an object', async () => {
+  it('anyone, even unauthenticated, can get an object by its path', async () => {
     const owner = testEnv.authenticatedContext('u1').storage();
     await uploadBytes(ref(owner, path0), bytes(1024), { contentType: 'video/mp4' });
     const anon = testEnv.unauthenticatedContext().storage();
     await assertSucceeds(getBytes(ref(anon, path0)));
   });
 
-  it('anyone, even unauthenticated, can list a day\'s prefix', async () => {
+  // WP-04: listing used to be open, so anyone could enumerate every clip.
+  it('nobody can list a day, uid or submissions prefix (get only)', async () => {
     const owner = testEnv.authenticatedContext('u1').storage();
     await uploadBytes(ref(owner, path0), bytes(1024), { contentType: 'video/mp4' });
     const anon = testEnv.unauthenticatedContext().storage();
-    const result = await assertSucceeds(listAll(ref(anon, `submissions/u1/${DAY}`)));
-    if (result.items.length !== 1) {
-      throw new Error(`expected 1 item, got ${result.items.length}`);
+    for (const storage of [anon, owner]) {
+      for (const prefix of [`submissions/u1/${DAY}`, 'submissions/u1', 'submissions']) {
+        // eslint-disable-next-line no-await-in-loop
+        await assertFails(listAll(ref(storage, prefix)));
+      }
     }
   });
 
-  it('the owner can delete their own clip', async () => {
+  // WP-04: owner delete used to free the slot for another upload that day.
+  it('the owner cannot delete their own clip (it would free the slot)', async () => {
     const storage = testEnv.authenticatedContext('u1').storage();
     await uploadBytes(ref(storage, path0), bytes(1024), { contentType: 'video/mp4' });
-    await assertSucceeds(deleteObject(ref(storage, path0)));
+    await assertFails(deleteObject(ref(storage, path0)));
+    // ...and the slot is still taken.
+    await assertFails(
+      uploadBytes(ref(storage, path0), bytes(1024), { contentType: 'video/mp4' })
+    );
   });
 
   it('a different uid cannot delete someone else\'s clip', async () => {

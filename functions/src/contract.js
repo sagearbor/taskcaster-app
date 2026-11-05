@@ -39,6 +39,25 @@ const MAX_CLIPS = 12;
  */
 const STARTER_SCOPE = 'starter';
 const isStarterTask = (taskId) => typeof taskId === 'string' && taskId.startsWith('starter-');
+
+/**
+ * The real Starter Pack task ids, mirrored from
+ * lib/features/tasks/data/datasources/starter_pack_data.dart (a test keeps the
+ * two in step). Only these may queue a shared 'starter' montage: a made-up
+ * `starter-whatever` would otherwise open a fresh montage doc on demand.
+ */
+const STARTER_TASK_IDS = new Set([
+  'starter-01-v2',
+  'starter-02-v2',
+  'starter-03',
+  'starter-04',
+  'starter-05-v2',
+  'starter-06',
+  'starter-07',
+  'starter-08-v2',
+  'starter-09-v2',
+  'starter-10-v2',
+]);
 const montageScope = (gameId, taskId) => (isStarterTask(taskId) ? STARTER_SCOPE : gameId);
 
 const montageDocId = (gameId, taskId) => `${montageScope(gameId, taskId)}_${taskId}`;
@@ -206,6 +225,32 @@ function applyNewPost(existing, post, nowIso) {
 }
 
 /**
+ * The renderer bookkeeping to write when a render finishes, given the montage
+ * doc as it is NOW (re-read inside the finalize transaction) and the
+ * `pendingCount` the render claimed when it started.
+ *
+ * Posts that arrived while ffmpeg was running bumped `pendingCount` past the
+ * claimed value. Blindly writing `pendingCount: 0` (the old behaviour) dropped
+ * them: they were never in this render and would never trigger the next one.
+ * Instead subtract only what was claimed; if anything is left, stay `pending`
+ * with a fresh window starting at the claim, so the threshold or the settle
+ * pass picks the newcomers up.
+ *
+ * @param {object|null} current montage doc data at finalize time
+ * @param {number} claimedPending pendingCount at claim time
+ * @param {string} claimedAtIso when the render was claimed
+ * @returns {{status: string, pendingCount: number, pendingSince: string|null}}
+ */
+function finalizeBookkeeping(current, claimedPending, claimedAtIso) {
+  const now = Number(current && current.pendingCount) || 0;
+  const leftover = Math.max(0, now - (Number(claimedPending) || 0));
+  if (leftover > 0) {
+    return {status: 'pending', pendingCount: leftover, pendingSince: claimedAtIso};
+  }
+  return {status: 'ready', pendingCount: 0, pendingSince: null};
+}
+
+/**
  * The clip descriptor the montage library wants, from a feed post.
  * @param {object} post
  * @param {string} localPath where the clip was downloaded to
@@ -234,6 +279,8 @@ module.exports = {
   montageScope,
   isStarterTask,
   STARTER_SCOPE,
+  STARTER_TASK_IDS,
+  finalizeBookkeeping,
   finaleObjectPath,
   momentsObjectPath,
   publicUrl,

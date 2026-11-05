@@ -324,21 +324,27 @@ Player clips live at `submissions/{uid}/{yyyyMMdd}/{slot}`, `slot` a single
 digit `0`–`9` (see `lib/core/services/video/video_policy.dart`, the contract
 this file mirrors):
 
-- **Read is public** (`allow read: if true`) — Arena clips are public content,
-  watchable without signing in, and read covers both `get` (one clip) and
-  `list` (a day's folder) via a recursive-wildcard match block.
+- **Get is public** (`allow get: if true`) — Arena clips are public content,
+  watchable without signing in by anyone who has the clip's path or URL.
+  **List is denied** on every `submissions/` prefix (WP-04): nobody can
+  enumerate stored clips, including ones posted to private games.
 - **Create** is restricted to the signed-in owner (`request.auth.uid == uid`),
-  a well-formed `yyyyMMdd` day and single-digit slot, a size cap of
-  32 MiB (`request.resource.size <= 32 * 1024 * 1024`), and a `video/*`
-  content type.
+  an empty slot (`resource == null`), a `day` equal to **today in UTC from the
+  server clock** (`request.time`, so made-up dates give no extra slots), a
+  single-digit slot, a size cap of 32 MiB
+  (`request.resource.size <= 32 * 1024 * 1024`), and a `video/*` content type.
+  A device clock that is a day off makes every slot fail, which the app
+  reports as "out of clips for today".
 - **Update is denied** (`allow update: if false`). See the OVERWRITE
   PROTECTION note below — this blocks metadata patches, and, now that the
   bucket has Object Versioning enabled, also blocks a same-path re-upload
   (which Storage evaluates as `update` once versioning is on).
-- **Delete** is restricted to the owner (lets someone remove a clip early —
-  e.g. a re-take, or a privacy change of mind). Retention is otherwise
-  **indefinite** by the owner's decision ("maybe just not deleting now");
-  there is no lifecycle rule that ages out a live clip.
+- **Delete is denied to clients** (WP-04): an owner delete freed the slot for
+  another upload the same day, which made the cap unbounded. Clips are
+  removed only through the Admin SDK (the account-deletion Cloud Function) or
+  by the owner from the console. Retention is otherwise **indefinite** by the
+  owner's decision ("maybe just not deleting now"); there is no lifecycle
+  rule that ages out a live clip.
 - `house/{file}` and `montages/{gameId}/{taskId}/{file}` are public-read,
   no-client-write (see "Other bucket prefixes" below).
 - Everything else in the bucket denies both read and write.
@@ -362,8 +368,8 @@ forever. With versioning on, a second write to an already-created
 update: if false` denies — so the create-only slot scheme is a **real**
 10/day cap in production. The Firebase Storage **emulator** does not
 implement Object Versioning, so it always evaluates a same-path rewrite as
-`create` and cannot demonstrate this protection either way — see the skipped
-test in `test/rules/storage.test.js`.
+`create`; the create rule's explicit `resource == null` guard denies it there,
+and `test/rules/storage.test.js` covers that.
 
 The commands the orchestrator ran to turn this on:
 
@@ -513,3 +519,60 @@ one moments-reel render, so a busy starter pack of, say, 500 task-settles in
 a month is ~1000 renders ≈ **well under $1/month** — montage compute is
 noise next to storage/egress at any realistic volume; it isn't a lever the
 $100 ceiling needs to worry about.
+### Montage abuse guards (WP-04)
+
+"Noise at realistic volume" only holds if nobody can force renders. Before
+WP-04 any anonymous guest could: post three videos under a made-up `taskId`
+to get a 2 GiB render on demand, or call the `renderMontageNow` debug
+callable with `force` as often as they liked. Now (`functions/src/guards.js`,
+`functions/src/pipeline.js`):
+
+- **Only real tasks queue a render.** A video post queues its task's montage
+  only if its `taskId` is one of the Starter Pack ids (`STARTER_TASK_IDS` in
+  `contract.js`, kept in step with `starter_pack_data.dart` by a test), or the
+  poster is in `games/{gameId}` (`playerIds`, `players[].userId` or
+  `creatorId`) and the task is one of that game's `tasks`. Anything else still
+  shows in the feed; it just never costs a render.
+- **Per-uid daily quota.** Each uid may queue at most 5 posts a UTC day
+  (`montage_quota/{uid}/days/{yyyyMMdd}.count`, written only by the function;
+  `firestore.rules` has no match for it, so clients cannot read or write it).
+  Posts past the quota are still spliced into the next render of their task;
+  they just cannot trigger one.
+- **`renderMontageNow` is admin-only.** The caller needs the `admin` custom
+  claim. Grant it from a trusted shell with the Admin SDK:
+  `admin.auth().setCustomUserClaims(uid, {admin: true})` (the user must sign
+  out and back in, or force-refresh the ID token, to pick it up).
+- **Mid-render posts are kept.** The render records how many pending posts it
+  claimed and, when it finishes, subtracts only those inside a transaction. A
+  post that landed during the render leaves the montage `pending` (its
+  previous finale stays visible) for the threshold or the settle pass.
+
+### App Check (monitor mode)
+
+The app can attach Firebase App Check tokens to every Firestore, Storage and
+Functions request (`lib/core/services/app_check/app_check_bootstrap.dart`).
+It is **off unless the build opts in**, because each platform needs a
+one-time console registration first:
+
+1. Firebase console > App Check > Apps:
+   - **Web:** register with **reCAPTCHA Enterprise** (create the key in GCP
+     console > Security > reCAPTCHA Enterprise, domain
+     `taskmaster-app-3d480.web.app`). Build with
+     `flutter build web --dart-define=APP_CHECK_WEB_KEY=<site key>`.
+   - **Android:** register with **Play Integrity** (link the Play Console
+     app, add the app signing SHA-256). Build with `--dart-define=APP_CHECK=true`.
+   - **iOS:** register with **DeviceCheck** (upload a DeviceCheck .p8 key from
+     the Apple developer account). Build with `--dart-define=APP_CHECK=true`.
+     App Attest is a later upgrade: it needs an entitlement and a new
+     provisioning profile.
+2. Leave every product (Firestore, Storage, Cloud Functions) **unenforced**
+   and watch App Check > Metrics for a week or so.
+3. When unverified traffic is only scripts and old clients, click **Enforce**
+   on Storage and Firestore. For the callable, add `enforceAppCheck: true` to
+   its `onCall` options and redeploy.
+
+Cost: Play Integrity (standard quota) and DeviceCheck are free. reCAPTCHA
+Enterprise has a free monthly allowance of assessments (10k/month when this
+was written) and bills beyond it; the web SDK makes one assessment per token
+refresh (about hourly per open tab), so check the current allowance against
+web traffic before turning the web key on, and keep the budget alarm on it.
