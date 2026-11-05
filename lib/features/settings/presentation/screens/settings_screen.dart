@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/config/environment.dart';
 import '../../../../core/config/legal_links.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/theme_controller.dart';
@@ -225,23 +226,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          _sectionHeader(context, 'Experimental'),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.view_in_ar_outlined,
-                  color: AppTheme.violet),
-              title: const Text('AR Lab (experimental)'),
-              subtitle: const Text(
-                  'Cloud Anchor two-phone diagnostic — not a game'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ArLabScreen(),
+          // AR Lab is a diagnostic, not a game: same Lab flag as the hidden
+          // Play-sheet modes (--dart-define=LAB_MODES=true).
+          if (AppConfig.labModesEnabled) ...[
+            const SizedBox(height: 20),
+            _sectionHeader(context, 'Experimental'),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.view_in_ar_outlined,
+                    color: AppTheme.violet),
+                title: const Text('AR Lab (experimental)'),
+                subtitle: const Text(
+                    'Cloud Anchor two-phone diagnostic — not a game'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ArLabScreen(),
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 24),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/config/environment.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/core/theme/app_theme.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
@@ -26,8 +27,15 @@ Widget _appUnderTest() {
 }
 
 void main() {
-  setUp(() => ServiceLocator.init(useMockServices: true));
-  tearDown(() => sl.reset());
+  // Discover lives behind the Lab flag (WP-06); this flow still covers it.
+  setUp(() {
+    AppConfig.debugLabModesOverride = true;
+    return ServiceLocator.init(useMockServices: true);
+  });
+  tearDown(() {
+    AppConfig.debugLabModesOverride = null;
+    return sl.reset();
+  });
 
   testWidgets('guest sign-in -> home -> discover -> clone a public game',
       (tester) async {

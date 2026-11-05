@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 enum Environment { development, staging, production }
 
 class AppConfig {
@@ -48,6 +50,22 @@ class AppConfig {
   /// card is gated on this flag (and on [AdSlotCard.debugAlwaysShow] in
   /// tests/screenshots).
   static const bool adsEnabled = false;
+
+  /// "Lab" modes: everything in the Play sheet beyond the three shipped rows
+  /// (Challenge friends, Join with a code, Drawing Telephone) plus the AR Lab
+  /// settings entry. Off in release builds so a stranger sees one game and one
+  /// same-room mode, not a toy box. Turn on with
+  /// `flutter run --dart-define=LAB_MODES=true`. The hidden modes' code stays
+  /// intact — this only gates the entry points.
+  static const bool labModes = bool.fromEnvironment('LAB_MODES');
+
+  /// Test-only override for [labModes] (a compile-time const can't be flipped
+  /// inside a test run). Leave null in app code.
+  @visibleForTesting
+  static bool? debugLabModesOverride;
+
+  /// What UI should read: [debugLabModesOverride] if set, else [labModes].
+  static bool get labModesEnabled => debugLabModesOverride ?? labModes;
   
   // Logging
   static bool get enableVerboseLogging => isDevelopment;

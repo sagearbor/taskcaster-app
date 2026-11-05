@@ -65,6 +65,22 @@ class HomeView extends StatelessWidget {
               .then((_) => gamesBloc.add(LoadGames()));
         }
 
+        if (state is ChallengeFriendsReady) {
+          // Play sheet -> "Challenge friends": land in the new game's lobby
+          // with the invite dialog already open.
+          final gamesBloc = context.read<GamesBloc>();
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (context) => GameDetailScreen(
+                    gameId: state.gameId,
+                    promptShareOnLoad: true,
+                  ),
+                ),
+              )
+              .then((_) => gamesBloc.add(LoadGames()));
+        }
+
         if (state is StarterPackReady) {
           // A returning user with no starter game yet tapped Start on the
           // "Your first ten tasks are waiting" hero — open the first task

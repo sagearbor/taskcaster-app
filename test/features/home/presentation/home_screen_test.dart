@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/config/environment.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
@@ -13,6 +14,7 @@ void main() {
     await sl.reset();
     await ServiceLocator.init(useMockServices: true);
   });
+  tearDown(() => AppConfig.debugLabModesOverride = null);
 
   Future<void> pumpHome(WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 2200);
@@ -58,26 +60,43 @@ void main() {
     expect(find.textContaining('No invites yet'), findsNothing);
   });
 
-  testWidgets('the one big Play button opens a sheet listing all six '
-      'destinations', (tester) async {
+  testWidgets('the one big Play button opens the three-row release sheet',
+      (tester) async {
+    AppConfig.debugLabModesOverride = false;
     await pumpHome(tester);
 
     expect(find.text('Play'), findsOneWidget);
     await tester.tap(find.text('Play'));
     await tester.pumpAndSettle();
 
-    // All six Play destinations + the code-join row.
-    expect(find.text('Quick Play'), findsOneWidget);
-    expect(find.text('Drawing Telephone'), findsOneWidget);
-    expect(find.text('Trivia Buzzer'), findsOneWidget);
-    expect(find.text('Balloon Pop'), findsOneWidget);
-    expect(find.text('Create custom game'), findsOneWidget);
-    expect(find.text('Discover'), findsOneWidget);
+    expect(find.text('Challenge friends'), findsOneWidget);
     expect(find.text('Join with a code'), findsOneWidget);
+    expect(find.text('Drawing Telephone (same room)'), findsOneWidget);
+    expect(find.text('Quick Play'), findsNothing);
+    expect(find.text('Discover'), findsNothing);
   });
 
-  testWidgets('Balloon Pop offers a Solo / Multiplayer chooser',
+  testWidgets('Challenge friends lands in the new lobby with the invite up',
       (tester) async {
+    AppConfig.debugLabModesOverride = false;
+    await tester.runAsync(() => sl<AuthRepository>().signInAnonymously());
+    await pumpHome(tester);
+
+    await tester.tap(find.text('Play'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Challenge friends'));
+    // Mock repo create + addTasks, then the lobby's share dialog opens on
+    // the first loaded frame.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    expect(find.text('Share Game Invite'), findsOneWidget);
+  });
+
+  testWidgets('Balloon Pop (Lab) offers a Solo / Multiplayer chooser',
+      (tester) async {
+    AppConfig.debugLabModesOverride = true;
     await pumpHome(tester);
 
     await tester.tap(find.text('Play'));

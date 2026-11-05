@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/config/environment.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
@@ -24,7 +25,10 @@ void main() {
     await sl.reset();
     await ServiceLocator.init(useMockServices: true);
   });
-  tearDown(() => sl.reset());
+  tearDown(() {
+    AppConfig.debugLabModesOverride = null;
+    return sl.reset();
+  });
 
   Future<void> pumpPlaySheetAtPixel10Size(WidgetTester tester) async {
     // Physical size + device pixel ratio matching the pixel10_api35
@@ -68,6 +72,8 @@ void main() {
   testWidgets(
       'renders every row at the pixel10_api35 screen size with no '
       'RenderFlex overflow', (tester) async {
+    // Lab modes on = the full 13-row list, the case that overflowed.
+    AppConfig.debugLabModesOverride = true;
     await pumpPlaySheetAtPixel10Size(tester);
 
     await tester.tap(find.text('Open Play sheet'));
@@ -81,10 +87,10 @@ void main() {
     // scrolling the (now-scrollable) sheet reveals the ones that don't fit
     // on screen at once, instead of them being clipped/overflowed off the
     // bottom.
-    expect(find.text('Quick Play'), findsOneWidget);
+    expect(find.text('Challenge friends'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('Join with a code'), 200);
-    expect(find.text('Join with a code'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Discover'), 200);
+    expect(find.text('Discover'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

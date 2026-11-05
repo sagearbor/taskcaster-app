@@ -56,6 +56,13 @@ class StartStarterPack extends GamesEvent {
   const StartStarterPack();
 }
 
+/// "Challenge friends": create a friend game (lobby, creator judges) seeded
+/// with a 5-task pack, then emit [ChallengeFriendsReady] so the home screen
+/// can land the creator on the share-invite step.
+class ChallengeFriends extends GamesEvent {
+  const ChallengeFriends();
+}
+
 class QuickPlayGame extends GamesEvent {
   /// When set, seed the solo game with a single AR mini-game task (e.g.
   /// [ArGameIds.balloonPop] or [ArGameIds.treasureHunt]) instead of 5 random

@@ -40,6 +40,7 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     on<DeleteGame>(_onDeleteGame);
     on<QuickPlayGame>(_onQuickPlayGame);
     on<StartStarterPack>(_onStartStarterPack);
+    on<ChallengeFriends>(_onChallengeFriends);
   }
 
   Future<void> _onLoadGames(LoadGames event, Emitter<GamesState> emit) async {
@@ -179,6 +180,34 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
       emit(QuickPlaySuccess(gameId: gameId));
     } catch (e) {
       emit(_gamesError('quick play', e, 'Could not start a quick game.'));
+    }
+  }
+
+  /// Create a friend game from a 5-task pack. Same path as "Create custom
+  /// game" (createGame -> addTasksToGame, lobby, creator judges), minus the
+  /// form: the point is to get to the invite link in one tap.
+  Future<void> _onChallengeFriends(
+    ChallengeFriends event,
+    Emitter<GamesState> emit,
+  ) async {
+    emit(GamesLoading());
+
+    try {
+      final user = await authRepository.getCurrentUser();
+      if (user == null) {
+        throw Exception('Not authenticated');
+      }
+
+      final name = user.displayName.trim().isNotEmpty
+          ? "${user.displayName.trim()}'s challenge"
+          : _generateGameName();
+      final gameId = await gameRepository.createGame(name, user.id, user.id);
+      await gameRepository.addTasksToGame(gameId, _getRandomTasks(count: 5));
+
+      emit(ChallengeFriendsReady(gameId: gameId));
+    } catch (e) {
+      emit(_gamesError(
+          'challenge friends', e, 'Could not set up your challenge.'));
     }
   }
 
