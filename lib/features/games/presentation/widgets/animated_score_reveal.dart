@@ -30,7 +30,6 @@ class _AnimatedScoreRevealState extends State<AnimatedScoreReveal>
   final List<Animation<double>> _slideAnimations = [];
   final List<Animation<double>> _fadeAnimations = [];
   final List<Animation<int>> _scoreAnimations = [];
-  bool _allRevealed = false;
 
   @override
   void initState() {
@@ -113,9 +112,6 @@ class _AnimatedScoreRevealState extends State<AnimatedScoreReveal>
 
     // Mark all revealed and callback
     if (mounted) {
-      setState(() {
-        _allRevealed = true;
-      });
       widget.onRevealComplete?.call();
     }
   }

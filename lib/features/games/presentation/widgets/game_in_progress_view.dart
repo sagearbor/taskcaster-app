@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/models/game.dart';
-import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../screens/scoreboard_screen.dart';
 import '../screens/task_execution_screen.dart';
 import '../screens/ar_task_screen.dart';
@@ -194,15 +192,6 @@ class GameInProgressView extends StatelessWidget {
                                     ? const Icon(Icons.check_circle, color: Colors.green)
                                     : const Icon(Icons.arrow_forward_ios),
                                 onTap: () {
-                                  final authState = context.read<AuthBloc>().state;
-                                  final userId = authState is AuthAuthenticated
-                                      ? authState.user.id
-                                      : '';
-
-                                  // Check if user has submitted
-                                  final userStatus = task.getPlayerStatus(userId);
-                                  final hasSubmitted = userStatus?.hasSubmitted ?? false;
-
                                   // AR tasks branch to the AR flow; everything
                                   // else uses the standard execution screen.
                                   Navigator.of(context).push(

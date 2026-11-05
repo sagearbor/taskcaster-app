@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
-import 'package:taskcaster_app/core/models/game.dart';
 import 'package:taskcaster_app/core/models/task.dart';
 import 'package:taskcaster_app/core/services/ar/ar_capability_service.dart';
 import 'package:taskcaster_app/features/games/domain/repositories/game_repository.dart';

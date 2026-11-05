@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'game_remote_data_source.dart';
 
@@ -10,7 +9,6 @@ class MockGameDataSource implements GameRemoteDataSource {
   final Map<String, StreamController<Map<String, dynamic>?>> _gameControllers = {};
   
   final List<Map<String, dynamic>> _games = [];
-  final Random _random = Random();
 
   MockGameDataSource() {
     _initializeMockGames();

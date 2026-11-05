@@ -35,7 +35,6 @@ import 'ar_engine.dart';
 class ArFlutterEngine implements ArEngine {
   ARSessionManager? _sessionManager;
   ARObjectManager? _objectManager;
-  ARAnchorManager? _anchorManager;
 
   /// Spawned plugin nodes, keyed by node name, so [move]/[remove] can find the
   /// concrete [ARNode] behind an [ArNode] handle.
@@ -86,7 +85,6 @@ class ArFlutterEngine implements ArEngine {
   ) {
     _sessionManager = sessionManager;
     _objectManager = objectManager;
-    _anchorManager = anchorManager;
 
     sessionManager.onInitialize(
       // Keep the game view clean: no dotted plane grid, no feature-point dots,
@@ -340,6 +338,5 @@ class ArFlutterEngine implements ArEngine {
     await _tapController.close();
     _sessionManager = null;
     _objectManager = null;
-    _anchorManager = null;
   }
 }

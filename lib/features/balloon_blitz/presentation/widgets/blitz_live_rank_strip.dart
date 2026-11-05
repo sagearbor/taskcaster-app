@@ -96,7 +96,7 @@ class _BlitzLiveRankStripState extends State<BlitzLiveRankStrip> {
               const SizedBox(width: 8),
               _RankChip(
                 key: const ValueKey('blitz-strip-self'),
-                rank: selfRank!,
+                rank: selfRank,
                 player: ranked[selfRank - 1],
                 isSelf: true,
                 flash: _selfFlashTrigger,
