@@ -8,6 +8,7 @@ import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository
 import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
 import 'package:taskcaster_app/features/home/presentation/screens/home_screen.dart';
 import 'package:taskcaster_app/features/home/presentation/widgets/home_invites_section.dart';
+import 'package:taskcaster_app/features/home/presentation/widgets/next_task_hero_card.dart';
 
 void main() {
   setUp(() async {
@@ -60,13 +61,14 @@ void main() {
     expect(find.textContaining('No invites yet'), findsNothing);
   });
 
-  testWidgets('the one big Play button opens the three-row release sheet',
+  testWidgets('the app bar "+" opens the three-row release sheet',
       (tester) async {
     AppConfig.debugLabModesOverride = false;
     await pumpHome(tester);
 
-    expect(find.text('Play'), findsOneWidget);
-    await tester.tap(find.text('Play'));
+    // WP-05: no big Play button on the page any more.
+    expect(find.widgetWithText(FilledButton, 'Play'), findsNothing);
+    await tester.tap(find.byKey(const Key('home-play-plus')));
     await tester.pumpAndSettle();
 
     expect(find.text('Challenge friends'), findsOneWidget);
@@ -82,7 +84,7 @@ void main() {
     await tester.runAsync(() => sl<AuthRepository>().signInAnonymously());
     await pumpHome(tester);
 
-    await tester.tap(find.text('Play'));
+    await tester.tap(find.byKey(const Key('home-play-plus')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Challenge friends'));
     // Mock repo create + addTasks, then the lobby's share dialog opens on
@@ -99,7 +101,7 @@ void main() {
     AppConfig.debugLabModesOverride = true;
     await pumpHome(tester);
 
-    await tester.tap(find.text('Play'));
+    await tester.tap(find.byKey(const Key('home-play-plus')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Balloon Pop'));
     await tester.pumpAndSettle();
@@ -108,14 +110,37 @@ void main() {
     expect(find.text('Multiplayer race'), findsOneWidget);
   });
 
-  testWidgets('the games list still renders under "Jump back in"',
-      (tester) async {
+  testWidgets('the games list renders under "Your games"', (tester) async {
     await pumpHome(tester);
 
-    // Seeded mock games from MockGameDataSource surface as resume/compact
-    // cards under Zone 2.
-    expect(find.text('Jump back in'), findsOneWidget);
+    // Seeded mock games from MockGameDataSource, as one plain list.
+    expect(find.text('Your games'), findsOneWidget);
+    expect(find.text('Jump back in'), findsNothing);
     expect(find.text('Saturday Night Shenanigans'), findsOneWidget);
+  });
+
+  testWidgets('at 390x844 exactly one filled button is above the fold',
+      (tester) async {
+    await pumpHome(tester);
+    tester.view.physicalSize = const Size(390, 844) * 3.0;
+    tester.view.devicePixelRatio = 3.0;
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final filled = find.byType(FilledButton).hitTestable();
+    expect(filled, findsOneWidget);
+    // ...and it is the hero's.
+    expect(
+      find.descendant(
+          of: find.byType(NextTaskHeroCard), matching: find.byType(FilledButton)),
+      findsOneWidget,
+    );
+    // The Arena row sits right under it, outlined.
+    expect(find.widgetWithText(OutlinedButton, 'Arena — grade the crowd'),
+        findsOneWidget);
+    // Layout overflow is NOT asserted here: the test font (Ahem, square
+    // glyphs) overflows the seeded GameCards' fixed rows at this width. The
+    // real 390x844 layout is checked in headless Chrome.
+    tester.takeException();
   });
 
   testWidgets(

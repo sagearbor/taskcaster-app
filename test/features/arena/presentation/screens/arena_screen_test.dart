@@ -23,11 +23,15 @@ class MockFeedRepository extends Mock implements FeedRepository {}
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 
-FeedPost _post(String id, {String rubric = 'Emotional truth'}) {
+FeedPost _post(
+  String id, {
+  String rubric = 'Emotional truth',
+  String taskId = 'starter-01',
+}) {
   return FeedPost(
     id: id,
     gameId: 'game-1',
-    taskId: 'starter-01',
+    taskId: taskId,
     taskTitle: 'A vegetable that has just received terrible news',
     rubric: rubric,
     userId: 'other-user',
@@ -136,17 +140,77 @@ void main() {
     expect(find.byType(Shimmer), findsOneWidget);
   });
 
-  testWidgets('nothingUnlocked empty state offers "Do a task"',
+  testWidgets(
+      'zero posts: the tease shows entries, no grade bar, and a Your turn bar',
       (tester) async {
     await pumpArena(tester);
     await tester.pump();
+    unlockedController.add(<String>{});
+    await tester.pump();
+    queueController.add([
+      _post('t1', taskId: 'starter-09-v2'),
+      _post('t2', taskId: 'starter-09-v2'),
+    ]);
+    await tester.pump();
+
+    // The tease reads task 1 even though nothing is unlocked...
+    verify(() => mockFeedRepository.watchQueue(
+          viewerId: 'viewer-1',
+          unlockedTaskIds: {'starter-09-v2'},
+        )).called(1);
+    expect(find.text('How everyone else did on task 1'), findsOneWidget);
+    expect(find.byType(PostCard), findsOneWidget);
+    expect(find.text('Next (1/2)'), findsOneWidget);
+    // ...but grading stays gated.
+    expect(find.byType(GradeBar), findsNothing);
+    expect(find.text('Grading unlocks when you post yours.'), findsOneWidget);
+    expect(find.text('Your turn: 30 s'), findsOneWidget);
+
+    await tester.tap(find.text('Next (1/2)'));
+    await tester.pump();
+    expect(find.text('Next (2/2)'), findsOneWidget);
+  });
+
+  testWidgets('Your turn pops the Arena with yourTurnResult', (tester) async {
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      authBloc.add(AuthCheckRequested());
+      await authBloc.stream.firstWhere((s) => s is AuthAuthenticated);
+    });
+
+    Object? result;
+    await tester.pumpWidget(
+      BlocProvider<AuthBloc>.value(
+        value: authBloc,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ArenaScreen()),
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump(const Duration(seconds: 1));
     unlockedController.add(<String>{});
     await tester.pump();
     queueController.add(const []);
     await tester.pump();
 
     expect(find.text("Post yours to unlock everyone else's"), findsOneWidget);
-    expect(find.widgetWithText(ElevatedButton, 'Do a task'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('arena-your-turn')));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(result, ArenaScreen.yourTurnResult);
   });
 
   testWidgets('empty-but-unlocked state shows the check-back copy',

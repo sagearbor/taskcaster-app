@@ -7,6 +7,8 @@ import '../../../../core/di/service_locator.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../tasks/data/datasources/starter_pack_data.dart';
+import '../../domain/models/montage.dart';
 import '../../domain/repositories/feed_repository.dart';
 import '../bloc/arena_bloc.dart';
 import '../bloc/arena_event.dart';
@@ -23,6 +25,12 @@ import '../widgets/post_card.dart';
 /// builds its own [ArenaBloc] from [FeedRepository].
 class ArenaScreen extends StatelessWidget {
   const ArenaScreen({super.key});
+
+  /// What the route pops with when a zero-post viewer taps the tease's
+  /// "Your turn" bar. Home answers it by opening Starter Pack task 1; any
+  /// other caller just gets the Arena closed, which lands them back on the
+  /// task they came from.
+  static const String yourTurnResult = 'your-turn';
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +99,9 @@ class _ArenaView extends StatelessWidget {
               },
             );
           }
+          if (state is ArenaTeaser) {
+            return _ArenaTeaserView(state: state);
+          }
           if (state is ArenaEmpty) {
             return _ArenaEmptyView(nothingUnlocked: state.nothingUnlocked);
           }
@@ -137,6 +148,136 @@ class _ArenaEmptyView extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// WP-05: the Arena for a viewer with zero posts. The funniest content the
+/// app has, visible exactly when a newcomer decides whether to stay — the
+/// finale and the top few entries for task 1, one at a time, watch-only —
+/// with a sticky "Your turn" bar. No grade bar: grading stays gated.
+class _ArenaTeaserView extends StatefulWidget {
+  final ArenaTeaser state;
+
+  const _ArenaTeaserView({required this.state});
+
+  @override
+  State<_ArenaTeaserView> createState() => _ArenaTeaserViewState();
+}
+
+class _ArenaTeaserViewState extends State<_ArenaTeaserView> {
+  int _index = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final posts = widget.state.posts;
+    final index = posts.isEmpty ? 0 : _index.clamp(0, posts.length - 1);
+    final seconds = _durationFor(widget.state.taskId);
+
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Text(
+                    posts.isEmpty
+                        ? 'Post yours to unlock everyone else\'s'
+                        : 'How everyone else did on task 1',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                // THE FINALE for task 1 (starter montages are shared, so the
+                // scope id is all it needs). Renders nothing until one exists.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: FinaleCard(
+                    gameId: Montage.starterScope,
+                    taskId: widget.state.taskId,
+                  ),
+                ),
+                if (posts.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: PostCard(
+                      key: ValueKey('tease-${posts[index].id}'),
+                      post: posts[index],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_outline,
+                            size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Grading unlocks when you post yours.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        if (posts.length > 1)
+                          TextButton(
+                            onPressed: () => setState(
+                                () => _index = (index + 1) % posts.length),
+                            child: Text('Next (${index + 1}/${posts.length})'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        Material(
+          elevation: 8,
+          color: theme.colorScheme.surface,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton(
+                  key: const Key('arena-your-turn'),
+                  onPressed: () => Navigator.of(context)
+                      .pop(ArenaScreen.yourTurnResult),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.coral,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    seconds == null ? 'Your turn' : 'Your turn: $seconds s',
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static int? _durationFor(String taskId) {
+    for (final t in StarterPackData.tasks()) {
+      if (t.id == taskId) return t.durationSeconds;
+    }
+    return null;
   }
 }
 

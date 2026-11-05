@@ -301,6 +301,45 @@ void main() {
       );
 
       blocTest<GamesBloc, GamesState>(
+        'a guest gets a fun default name, never "Guest\'s challenge"',
+        build: () {
+          when(() => mockAuthRepository.getCurrentUser())
+              .thenAnswer((_) async => User(
+                    id: 'guest_1',
+                    displayName: 'Guest',
+                    createdAt: DateTime(2025, 1, 1),
+                  ));
+          when(() => mockGameRepository.createGame(any(), any(), any()))
+              .thenAnswer((_) async => 'challenge_2');
+          when(() => mockGameRepository.addTasksToGame(any(), any()))
+              .thenAnswer((_) async {});
+          return gamesBloc;
+        },
+        act: (bloc) => bloc.add(const ChallengeFriends()),
+        expect: () => [
+          GamesLoading(),
+          const ChallengeFriendsReady(gameId: 'challenge_2'),
+        ],
+        verify: (_) {
+          final name = verify(() => mockGameRepository.createGame(
+                captureAny(),
+                'guest_1',
+                'guest_1',
+              )).captured.single as String;
+          expect(GamesBloc.funChallengeNames, contains(name));
+        },
+      );
+
+      test('challengeNameFor: named players keep their name', () {
+        expect(GamesBloc.challengeNameFor(' Sam '), "Sam's challenge");
+        for (final placeholder in ['', 'Guest', 'guest 4821', 'User']) {
+          expect(GamesBloc.funChallengeNames,
+              contains(GamesBloc.challengeNameFor(placeholder)),
+              reason: placeholder);
+        }
+      });
+
+      blocTest<GamesBloc, GamesState>(
         'emits a friendly error when signed out',
         build: () {
           when(() => mockAuthRepository.getCurrentUser())

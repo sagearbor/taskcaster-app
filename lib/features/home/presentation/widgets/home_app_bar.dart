@@ -10,15 +10,26 @@ import '../../../auth/presentation/screens/create_account_screen.dart';
 import '../../../settings/presentation/screens/settings_screen.dart';
 
 class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const HomeAppBar({super.key});
+  /// Opens the Play sheet (Challenge friends / Join with a code / ...). Null
+  /// hides the "+" — e.g. in a screen that has no GamesBloc above it.
+  final VoidCallback? onPlay;
+
+  const HomeAppBar({super.key, this.onPlay});
 
   @override
   Widget build(BuildContext context) {
     return AppBar(
       title: const Text('TaskCaster'),
       actions: [
-        // Code entry now lives in Zone 1's empty state and behind the Play
-        // sheet ("Join with a code"), so the app bar keeps only the avatar menu.
+        // WP-05: the Play sheet lives behind this "+" rather than a big
+        // button on Home, so the next-task hero is the only primary action.
+        if (onPlay != null)
+          IconButton(
+            key: const Key('home-play-plus'),
+            icon: const Icon(Icons.add_rounded, size: 28),
+            tooltip: 'Play',
+            onPressed: onPlay,
+          ),
         BlocBuilder<AuthBloc, AuthState>(
           builder: (context, state) {
             if (state is! AuthAuthenticated) {

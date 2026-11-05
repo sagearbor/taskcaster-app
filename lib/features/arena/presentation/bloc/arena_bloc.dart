@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/models/feed_post.dart';
 import '../../domain/repositories/feed_repository.dart';
+import '../../../tasks/data/datasources/starter_pack_data.dart';
 import 'arena_event.dart';
 import 'arena_state.dart';
 
@@ -16,6 +17,19 @@ class _ArenaSnapshot {
   final List<FeedPost> posts;
 
   const _ArenaSnapshot(this.unlockedTaskIds, this.posts);
+}
+
+/// The tease's ranking: graded posts first, best mean grade first, then the
+/// most-graded, then the most-tapped. Ungraded posts (the house entry, on a
+/// quiet day) only fill the slots nobody graded.
+int _teaseOrder(FeedPost a, FeedPost b) {
+  final am = a.meanGrade;
+  final bm = b.meanGrade;
+  if (am != null && bm == null) return -1;
+  if (am == null && bm != null) return 1;
+  if (am != null && bm != null && am != bm) return bm.compareTo(am);
+  if (a.gradeCount != b.gradeCount) return b.gradeCount.compareTo(a.gradeCount);
+  return b.tapCount.compareTo(a.tapCount);
 }
 
 /// Drives the watch-and-grade queue.
@@ -31,6 +45,13 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
   /// Grades needed before the viewer's own posts get boosted.
   static const int boostThreshold = 3;
 
+  /// How many posts the zero-post tease shows.
+  static const int teaserSize = 3;
+
+  /// The task the tease is about: task 1 of the Starter Pack, i.e. the one a
+  /// player who has posted nothing is about to be asked to do.
+  final String teaserTaskId;
+
   String _viewerId = '';
   List<FeedPost> _queue = const [];
   int _index = 0;
@@ -39,7 +60,9 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
   bool _boostRequested = false;
   Set<String> _unlockedTaskIds = const {};
 
-  ArenaBloc({required this.feedRepository}) : super(const ArenaInitial()) {
+  ArenaBloc({required this.feedRepository, String? teaserTaskId})
+      : teaserTaskId = teaserTaskId ?? StarterPackData.tasks().first.id,
+        super(const ArenaInitial()) {
     on<LoadArena>(_onLoadArena);
     on<GradeCurrent>(_onGradeCurrent);
     on<SkipCurrent>(_onSkipCurrent);
@@ -91,8 +114,12 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
 
     void listenToQueue(Set<String> ids) {
       innerSub?.cancel();
+      // Nothing unlocked yet: read task 1's entries anyway, for the tease
+      // (WP-05). The snapshot still carries the EMPTY unlocked set, which is
+      // what keeps grading gated.
+      final queryIds = ids.isEmpty ? {teaserTaskId} : ids;
       innerSub = feedRepository
-          .watchQueue(viewerId: viewerId, unlockedTaskIds: ids)
+          .watchQueue(viewerId: viewerId, unlockedTaskIds: queryIds)
           .listen(
         (posts) => controller.add(_ArenaSnapshot(ids, posts)),
         onError: controller.addError,
@@ -121,6 +148,22 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
 
   ArenaState _stateFor(_ArenaSnapshot snapshot) {
     _unlockedTaskIds = snapshot.unlockedTaskIds;
+
+    if (snapshot.unlockedTaskIds.isEmpty) {
+      // The tease: the funniest few entries for task 1, watch-only. The
+      // grading queue stays empty, so GradeCurrent / SkipCurrent / TapCurrent
+      // are all no-ops in this state.
+      _queue = const [];
+      _index = 0;
+      final top = snapshot.posts
+          .where((p) => p.taskId == teaserTaskId)
+          .toList()
+        ..sort(_teaseOrder);
+      return ArenaTeaser(
+        taskId: teaserTaskId,
+        posts: List.unmodifiable(top.take(teaserSize)),
+      );
+    }
 
     // Keep everything the viewer has already been through pinned at the front
     // so [index] keeps meaning the same thing across re-emits.

@@ -11,7 +11,9 @@ enum NextTaskHeroMode {
   /// The user has a starter game with a task left to do.
   hasTask,
 
-  /// The user has completed all ten starter tasks.
+  /// The user has completed all ten starter tasks. Headline is "Waiting for
+  /// the crowd: N" (N = their entries still short of grades, see
+  /// [NextTaskHeroCard.waitingCount]); the action is Challenge friends.
   allDone,
 
   /// The user has no starter game yet (e.g. an account from before this
@@ -23,6 +25,10 @@ class NextTaskHeroCard extends StatelessWidget {
   final NextTaskHeroMode mode;
   final String? taskTitle;
   final int? timerSeconds;
+
+  /// [NextTaskHeroMode.allDone] only: how many of the player's entries are
+  /// still waiting on crowd grades. Null while unknown.
+  final int? waitingCount;
   final VoidCallback onPrimary;
 
   const NextTaskHeroCard({
@@ -30,6 +36,7 @@ class NextTaskHeroCard extends StatelessWidget {
     required this.mode,
     this.taskTitle,
     this.timerSeconds,
+    this.waitingCount,
     required this.onPrimary,
   });
 
@@ -74,6 +81,13 @@ class NextTaskHeroCard extends StatelessWidget {
               const SizedBox(height: 12),
               TimerPill(seconds: timerSeconds!),
             ],
+            if (mode == NextTaskHeroMode.allDone) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'All ten done. Now make your friends do one.',
+                style: TextStyle(color: Colors.white, fontSize: 14.5),
+              ),
+            ],
             const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
@@ -115,7 +129,10 @@ class NextTaskHeroCard extends StatelessWidget {
       case NextTaskHeroMode.hasTask:
         return taskTitle ?? '';
       case NextTaskHeroMode.allDone:
-        return 'You\'ve done all ten. Play with friends?';
+        final n = waitingCount;
+        return n != null && n > 0
+            ? 'Waiting for the crowd: $n'
+            : 'The crowd has spoken.';
       case NextTaskHeroMode.noStarterGame:
         return 'Your first ten tasks are waiting';
     }
@@ -126,7 +143,7 @@ class NextTaskHeroCard extends StatelessWidget {
       case NextTaskHeroMode.hasTask:
         return 'Start';
       case NextTaskHeroMode.allDone:
-        return 'Play';
+        return 'Challenge friends';
       case NextTaskHeroMode.noStarterGame:
         return 'Start';
     }

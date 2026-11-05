@@ -105,8 +105,8 @@ void main() {
     await pumpDark(tester, const HomeScreen());
 
     // Home content is present and the tree is genuinely dark.
-    expect(find.text('Play'), findsWidgets);
-    final ctx = tester.element(find.text('Play').first);
+    expect(find.text('Your games'), findsWidgets);
+    final ctx = tester.element(find.text('Your games').first);
     expect(Theme.of(ctx).brightness, Brightness.dark);
     expect(Theme.of(ctx).scaffoldBackgroundColor, AppTheme.darkBg);
   });
@@ -114,7 +114,8 @@ void main() {
   testWidgets('the Play sheet opens over the dark theme', (tester) async {
     await pumpDark(tester, const HomeScreen());
 
-    await tester.tap(find.text('Play').first);
+    // WP-05: Play lives behind the app bar's "+".
+    await tester.tap(find.byKey(const Key('home-play-plus')));
     await tester.pumpAndSettle();
 
     // Sheet destinations render; the modal inherited the dark bottom-sheet token.

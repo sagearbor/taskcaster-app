@@ -58,9 +58,8 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
-    // Home screen — the one big Play button opens the destinations sheet.
-    expect(find.text('Play'), findsOneWidget);
-    await tester.tap(find.text('Play'));
+    // Home screen — the app bar's "+" opens the destinations sheet.
+    await tester.tap(find.byKey(const Key('home-play-plus')));
     await tester.pumpAndSettle();
 
     // Open the public games gallery via the sheet's Discover row.

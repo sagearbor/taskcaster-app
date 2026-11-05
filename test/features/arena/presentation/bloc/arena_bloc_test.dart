@@ -53,14 +53,77 @@ void main() {
 
   group('LoadArena', () {
     blocTest<ArenaBloc, ArenaState>(
-      'a viewer who has posted nothing gets ArenaEmpty(nothingUnlocked: true)',
-      build: () => ArenaBloc(feedRepository: repo),
+      'a viewer who has posted nothing, on a task nobody has done, gets an '
+      'empty tease (not a dead end)',
+      build: () => ArenaBloc(feedRepository: repo, teaserTaskId: 'starter-01'),
       act: (bloc) => bloc.add(const LoadArena(viewerId: me)),
       expect: () => [
         const ArenaLoading(),
-        const ArenaEmpty(nothingUnlocked: true),
+        const ArenaTeaser(taskId: 'starter-01', posts: []),
       ],
     );
+
+    group('zero-post tease (WP-05)', () {
+      Future<void> seedTeaseTask() async {
+        // Four entries on the tease task, one on another task.
+        for (final p in [
+          (id: 'meh', grades: [2, 3]),
+          (id: 'best', grades: [5, 5]),
+          (id: 'ungraded', grades: <int>[]),
+          (id: 'good', grades: [4, 4, 5]),
+        ]) {
+          await repo.createPost(post(id: p.id, userId: 'author-${p.id}'));
+          for (var i = 0; i < p.grades.length; i++) {
+            await repo.gradePost(
+                postId: p.id, graderId: 'g$i', score: p.grades[i]);
+          }
+        }
+        await repo.createPost(
+            post(id: 'elsewhere', userId: 'x', taskId: 'starter-03'));
+      }
+
+      blocTest<ArenaBloc, ArenaState>(
+        'shows the top 3 graded entries for task 1, best first',
+        setUp: seedTeaseTask,
+        build: () =>
+            ArenaBloc(feedRepository: repo, teaserTaskId: 'starter-01'),
+        act: (bloc) => bloc.add(const LoadArena(viewerId: me)),
+        skip: 1,
+        verify: (bloc) {
+          final state = bloc.state as ArenaTeaser;
+          expect(state.taskId, 'starter-01');
+          expect(state.posts.map((p) => p.id), ['best', 'good', 'meh']);
+        },
+      );
+
+      blocTest<ArenaBloc, ArenaState>(
+        'grading stays gated: Grade / Skip do nothing in the tease',
+        setUp: seedTeaseTask,
+        build: () =>
+            ArenaBloc(feedRepository: repo, teaserTaskId: 'starter-01'),
+        act: (bloc) async {
+          bloc.add(const LoadArena(viewerId: me));
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          bloc.add(const GradeCurrent(score: 5));
+          bloc.add(const SkipCurrent());
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        },
+        verify: (bloc) async {
+          expect(bloc.state, isA<ArenaTeaser>());
+          expect(await repo.gradedCountBy(me), 0);
+        },
+      );
+
+      blocTest<ArenaBloc, ArenaState>(
+        'defaults to Starter Pack task 1',
+        build: () => ArenaBloc(feedRepository: repo),
+        act: (bloc) => bloc.add(const LoadArena(viewerId: me)),
+        expect: () => [
+          const ArenaLoading(),
+          const ArenaTeaser(taskId: 'starter-09-v2', posts: []),
+        ],
+      );
+    });
 
     blocTest<ArenaBloc, ArenaState>(
       'a viewer who has unlocked a task but has nothing left to grade gets '

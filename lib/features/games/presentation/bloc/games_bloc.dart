@@ -198,9 +198,7 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
         throw Exception('Not authenticated');
       }
 
-      final name = user.displayName.trim().isNotEmpty
-          ? "${user.displayName.trim()}'s challenge"
-          : _generateGameName();
+      final name = challengeNameFor(user.displayName);
       final gameId = await gameRepository.createGame(name, user.id, user.id);
       await gameRepository.addTasksToGame(gameId, _getRandomTasks(count: 5));
 
@@ -285,6 +283,34 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     } catch (e) {
       debugPrint('GamesBloc could not seed house entries: $e');
     }
+  }
+
+  /// Default names for a "Challenge friends" game whose creator has no real
+  /// name yet (a guest). This is what lands in a friend's invite, so it
+  /// should read like a dare, not like "Guest's challenge".
+  static const List<String> funChallengeNames = [
+    'The Spoon Incident',
+    'Operation Sofa Cushion',
+    'The Great Kitchen Trials',
+    'Nobody Panic',
+    'Absolutely Not a Competition',
+    'The Living Room Olympics',
+    'A Dignity-Optional Evening',
+    'The Fridge Remembers',
+    'Trust Me, This Is Fine',
+    'The Tea Towel Tribunal',
+  ];
+
+  /// "Sam's challenge" for a named player; a [funChallengeNames] pick for a
+  /// guest (display name empty, or the placeholder "Guest" / "User").
+  static String challengeNameFor(String displayName, {Random? random}) {
+    final name = displayName.trim();
+    final lower = name.toLowerCase();
+    final isPlaceholder =
+        name.isEmpty || lower == 'user' || lower.startsWith('guest');
+    if (!isPlaceholder) return "$name's challenge";
+    final r = random ?? Random();
+    return funChallengeNames[r.nextInt(funChallengeNames.length)];
   }
 
   String _generateGameName() {

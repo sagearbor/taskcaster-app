@@ -10,15 +10,37 @@ void main() {
       expect(tasks.length, 10);
     });
 
-    test('ids are starter-01..starter-10 (video tasks -v2), in order', () {
+    test('ids keep their numbers; only the play order changed (WP-05)', () {
+      expect(tasks.map((t) => t.id), [
+        'starter-09-v2', // oven face: a selfie, no props, 30 s
+        'starter-03', // rename an object: sit still and type
+        'starter-04', // hide in plain sight: one photo
+        'starter-10-v2',
+        'starter-06',
+        'starter-01-v2', // egg on a spoon: needs props and a walk, so 6+
+        'starter-07',
+        'starter-02-v2',
+        'starter-05-v2',
+        'starter-08-v2',
+      ]);
+    });
+
+    test('the same ten ids as always, so posts and montages still attach', () {
       expect(
-        tasks.map((t) => t.id),
-        [
+        tasks.map((t) => t.id).toSet(),
+        {
           for (var i = 1; i <= 10; i++)
             'starter-${i.toString().padLeft(2, '0')}'
                 '${const {1, 2, 5, 8, 9, 10}.contains(i) ? '-v2' : ''}',
-        ],
+        },
       );
+    });
+
+    test('task 1 needs no props: a 30 s selfie clip', () {
+      final first = tasks.first;
+      expect(first.submissionType, SubmissionType.video);
+      expect(first.durationSeconds, 30);
+      expect(first.description, startsWith('Selfie video.'));
     });
 
     test('ids are unique', () {
@@ -43,11 +65,11 @@ void main() {
       final videoIds = tasks
           .where((t) => t.submissionType == SubmissionType.video)
           .map((t) => t.id)
-          .toList();
+          .toSet();
       expect(
         videoIds,
-        ['starter-01-v2', 'starter-02-v2', 'starter-05-v2', 'starter-08-v2',
-         'starter-09-v2', 'starter-10-v2'],
+        {'starter-01-v2', 'starter-02-v2', 'starter-05-v2', 'starter-08-v2',
+         'starter-09-v2', 'starter-10-v2'},
       );
     });
 
@@ -130,7 +152,7 @@ void main() {
     });
 
     test('the copy is the product copy', () {
-      final first = tasks.first;
+      final first = tasks.firstWhere((t) => t.id == 'starter-01-v2');
       expect(first.title, 'Egg on a spoon, to the far wall and back');
       expect(first.description, startsWith('Put an egg'));
       expect(first.description, contains('Film the whole trip'));
