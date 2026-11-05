@@ -102,6 +102,8 @@ dependencies:
   firebase_messaging: ^15.2.10
   package_info_plus: ^4.2.0
   firebase_app_check: ^0.3.2+10
+  purchases_flutter: ^10.14.0
+  cloud_functions: ^5.6.2
 
 # Use a locally-vendored, patched copy of ar_flutter_plugin_2. The upstream
 # 0.0.3 native tap handler only resolves taps on PLANE-ANCHORED nodes, so taps

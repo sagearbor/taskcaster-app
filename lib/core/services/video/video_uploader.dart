@@ -1,6 +1,7 @@
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
+import '../plans/plans.dart';
 import 'video_policy.dart';
 
 /// Where a clip ended up.
@@ -21,18 +22,21 @@ class VideoUploadResult {
   });
 }
 
-/// The player has already used every slot they get today.
+/// The player has already used every clip slot their plan gives them (today,
+/// or ever for a guest).
 ///
 /// This is a *cost control*, not a failure: the Storage rules refuse the
-/// eleventh write of the day, and this is how that refusal reaches the player
-/// in words they can act on.
+/// write after the plan's last slot, and this is how that refusal reaches the
+/// player — the task screen turns it into the upgrade prompt, which always
+/// offers "Post it as a photo instead".
 class DailyVideoLimitReached implements Exception {
-  final String message;
+  /// The plan whose limit was hit.
+  final PlanTier tier;
 
-  const DailyVideoLimitReached([
-    this.message = "You've posted ${VideoPolicy.maxUploadsPerDay} clips "
-        'today — snap a photo instead.',
-  ]);
+  const DailyVideoLimitReached({this.tier = PlanTier.free});
+
+  String get message =>
+      '${PlanCopy.limitTitle(tier)} — snap a photo instead.';
 
   @override
   String toString() => message;
@@ -40,15 +44,18 @@ class DailyVideoLimitReached implements Exception {
 
 /// Putting a recorded clip in the bucket.
 abstract class VideoUploader {
-  /// Uploads [bytes] for [userId] and returns where it landed.
+  /// Uploads [bytes] for [userId] into one of [limits]' slots and returns
+  /// where it landed.
   ///
-  /// Throws [DailyVideoLimitReached] when the player has no slot left for the
-  /// UTC day [when] falls in. Any other failure surfaces as-is.
+  /// Throws [DailyVideoLimitReached] when the player has no slot left (for
+  /// the UTC day [when] falls in, or ever for a guest). Any other failure
+  /// surfaces as-is.
   Future<VideoUploadResult> upload({
     required String userId,
     required Uint8List bytes,
     required String contentType,
     required DateTime when,
+    PlanLimits limits = PlanLimits.free,
     Map<String, String>? metadata,
     void Function(double fraction)? onProgress,
   });
@@ -78,12 +85,14 @@ class FirebaseVideoUploader implements VideoUploader {
     required Uint8List bytes,
     required String contentType,
     required DateTime when,
+    PlanLimits limits = PlanLimits.free,
     Map<String, String>? metadata,
     void Function(double fraction)? onProgress,
   }) {
     return uploadToFirstFreeSlot(
       userId: userId,
       when: when,
+      limits: limits,
       byteCount: bytes.length,
       attempt: (path) => _putAt(
         path: path,
@@ -132,15 +141,15 @@ class FirebaseVideoUploader implements VideoUploader {
     return ref.getDownloadURL();
   }
 
-  /// Walks the day's slots in order and returns the first one that accepts the
-  /// write.
+  /// Walks the plan's slots in order and returns the first one that accepts
+  /// the write.
   ///
-  /// This is the whole daily cap. `submissions/{uid}/{yyyyMMdd}/{slot}` is
-  /// create-only in the bucket rules for slots 0..9, so an already-used slot
-  /// comes back as a denial rather than an overwrite — which means no
-  /// read-before-write, no counter document to keep in step, and no way for a
-  /// client bug to exceed the cap. When all ten are denied the player is out
-  /// of clips for the day.
+  /// This is the whole cap. Each slot path is create-only in the bucket
+  /// rules, and only the plan's slots are writable at all, so an
+  /// already-used slot comes back as a denial rather than an overwrite —
+  /// which means no read-before-write, no counter document to keep in step,
+  /// and no way for a client bug to exceed the cap. When every slot is denied
+  /// the player is out of clips (for the day, or for good as a guest).
   ///
   /// [attempt] writes the object at the given path and returns its download
   /// URL; it is a parameter so this logic can be tested without Firebase.
@@ -150,12 +159,14 @@ class FirebaseVideoUploader implements VideoUploader {
     required DateTime when,
     required int byteCount,
     required Future<String> Function(String path) attempt,
+    PlanLimits limits = PlanLimits.free,
   }) async {
-    for (var slot = 0; slot < VideoPolicy.maxUploadsPerDay; slot++) {
-      final path = VideoPolicy.storagePath(
+    for (final slot in limits.slots) {
+      final path = VideoPolicy.storagePathFor(
         userId: userId,
         when: when,
         slot: slot,
+        limits: limits,
       );
       try {
         final url = await attempt(path);
@@ -173,7 +184,7 @@ class FirebaseVideoUploader implements VideoUploader {
       }
     }
 
-    throw const DailyVideoLimitReached();
+    throw DailyVideoLimitReached(tier: limits.tier);
   }
 }
 
@@ -192,7 +203,7 @@ class FakeVideoUploader implements VideoUploader {
   final List<double> progressTicks;
 
   /// Every call, oldest first.
-  final List<({String userId, int bytes, String contentType, DateTime when, Map<String, String>? metadata})>
+  final List<({String userId, int bytes, String contentType, DateTime when, PlanLimits limits, Map<String, String>? metadata})>
       calls = [];
 
   FakeVideoUploader({
@@ -212,6 +223,7 @@ class FakeVideoUploader implements VideoUploader {
     required Uint8List bytes,
     required String contentType,
     required DateTime when,
+    PlanLimits limits = PlanLimits.free,
     Map<String, String>? metadata,
     void Function(double fraction)? onProgress,
   }) async {
@@ -220,6 +232,7 @@ class FakeVideoUploader implements VideoUploader {
       bytes: bytes.length,
       contentType: contentType,
       when: when,
+      limits: limits,
       metadata: metadata,
     ));
     for (final tick in progressTicks) {

@@ -22,10 +22,14 @@ class ClipPreview extends StatefulWidget {
   /// Seconds already spent on the task clock when the recorder opened.
   final int? clockOffsetSeconds;
 
+  /// The player's plan clip cap (WP-11); the free cap when not given.
+  final int planCapSeconds;
+
   const ClipPreview({
     super.key,
     required this.clip,
     this.timerSeconds,
+    this.planCapSeconds = VideoPolicy.defaultClipSeconds,
     this.clockOffsetSeconds,
   });
 
@@ -40,7 +44,9 @@ class _ClipPreviewState extends State<ClipPreview> {
   double _position = 0;
 
   double get _capSeconds =>
-      VideoPolicy.clipCapSeconds(widget.timerSeconds).toDouble();
+      VideoPolicy.clipCapSeconds(widget.timerSeconds,
+              planCapSeconds: widget.planCapSeconds)
+          .toDouble();
 
   @override
   void initState() {

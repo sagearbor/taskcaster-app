@@ -19,6 +19,7 @@ const {
   finalizeBookkeeping,
 } = require('./contract');
 const {MONTAGE_QUOTA, admitPost, takeQuota, dayKey} = require('./guards');
+const {hostMayMontage} = require('./entitlements');
 
 const MONTAGES = 'montages';
 const GAMES = 'games';
@@ -78,6 +79,13 @@ async function handleNewPost(post, {db, render, now = () => new Date()}) {
   }
   const admit = admitPost({post, game});
   if (!admit.ok) return {queued: false, reason: admit.reason};
+
+  // WP-11: a friend game's montages are a Pro feature of its HOST. A free
+  // host's game still plays fine (Watch together is client-side); it just
+  // never costs a render. Starter Pack montages stay free for everyone.
+  if (admit.reason === 'member' && !(await hostMayMontage(db, game, now().getTime()))) {
+    return {queued: false, reason: 'host-not-pro'};
+  }
 
   const result = await queuePost(db, post, now());
   if (result.queued && result.decision.render) {

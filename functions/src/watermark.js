@@ -5,27 +5,33 @@
  * "taskcaster.app" burned into the corner of every finale/moments frame, so a
  * finale downloaded and reposted anywhere still carries the brand.
  *
- * Pro hosts get clean renders. Plans are owned by WP-11 (RevenueCat
- * entitlements in functions/src/plans.js + entitlements.js); until that
- * lands, [isPro] is a stub that says "free" for everyone, so every render is
- * watermarked.
+ * Pro hosts get clean renders. Plans are owned by WP-11: [isPro] reads the
+ * server-owned plan fields on users/{uid} (written only by the RevenueCat
+ * webhook / refreshEntitlement) through entitlements.planOf.
  */
+
+const {planOf} = require('./entitlements');
 
 const WATERMARK_TEXT = 'taskcaster.app';
 
 /**
- * Whether [uid] has an active Pro plan.
+ * Whether [uid] has an active Pro plan right now: users/{uid}.plan == 'pro'
+ * and planExpiresAt in the future (or none), the same test as storage.rules
+ * and functions/src/plans.js effectivePlan(). Async, never throws, false on
+ * any doubt (no uid, no doc, a read error).
  *
- * TODO(WP-11): wire this to the server-owned plan fields on users/{uid}
- * (plan == 'pro' && planExpiresAt > now), via WP-11's entitlements helper.
- * Keep the signature: async, never throws, false on any doubt.
- *
- * @param {string|null|undefined} _uid
- * @param {{db?: object}} [_deps]
+ * @param {string|null|undefined} uid
+ * @param {{db?: object, now?: number}} [deps] db defaults to the Admin SDK's
  * @returns {Promise<boolean>}
  */
-async function isPro(_uid, _deps = {}) {
-  return false;
+async function isPro(uid, deps = {}) {
+  if (!uid || typeof uid !== 'string') return false;
+  try {
+    const db = deps.db || require('firebase-admin/firestore').getFirestore();
+    return (await planOf(db, uid, deps.now || Date.now())) === 'pro';
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -5,31 +5,40 @@ rules_version = '2';
 //
 // WHY this file exists at all: the owner approved Firebase Storage for
 // in-app video with a HARD $100/month ceiling (GCP budget
-// `taskcaster-video-ceiling-100`, alerts at 50/90/100 %). Retention is
-// indefinite by the owner's decision ("maybe just not deleting now") — there
-// is no lifecycle deletion of live clips. That means the controls below are
-// ALL the cost levers there are:
+// `taskcaster-video-ceiling-100`, alerts at 50/90/100 %). Since WP-11
+// (audit 2026-11-05) clips are NOT kept forever: the sweepClipRetention
+// Cloud Function deletes free clips after 90 days (keepers after a year) and
+// a lapsed Pro user's clips no later than a year after the lapse
+// (functions/src/retention.js). The controls below are the upload side:
 //
-//   - `create`-only (no `update`) is what makes "10 slots/day" a REAL cap.
+//   - PLAN-AWARE CAPS (WP-11). The plan is read from the server-owned
+//     users/{uid}.plan / planExpiresAt fields (firestore.get, so a cross-
+//     service rules read) — fields only Cloud Functions can write:
+//       guest (anonymous auth)  submissions/{uid}/guest/{0-4}   5 clips, ever
+//       free                    submissions/{uid}/{today}/{0-2} 3 a day, 32 MiB
+//       pro                     submissions/{uid}/{today}/{0-9,a-e} 15 a day, 96 MiB
+//     Clip LENGTH cannot be checked here; the transcode trims to the plan cap
+//     (20 s guest/free, 60 s Pro) on the server.
+//   - `create`-only (no `update`) is what makes the per-day slots a REAL cap.
 //     If overwriting an existing slot were allowed, a client could re-upload
 //     the same slot forever and blow past the daily/size budget the slot
-//     scheme is meant to enforce. `video_policy.dart` picks a slot 0..9 per
-//     UTC day; refusing overwrite means the 10th create in a day has nowhere
-//     left to land and fails. See "OVERWRITE PROTECTION" below for how this
-//     is actually enforced at the bucket level.
-//   - the 32 MiB `request.resource.size` cap bounds per-clip storage cost and
-//     egress cost (each Arena view re-downloads the clip).
+//     scheme is meant to enforce. `video_uploader.dart` walks the plan's
+//     slots in order; refusing overwrite means the create after the last slot
+//     has nowhere left to land and fails. See "OVERWRITE PROTECTION" below
+//     for how this is actually enforced at the bucket level.
+//   - the per-plan `request.resource.size` cap bounds the upload; the 720p
+//     transcode (WP-08) that replaces it in place bounds storage and egress.
 //   - the `video/.*` content-type check keeps non-video blobs (large images,
-//     zips, etc.) from being smuggled into a path sized for a 30 s clip.
-//   - the day must be TODAY (server clock, UTC) and the slot a single digit,
-//     so the only writable path is `submissions/{uid}/{today}/{0-9}`, which
-//     is what `video_policy.dart` writes: a bug or a hostile client can't fan
-//     out into unbounded object counts with made-up dates.
+//     zips, etc.) from being smuggled into a path sized for a clip.
+//   - the day must be TODAY (server clock, UTC) and the slot a single
+//     character, so the only writable paths are `submissions/{uid}/{today}/{slot}`
+//     and the 5-slot guest folder: a bug or a hostile client can't fan out
+//     into unbounded object counts with made-up dates.
 //   - no client delete, so a used slot can't be freed and refilled.
-//   - with retention indefinite, the caps above plus the $100 GCP budget
-//     alarm (`taskcaster-video-ceiling-100`, 50/90/100 %) are the entire cost
-//     model: bounded per-user upload volume, bounded per-clip size, and a
-//     human notified before spend gets away from either.
+//   - the caps above, the retention sweep, and the $100 GCP budget alarm
+//     (`taskcaster-video-ceiling-100`, 50/90/100 %) are the cost model:
+//     bounded per-user upload volume, bounded stored lifetime, and a human
+//     notified before spend gets away from either.
 //   - everything outside the sanctioned prefixes below (`submissions/**`,
 //     `transcoded/**`, `house/**`, `montages/**`) is denied entirely: there is no other
 //     sanctioned use of this bucket, and an open bucket is an open line item
@@ -43,11 +52,11 @@ rules_version = '2';
 // as `update` instead. The orchestrator has enabled Object Versioning on
 // `gs://taskmaster-app-3d480.firebasestorage.app`, paired with a lifecycle
 // rule that deletes only NONCURRENT versions after 1 day (the live/current
-// version of every object is never touched by that rule — retention of live
-// clips stays indefinite per the owner's decision above). With versioning
+// version of every object is never touched by that rule; live clips are
+// removed only by the retention sweep or account deletion). With versioning
 // on, a second write to an already-created `submissions/{uid}/{day}/{slot}`
 // path is classified as `update`, which `allow update: if false` below
-// denies — so the create-only slot scheme is a REAL 10/day cap in
+// denies — so the create-only slot scheme is a REAL per-day cap in
 // production. The Firebase Storage emulator does not implement Object
 // Versioning, so it always evaluates a same-path rewrite as `create`; the
 // explicit `resource == null` guard in the create rule is what denies it
@@ -72,7 +81,42 @@ service firebase.storage {
              pad2(request.time.day());
     }
 
-    // Player video submissions: submissions/{uid}/{yyyyMMdd}/{slot}.
+    // Size caps per plan (WP-11). The free cap is the pre-WP-11 cap: the app
+    // uploads what the OS recorder produced (no client re-encode), and a 20 s
+    // phone clip is routinely over 12 MiB. Storage cost is set by the 720p
+    // transcode that replaces the upload in place, not by the upload size.
+    function freeMaxBytes() {
+      return 32 * 1024 * 1024;
+    }
+
+    function proMaxBytes() {
+      return 96 * 1024 * 1024;
+    }
+
+    // An anonymous (guest) Firebase Auth session.
+    function isAnonymous() {
+      return request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'anonymous';
+    }
+
+    // Active Pro: the server-owned plan fields on users/{uid}, same test as
+    // functions/src/plans.js effectivePlan(). A missing doc is free. Only
+    // evaluated when a free slot would not do (short-circuit), so a free
+    // user's upload costs no Firestore read.
+    function isPro(uid) {
+      let user = firestore.get(/databases/(default)/documents/users/$(uid));
+      return user != null &&
+             user.data.get('plan', 'free') == 'pro' &&
+             (user.data.get('planExpiresAt', null) == null ||
+              user.data.planExpiresAt > request.time);
+    }
+
+    function isVideoUnder(maxBytes) {
+      return request.resource.size <= maxBytes &&
+             request.resource.contentType.matches('video/.*');
+    }
+
+    // Player video submissions: submissions/{uid}/{yyyyMMdd}/{slot}, and the
+    // guest folder submissions/{uid}/guest/{slot}.
     //
     // WP-04 (audit 2026-11-05) closed three holes in the "10 clips/day" cap:
     //   1. `day` used to be any 8 digits, so one uid had 10 fresh slots per
@@ -95,8 +139,12 @@ service firebase.storage {
       allow get: if true;
       allow list: if false;
 
-      // Create-only: the owner, writing their own uid, into TODAY's folder
-      // (UTC, server clock), a 0-9 slot, under the size cap, as a video.
+      // Create-only: the owner, writing their own uid, as a video under the
+      // plan's size cap, into
+      //   - a guest:      the lifetime guest folder, slots 0-4 (5 clips ever;
+      //                   signing in free unlocks the daily slots, same uid);
+      //   - signed in:    TODAY's folder (UTC, server clock), slots 0-2, or
+      //                   with active Pro slots 0-9 and a-e (15 a day).
       allow create: if request.auth != null &&
                        request.auth.uid == uid &&
                        // Explicit no-overwrite guard: a production probe showed
@@ -104,10 +152,17 @@ service firebase.storage {
                        // as `create` even with Object Versioning on, so the
                        // slot must be empty for the write to be allowed.
                        resource == null &&
-                       day == todayKey() &&
-                       slot.matches('^[0-9]$') &&
-                       request.resource.size <= 32 * 1024 * 1024 &&
-                       request.resource.contentType.matches('video/.*');
+                       (
+                         (isAnonymous() &&
+                          day == 'guest' &&
+                          slot.matches('^[0-4]$') &&
+                          isVideoUnder(freeMaxBytes())) ||
+                         (!isAnonymous() &&
+                          day == todayKey() &&
+                          ((slot.matches('^[0-2]$') && isVideoUnder(freeMaxBytes())) ||
+                           (slot.matches('^[0-9a-e]$') && isVideoUnder(proMaxBytes()) &&
+                            isPro(uid))))
+                       );
 
       // Never allowed. An object is created once and never replaced in place
       // (see OVERWRITE PROTECTION above), and never deleted by a client: a

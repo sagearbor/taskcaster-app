@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,10 +7,17 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/environment.dart';
 import '../../../../core/config/legal_links.dart';
+import '../../../../core/di/service_locator.dart';
+import '../../../../core/services/plans/plan_repository.dart';
+import '../../../../core/services/plans/plans.dart';
+import '../../../../core/services/purchases/purchases_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/theme_controller.dart';
 import '../../../ar_lab/presentation/screens/ar_lab_screen.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../paywall/presentation/paywall_launcher.dart';
+import '../../../paywall/presentation/screens/paywall_screen.dart'
+    show planSubtitle, planTitle;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.openLink});
@@ -36,11 +44,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // shows a spinner and can't be tapped twice.
   bool _deletingAccount = false;
 
+  // WP-11: the plan card. Null when no PlanRepository is registered (some
+  // widget tests build Settings without the full service locator).
+  Stream<UserPlan>? _planStream;
+  bool _restoring = false;
+
   @override
   void initState() {
     super.initState();
     _loadNotificationsPref();
     _loadVersion();
+    if (sl.isRegistered<PlanRepository>()) {
+      _planStream = sl<PlanRepository>().watchPlan();
+    }
+  }
+
+  Future<void> _restorePurchases() async {
+    final purchases = sl<PurchasesService>();
+    final auth = context.read<AuthBloc>().state;
+    setState(() => _restoring = true);
+    try {
+      if (auth is AuthAuthenticated) await purchases.identify(auth.user.id);
+      final found = await purchases.restore();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(found
+            ? 'Purchases restored. Pro is back on.'
+            : 'No TaskCaster Pro subscription found for this store account.'),
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't restore purchases right now. Please try again."),
+      ));
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
+
+  /// Settings > TaskCaster Pro: the plan, and the ONE always-available door
+  /// to the paywall (the other is hitting a limit).
+  Widget _proCard(BuildContext context) {
+    final purchasesSupported = sl.isRegistered<PurchasesService>() &&
+        sl<PurchasesService>().isSupported &&
+        !kIsWeb;
+    return Card(
+      child: Column(
+        children: [
+          StreamBuilder<UserPlan>(
+            stream: _planStream,
+            builder: (context, snapshot) {
+              final plan = snapshot.data;
+              return ListTile(
+                key: const Key('settings.taskcasterPro'),
+                leading: Icon(
+                  plan?.isPro == true
+                      ? Icons.workspace_premium
+                      : Icons.workspace_premium_outlined,
+                  color: AppTheme.violet,
+                ),
+                title: const Text(PlanCopy.proName),
+                subtitle: Text(plan == null
+                    ? 'See plans'
+                    : '${planTitle(plan)} · ${planSubtitle(plan)}'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => sl<PaywallLauncher>()
+                    .openPaywall(context, entry: PaywallEntry.settings),
+              );
+            },
+          ),
+          if (purchasesSupported) ...[
+            const Divider(height: 1),
+            ListTile(
+              leading: _restoring
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.restore, color: AppTheme.violet),
+              title: const Text('Restore purchases'),
+              onTap: _restoring ? null : _restorePurchases,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Future<void> _openLegalPage(String url) async {
@@ -144,6 +233,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
           ),
+          if (_planStream != null && sl.isRegistered<PaywallLauncher>()) ...[
+            const SizedBox(height: 20),
+            _sectionHeader(context, PlanCopy.proName),
+            _proCard(context),
+          ],
           const SizedBox(height: 20),
           _sectionHeader(context, 'Notifications'),
           Card(
@@ -317,7 +411,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'This permanently deletes your account, profile, avatar, friends '
           'list and notification settings. Games you\'ve played stay in '
           'other players\' history, but your identity is removed from '
-          'them. This cannot be undone.',
+          'them. This cannot be undone.\n\n'
+          'If you subscribe to TaskCaster Pro, deleting your account does '
+          'not cancel the subscription: cancel it in your App Store or '
+          'Google Play account settings.',
         ),
         actions: [
           TextButton(

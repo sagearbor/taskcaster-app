@@ -52,10 +52,12 @@ an audience that reacts. The show gets the audience by editing. We get it by
 * Submitting after `timer + 30 s grace` is allowed but flagged **LATE** (a red
   badge everyone sees; –1 point). Late is funnier than blocked.
 * Submission types, all **in-app**, no other apps:
-  * **Video (default)** — in-app camera, clip cap = min(task timer, 30 s),
-    32 MB per clip, 10 uploads/day/user, Firebase Storage with a $100/month
-    budget alarm (`taskcaster-video-ceiling-100`). Retention is indefinite
-    (the caps + the alarm are the cost controls, not deletion).
+  * **Video (default)** — in-app camera, clip cap = min(task timer, plan
+    cap), Firebase Storage with a $100/month budget alarm
+    (`taskcaster-video-ceiling-100`). Since WP-11 the caps depend on the plan
+    (guest 5 clips ever, free 3 a day of 20 s, Pro 15 a day of 60 s) and
+    clips are aged out by a retention sweep (free after 90 days); see
+    docs/MONETIZATION.md.
   * **Photo** — camera or gallery, downscaled client-side to ≤720 px JPEG
     (~60–150 KB), stored inline in the post document. No Firebase Storage,
     no cost, works on web/iOS/Android.

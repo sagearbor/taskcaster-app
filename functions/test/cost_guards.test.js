@@ -56,7 +56,10 @@ function videoPost(overrides = {}) {
   };
 }
 
-function setup(seed = {'games/g1': GAME}) {
+// WP-11: friend-game montages need a Pro HOST; the default host is Pro.
+const PRO_HOST = {plan: 'pro', planExpiresAt: new Date('2027-01-01T00:00:00Z')};
+
+function setup(seed = {'games/g1': GAME, 'users/host': PRO_HOST}) {
   const db = makeFakeFirestore(seed);
   const renders = [];
   const render = async (gameId, taskId) => {
@@ -143,6 +146,46 @@ test('a post with a bogus taskId does not create a montage job', async () => {
   assert.equal(renders.length, 0);
   // ...and it costs the poster no quota either.
   assert.equal(db.peek(`montage_quota/alice/days/${dayKey(NOW)}`), null);
+});
+
+test('WP-11: a FREE host\'s friend game never queues or renders a montage', async () => {
+  const {db, renders, handle} = setup({'games/g1': GAME, 'users/host': {plan: 'free'}});
+  for (const userId of ['alice', 'host', 'alice']) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await handle(videoPost({userId}));
+    assert.deepEqual(result, {queued: false, reason: 'host-not-pro'});
+  }
+  assert.equal(renders.length, 0);
+  assert.equal(db.peek(`montages/${montageDocId('g1', 'task-1')}`), null);
+  assert.equal(db.peek(`montage_quota/alice/days/${dayKey(NOW)}`), null, 'no quota charged');
+});
+
+test('WP-11: a lapsed Pro host (expired planExpiresAt) is a free host', async () => {
+  const lapsed = {plan: 'pro', planExpiresAt: new Date('2026-11-01T00:00:00Z')};
+  const {renders, handle} = setup({'games/g1': GAME, 'users/host': lapsed});
+  const result = await handle(videoPost());
+  assert.equal(result.reason, 'host-not-pro');
+  assert.equal(renders.length, 0);
+});
+
+test('WP-11: a free invitee posting in a PRO host\'s game queues the montage', async () => {
+  const {renders, handle} = setup();
+  for (let i = 0; i < 3; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await handle(videoPost({userId: 'alice'}));
+    assert.equal(result.queued, true);
+  }
+  assert.equal(renders.length, 1, 'every player in the Pro host\'s game gets the finale');
+});
+
+test('WP-11: Starter Pack montages stay free (no host check)', async () => {
+  const {renders, handle} = setup({});
+  const starter = [...STARTER_TASK_IDS][0];
+  for (let i = 0; i < 3; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    await handle(videoPost({userId: `u${i}`, gameId: `solo-${i}`, taskId: starter}));
+  }
+  assert.equal(renders.length, 1);
 });
 
 test('three posts under a made-up gameId never render', async () => {
