@@ -61,8 +61,28 @@ service cloud.firestore {
 
     // ---- Users ----
     match /users/{userId} {
+      // WP-11: the plan lives here, written ONLY by Cloud Functions (the
+      // RevenueCat webhook / refreshEntitlement, Admin SDK). storage.rules
+      // reads `plan` + `planExpiresAt` for the clip caps and the montage
+      // trigger reads them for the host, so a client that could write them
+      // could grant itself Pro. Clients may create and edit their profile,
+      // but never touch any of these keys. Keep in sync with
+      // functions/src/revenuecat.js.
+      function serverOwnedPlanFields() {
+        return ['plan', 'planExpiresAt', 'planLapsedAt', 'planSource',
+                'planStatus', 'planWillRenew', 'planBillingIssue',
+                'planCancelReason', 'planProductId', 'planPendingProductId',
+                'planStore', 'planEnvironment', 'planUpdatedAt',
+                'planLastEventMs', 'planLastEventType', 'usage'];
+      }
+
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+                       !request.resource.data.keys().hasAny(serverOwnedPlanFields());
+      allow update: if isSignedIn() && request.auth.uid == userId &&
+                       !request.resource.data.diff(resource.data).affectedKeys()
+                          .hasAny(serverOwnedPlanFields());
+      allow delete: if isSignedIn() && request.auth.uid == userId;
 
       // ---- Friend graph ----
       // A user's friends live in their OWN subcollection and are private to

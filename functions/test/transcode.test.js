@@ -165,11 +165,18 @@ test('decideClaim: ready/failed are final, a fresh lock blocks, a stale lock is 
 });
 
 test('clipCapSeconds: metadata may shorten the server cap, never lengthen it', () => {
-  assert.equal(t.clipCapSeconds({}), 30);
-  assert.equal(t.clipCapSeconds({clipCapSeconds: '20'}), 20);
-  assert.equal(t.clipCapSeconds({clipCapSeconds: '600'}), 30);
-  assert.equal(t.clipCapSeconds({clipCapSeconds: 'abc'}), 30);
-  assert.equal(t.clipCapSeconds({clipCapSeconds: '0'}), 30);
+  // No plan cap handed in: the free cap (20 s).
+  assert.equal(t.clipCapSeconds({}), 20);
+  assert.equal(t.clipCapSeconds({clipCapSeconds: '15'}), 15);
+  assert.equal(t.clipCapSeconds({clipCapSeconds: '600'}), 20);
+  assert.equal(t.clipCapSeconds({clipCapSeconds: 'abc'}), 20);
+  assert.equal(t.clipCapSeconds({clipCapSeconds: '0'}), 20);
+  // WP-11: the plan cap (60 s Pro) is the ceiling, bounded by MAX_CLIP_SECONDS.
+  assert.equal(t.clipCapSeconds({}, 60), 60);
+  assert.equal(t.clipCapSeconds({clipCapSeconds: '30'}, 60), 30);
+  assert.equal(t.clipCapSeconds({clipCapSeconds: '90'}, 60), 60);
+  assert.equal(t.clipCapSeconds({}, 600), t.MAX_CLIP_SECONDS);
+  assert.equal(t.clipCapSeconds({}, 'junk'), 20);
 });
 
 test('fit720 caps both orientations at 720p and never upscales', () => {
@@ -236,7 +243,7 @@ test('a clip upload is transcoded once: poster, in-place replace, clip doc, post
   const res = await t.handleFinalized(uploaded(), {store, storage, transcode, nowMs: NOW, logger: silentLogger});
   assert.equal(res.status, 'ready');
   assert.equal(transcode.calls.length, 1);
-  assert.equal(transcode.calls[0].opts.maxSeconds, 30);
+  assert.equal(transcode.calls[0].opts.maxSeconds, 20, 'no plan lookup wired: the free cap');
 
   assert.deepEqual(storage.calls.download, [{name: NAME, generation: '1730800000000001'}]);
   assert.equal(storage.calls.poster[0].dest, `transcoded/${UID}/20261105/3.jpg`);
@@ -339,7 +346,33 @@ test('the upload metadata can only shorten the duration cap', async () => {
     {store: fakeStore(), storage: fakeStorage(), transcode, nowMs: NOW, logger: silentLogger});
   await t.handleFinalized(uploaded({name: 'submissions/u1/20261105/4', metadata: {clipCapSeconds: '9999'}}),
     {store: fakeStore(), storage: fakeStorage(), transcode, nowMs: NOW, logger: silentLogger});
-  assert.deepEqual(transcode.calls.map((c) => c.opts.maxSeconds), [15, 30]);
+  assert.deepEqual(transcode.calls.map((c) => c.opts.maxSeconds), [15, 20]);
+});
+
+test('WP-11: the transcode trims to the uploader\'s PLAN cap, read server-side', async () => {
+  const transcode = fakeTranscode();
+  const seen = [];
+  const caps = {pro1: 60, free1: 20};
+  const capSecondsFor = async (parts) => {
+    seen.push(parts);
+    return caps[parts.uid];
+  };
+  const deps = (extra = {}) => ({
+    store: fakeStore(), storage: fakeStorage(), transcode, nowMs: NOW, logger: silentLogger,
+    capSecondsFor, ...extra,
+  });
+  // A Pro uploader's 60 s clip keeps its 60 s; metadata may still shorten.
+  await t.handleFinalized(uploaded({name: 'submissions/pro1/20261105/a', metadata: {}}), deps());
+  await t.handleFinalized(uploaded({name: 'submissions/pro1/20261105/b', metadata: {clipCapSeconds: '45'}}), deps());
+  // A free uploader claiming 60 s in metadata still gets 20 s.
+  await t.handleFinalized(uploaded({name: 'submissions/free1/20261105/0', metadata: {clipCapSeconds: '60'}}), deps());
+  // The plan lookup failing falls back to the free cap, never to the Pro one.
+  await t.handleFinalized(uploaded({name: 'submissions/pro1/20261105/c', metadata: {}}),
+    deps({capSecondsFor: async () => {
+      throw new Error('firestore down');
+    }}));
+  assert.deepEqual(transcode.calls.map((c) => c.opts.maxSeconds), [60, 45, 20, 20]);
+  assert.deepEqual(seen[0], {uid: 'pro1', day: '20261105', slot: 'a'});
 });
 
 test('applyClipToPost: a post created after the transcode gets the URLs; before, nothing', async () => {
@@ -371,6 +404,8 @@ test('firestoreClipStore.claim is a real transaction: a second claim is refused'
   const doc = db.peek('clips/c1');
   assert.equal(doc.status, 'processing');
   assert.equal(doc.createdAt, 'SERVER_TS');
+  // WP-11: the retention sweep first looks at a clip 90 days after creation.
+  assert.equal(doc.retainUntil.getTime(), NOW + 90 * 24 * 3600 * 1000);
   await store.complete('c1', {status: 'ready'});
   assert.equal(db.peek('clips/c1').status, 'ready');
   assert.deepEqual(await store.claim('c1', '5', NOW + 3600000, fields), {claimed: false, reason: 'already-transcoded'});

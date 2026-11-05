@@ -23,7 +23,8 @@ const os = require('os');
 const path = require('path');
 
 const {initializeApp} = require('firebase-admin/app');
-const {getFirestore, FieldValue, FieldPath} = require('firebase-admin/firestore');
+const {getFirestore, FieldValue, FieldPath, Timestamp} = require('firebase-admin/firestore');
+const {getAuth} = require('firebase-admin/auth');
 const {getMessaging} = require('firebase-admin/messaging');
 const {getStorage} = require('firebase-admin/storage');
 const {setGlobalOptions} = require('firebase-functions/v2');
@@ -31,6 +32,7 @@ const {onDocumentCreated} = require('firebase-functions/v2/firestore');
 const {onObjectFinalized} = require('firebase-functions/v2/storage');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
 const {onCall, onRequest, HttpsError} = require('firebase-functions/v2/https');
+const {defineSecret} = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 
 const montage = require('./montage');
@@ -52,7 +54,10 @@ const {requireAdmin} = require('./guards');
 const pipeline = require('./pipeline');
 const transcode = require('./transcode');
 const sharePage = require('./share_page');
-const {watermarkFor} = require('./watermark');
+const {watermarkFor, isPro} = require('./watermark');
+const revenuecat = require('./revenuecat');
+const retention = require('./retention');
+const {clipSecondsForUpload} = require('./entitlements');
 
 initializeApp();
 
@@ -93,9 +98,29 @@ const TRANSCODE_OPTS = {
   bucket: defaultBucketName(),
   memory: '1GiB',
   cpu: 1,
-  timeoutSeconds: 300,
+  // 540 s: a Pro clip is up to 60 s (WP-11), ~2x the WP-08 30 s encode.
+  timeoutSeconds: 540,
   maxInstances: 3,
   concurrency: 1,
+};
+
+/**
+ * RevenueCat secrets (WP-11), in Secret Manager, never in code:
+ *   REVENUECAT_WEBHOOK_AUTH    the Authorization header value RevenueCat
+ *                              sends with every webhook POST
+ *   REVENUECAT_SECRET_API_KEY  the project's secret REST key (sk_...), for
+ *                              refreshEntitlement
+ * Create both before deploying: `firebase functions:secrets:set <NAME>`.
+ */
+const REVENUECAT_WEBHOOK_AUTH = defineSecret('REVENUECAT_WEBHOOK_AUTH');
+const REVENUECAT_SECRET_API_KEY = defineSecret('REVENUECAT_SECRET_API_KEY');
+
+/** Light HTTPS / callable shape for the subscription plumbing. */
+const BILLING_OPTS = {
+  region: REGION,
+  memory: '256MiB',
+  timeoutSeconds: 60,
+  maxInstances: 5,
 };
 
 /**
@@ -257,6 +282,8 @@ exports.onClipUploaded = onObjectFinalized(TRANSCODE_OPTS, async (event) => {
   const result = await transcode.handleFinalized(object, {
     store: clipStore(),
     storage: gcsClipStorage(),
+    // WP-11: trim to the uploader's plan cap (20 s guest/free, 60 s Pro).
+    capSecondsFor: (parts) => clipSecondsForUpload(db(), parts),
     logger,
   });
   if (result.status !== 'skipped' || result.reason !== 'not-a-submission') {
@@ -266,6 +293,85 @@ exports.onClipUploaded = onObjectFinalized(TRANSCODE_OPTS, async (event) => {
 
 /** WP-09 public share pages (/p/ /c/ /t/ /f/, rewritten by firebase.json). */
 exports.sharePage = onRequest(sharePage.FUNCTION_OPTS, sharePage.httpHandler(db, logger));
+
+// ---------------------------------------------------------------------------
+// Plans: RevenueCat webhook, entitlement refresh, clip retention (WP-11)
+// ---------------------------------------------------------------------------
+
+/** False when the Firebase Auth account is gone (deleted accounts stay deleted). */
+async function authUserExists(uid) {
+  try {
+    await getAuth().getUser(uid);
+    return true;
+  } catch (err) {
+    if (err && err.code === 'auth/user-not-found') return false;
+    throw err;
+  }
+}
+
+const billingDeps = () => ({
+  db: db(),
+  Timestamp,
+  FieldValue,
+  userExists: authUserExists,
+  logger,
+});
+
+const refreshUid = (uid) => revenuecat.refreshFromRevenueCat(uid, {
+  ...billingDeps(),
+  apiKey: REVENUECAT_SECRET_API_KEY.value(),
+});
+
+/**
+ * RevenueCat webhook: Project settings > Integrations > Webhooks, URL
+ * https://us-central1-<project>.cloudfunctions.net/revenuecatWebhook, with
+ * the Authorization header set to the REVENUECAT_WEBHOOK_AUTH secret.
+ */
+exports.revenuecatWebhook = onRequest(
+  {...BILLING_OPTS, secrets: [REVENUECAT_WEBHOOK_AUTH, REVENUECAT_SECRET_API_KEY]},
+  async (req, res) => {
+    const out = await revenuecat.handleWebhook(
+      {method: req.method, headers: req.headers, body: req.body},
+      {...billingDeps(), secret: REVENUECAT_WEBHOOK_AUTH.value(), refresh: refreshUid},
+    );
+    res.status(out.status).send(out.body);
+  },
+);
+
+/**
+ * The app calls this right after a purchase or Restore Purchases, so the plan
+ * card flips without waiting for the webhook. Signed-in, non-anonymous only:
+ * a guest has no subscription to refresh.
+ */
+exports.refreshEntitlement = onCall(
+  {...BILLING_OPTS, secrets: [REVENUECAT_SECRET_API_KEY]},
+  async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+    const provider = auth.token && auth.token.firebase && auth.token.firebase.sign_in_provider;
+    if (provider === 'anonymous') {
+      throw new HttpsError('failed-precondition', 'Sign in with Apple or Google first.');
+    }
+    return refreshUid(auth.uid);
+  },
+);
+
+/**
+ * Daily retention sweep: free clips go after 90 days (keepers after a year),
+ * lapsed Pro clips after at most a year. Paged and bounded; see retention.js.
+ */
+exports.sweepClipRetention = onSchedule(
+  {schedule: 'every day 04:30', timeZone: 'UTC', region: REGION, memory: '256MiB', timeoutSeconds: 540, maxInstances: 1},
+  async () => {
+    await retention.sweep({
+      store: retention.firestoreRetentionStore({db: db(), Timestamp, FieldPath, feedPosts: FEED_POSTS}),
+      storage: {
+        deleteObject: (objectPath) => bucket().file(objectPath).delete({ignoreNotFound: true}),
+      },
+      logger,
+    });
+  },
+);
 
 const clipStore = () => transcode.firestoreClipStore({db: db(), FieldValue, feedPosts: FEED_POSTS});
 
@@ -383,6 +489,8 @@ async function render(gameId, taskId, {force = false} = {}) {
     const watermark = await watermarkFor({
       gameId, isStarter: isStarterTask(taskId),
       getGame: async (id) => ((await db().collection('games').doc(id).get()).data() || null),
+      // WP-11: a Pro host's game renders clean (server-owned plan fields).
+      isProFn: (uid) => isPro(uid, {db: db()}),
     });
     const finaleResult = await montage.finale(clips, finalePath, {seconds: 2, taskTitle, watermark});
     const momentsResult = await montage.moments(clips, momentsPath, {seconds: 3, taskTitle, watermark});

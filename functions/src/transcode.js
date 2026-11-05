@@ -35,6 +35,7 @@
  *   uid, day, slot, sourcePath, sourceGeneration, sourceBytes,
  *   sourceContentType, gameId, taskId, status ('processing'|'ready'|'failed'),
  *   attempts, createdAt (server Timestamp, set once — the retention clock),
+ *   retainUntil (when the WP-11 retention sweep next looks at it),
  *   lockedAt, and when ready: playbackPath, playbackUrl, posterPath,
  *   posterUrl, playbackGeneration, outputBytes, durationSeconds, width,
  *   height, sourceCodec, hdr, tonemapped, transcodedAt.
@@ -61,6 +62,7 @@ const path = require('path');
 const {runFfmpeg, runBinary, ffmpegPath} = require('./ffmpeg');
 const {probe} = require('./analyze');
 const {log} = require('./log');
+const {LIMITS, FREE_RETENTION_DAYS, DAY_MS} = require('./plans');
 
 const CLIPS = 'clips';
 
@@ -72,14 +74,21 @@ const MAX_LONG_EDGE = 1280;
 const MAX_FPS = 30;
 
 /**
- * Server-side clip cap (seconds) — mirrors VideoPolicy.maxClipSeconds. The
- * upload's `clipCapSeconds` metadata may only shorten it, never lengthen it.
- * WP-11 replaces this with the uploader's plan cap.
+ * Absolute clip ceiling (seconds): the Pro cap (plans.js LIMITS.pro). The
+ * cap actually applied is the uploader's PLAN cap (deps.capSecondsFor, read
+ * from users/{uid} on the server), which the upload's `clipCapSeconds`
+ * metadata may only shorten, never lengthen.
  */
-const MAX_CLIP_SECONDS = 30;
+const MAX_CLIP_SECONDS = LIMITS.pro.clipSeconds;
 
-/** Sanity bound on the source; storage.rules already caps uploads at 32 MiB. */
-const MAX_SOURCE_BYTES = 64 * 1024 * 1024;
+/** The cap when no plan lookup is wired (or it fails): the free cap. */
+const DEFAULT_CLIP_SECONDS = LIMITS.free.clipSeconds;
+
+/**
+ * Sanity bound on the source, a little over the largest upload storage.rules
+ * allows (the Pro cap).
+ */
+const MAX_SOURCE_BYTES = LIMITS.pro.maxUploadBytes + 4 * 1024 * 1024;
 
 /** A `processing` claim older than this is a crashed run. */
 const LOCK_MINUTES = 10;
@@ -182,13 +191,19 @@ function millisOf(value) {
   return 0;
 }
 
-/** The output duration cap: the server cap, shortened by a sane metadata cap. */
-function clipCapSeconds(metadata) {
+/**
+ * The output duration cap: the plan's server cap (bounded by
+ * MAX_CLIP_SECONDS), shortened by a sane metadata cap.
+ */
+function clipCapSeconds(metadata, serverCap = DEFAULT_CLIP_SECONDS) {
+  let cap = Number(serverCap);
+  if (!Number.isFinite(cap) || cap < 1) cap = DEFAULT_CLIP_SECONDS;
+  cap = Math.min(cap, MAX_CLIP_SECONDS);
   const requested = Number(metadata && metadata.clipCapSeconds);
-  if (Number.isFinite(requested) && requested >= 1 && requested < MAX_CLIP_SECONDS) {
+  if (Number.isFinite(requested) && requested >= 1 && requested < cap) {
     return requested;
   }
-  return MAX_CLIP_SECONDS;
+  return cap;
 }
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
@@ -286,7 +301,9 @@ async function hasZscale() {
  * @returns {Promise<{videoPath:string, posterPath:string, source:object,
  *   output:object, hdr:boolean, tonemapped:boolean}>}
  */
-async function transcodeFile(input, outDir, {maxSeconds = MAX_CLIP_SECONDS, timeoutMs = 240000} = {}) {
+async function transcodeFile(input, outDir, {maxSeconds = DEFAULT_CLIP_SECONDS, timeoutMs} = {}) {
+  // ~4 s of encode per output second on 1 vCPU for a 4K HEVC source, plus slack.
+  if (!timeoutMs) timeoutMs = Math.max(240000, maxSeconds * 8000);
   const source = await probe(input);
   const zscale = await hasZscale();
   const videoPath = path.join(outDir, 'clip.mp4');
@@ -313,12 +330,14 @@ async function transcodeFile(input, outDir, {maxSeconds = MAX_CLIP_SECONDS, time
  * @param {object} deps.store   clip doc + feed post access (see firestoreClipStore)
  * @param {object} deps.storage object access (see index.js gcsClipStorage)
  * @param {Function} [deps.transcode] defaults to transcodeFile (tests mock it)
+ * @param {Function} [deps.capSecondsFor] async ({uid, day, slot}) -> the
+ *   uploader's plan cap in seconds (WP-11); a failure falls back to the free cap
  * @param {number} [deps.nowMs]
  * @param {object} [deps.logger]
  * @returns {Promise<{status:string, reason?:string}>}
  */
 async function handleFinalized(object, deps) {
-  const {store, storage, transcode = transcodeFile, nowMs = Date.now(), logger = console} = deps;
+  const {store, storage, transcode = transcodeFile, capSecondsFor, nowMs = Date.now(), logger = console} = deps;
   const decision = shouldTranscode(object);
   if (!decision.handle) return {status: 'skipped', reason: decision.reason};
 
@@ -345,7 +364,15 @@ async function handleFinalized(object, deps) {
     const input = path.join(workDir, 'source');
     await storage.download(object.name, input, generation);
 
-    const result = await transcode(input, workDir, {maxSeconds: clipCapSeconds(meta)});
+    let serverCap = DEFAULT_CLIP_SECONDS;
+    if (capSecondsFor) {
+      try {
+        serverCap = await capSecondsFor(parts);
+      } catch (err) {
+        logger.warn('transcode: plan lookup failed, using the free cap', {path: object.name, error: err.message});
+      }
+    }
+    const result = await transcode(input, workDir, {maxSeconds: clipCapSeconds(meta, serverCap)});
 
     // Replace first: if the clip was deleted meanwhile (account deletion),
     // the generation precondition fails here and no orphan poster is written.
@@ -472,7 +499,12 @@ function firestoreClipStore({db, FieldValue, feedPosts = 'feed_posts'}) {
           status: 'processing',
           attempts: d.attempts,
           lockedAt: new Date(nowMs).toISOString(),
-          ...(existing ? {} : {createdAt: FieldValue.serverTimestamp()}),
+          // createdAt is the retention clock; retainUntil is when the WP-11
+          // sweep (retention.js) first looks at the clip.
+          ...(existing ? {} : {
+            createdAt: FieldValue.serverTimestamp(),
+            retainUntil: new Date(nowMs + FREE_RETENTION_DAYS * DAY_MS),
+          }),
           updatedAt: FieldValue.serverTimestamp(),
         }, {merge: true});
         return {claimed: true, reason: d.reason};
@@ -519,6 +551,8 @@ module.exports = {
   CLIPS,
   MARKER,
   MAX_CLIP_SECONDS,
+  DEFAULT_CLIP_SECONDS,
+  MAX_SOURCE_BYTES,
   MAX_ATTEMPTS,
   LOCK_MINUTES,
   parseSubmissionPath,
