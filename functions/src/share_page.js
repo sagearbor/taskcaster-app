@@ -172,41 +172,47 @@ const jsString = (s) => JSON.stringify(String(s)).replace(/</g, '\\u003c');
 
 const STYLE = `
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--violet:#6D28D9;--deep:#4C1D95;--coral:#FB5779;--gold:#FBBF24;--ink:#211B33}
-html,body{background:#1a1033}
+/* Colours mirror the app's tokens (lib/core/theme/app_theme.dart, app_tokens.dart). */
+:root{--violet:#6D28D9;--deep:#4C1D95;--coral:#FB5779;--gold:#FBBF24;--ink:#211B33;
+--bg:#17121F;--bar:#2A2150;--surface-high:#2C2542;--on:#EDE9F5;--muted:#AEA4C6}
+html,body{background:var(--bg)}
 body{min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-color:#f3edff;background:linear-gradient(165deg,#1a1033 0%,#2d1b4e 50%,#4C1D95 100%);
+color:var(--on);background:linear-gradient(165deg,var(--bg) 0%,var(--bar) 50%,var(--deep) 100%);
 display:flex;justify-content:center;padding:18px 16px 28px}
 main{width:100%;max-width:440px;display:flex;flex-direction:column;gap:14px}
-.brand{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;letter-spacing:3px;font-size:13px;color:#e9ddff;text-decoration:none}
+.brand{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;letter-spacing:3px;font-size:13px;color:var(--on);text-decoration:none}
 .brand i{font-style:normal;color:var(--gold);font-size:18px}
-.dare{font-size:15px;color:#d9ccf5;text-align:center}
+.dare{font-size:15px;color:var(--on);text-align:center}
 h1{font-size:23px;line-height:1.2;text-align:center;font-weight:800}
 h1 span{color:var(--gold)}
 .stage{position:relative;border-radius:22px;overflow:hidden;background:#0d0818;aspect-ratio:4/5;
 box-shadow:0 22px 50px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12)}
 .stage video,.stage img{width:100%;height:100%;object-fit:cover;display:block}
 .stage .text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:28px;
-font-size:21px;line-height:1.4;text-align:center;white-space:pre-line;background:linear-gradient(160deg,#2c2542,#4C1D95)}
-.stamp{position:absolute;top:14px;right:12px;transform:rotate(8deg);background:var(--gold);color:var(--ink);
+font-size:21px;line-height:1.4;text-align:center;white-space:pre-line;background:linear-gradient(160deg,var(--surface-high),var(--deep))}
+/* Below the clip's burned-in top label band. */
+.stamp{position:absolute;top:56px;right:12px;transform:rotate(8deg);background:var(--gold);color:var(--ink);
 font-weight:900;font-size:15px;letter-spacing:1px;padding:7px 12px;border-radius:9px;border:3px solid var(--ink);
 box-shadow:0 6px 16px rgba(0,0,0,.4);animation:slap .5s cubic-bezier(.2,1.6,.4,1) both .3s}
 @keyframes slap{from{transform:rotate(-20deg) scale(2.2);opacity:0}to{transform:rotate(8deg) scale(1);opacity:1}}
 .time{position:absolute;left:12px;bottom:12px;background:rgba(13,8,24,.78);color:#fff;font-weight:800;
 font-variant-numeric:tabular-nums;padding:6px 10px;border-radius:10px;font-size:14px}
-.sound{position:absolute;left:12px;top:12px;border:0;background:rgba(13,8,24,.78);color:#fff;
+/* Bottom-centre: house clips burn a label into the top band (e.g.
+   "HOUSE · GREG'S ASSISTANT") and a clock into the bottom-right corner; the
+   elapsed chip owns bottom-left. */
+.sound{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);white-space:nowrap;border:0;background:rgba(13,8,24,.78);color:#fff;
 font-size:13px;font-weight:700;padding:7px 11px;border-radius:10px;cursor:pointer}
-.caption{font-size:14px;color:#cfc3ea;text-align:center;font-style:italic}
+.caption{font-size:14px;color:var(--muted);text-align:center;font-style:italic}
 .turn{display:block;text-align:center;text-decoration:none;color:#fff;background:var(--coral);
 font-size:21px;font-weight:900;padding:19px 18px;border-radius:18px;box-shadow:0 10px 28px rgba(251,87,121,.45);
 animation:pulse 2.2s ease-in-out infinite 1.2s}
 .turn:active{transform:scale(.98)}
 @keyframes pulse{0%,100%{box-shadow:0 10px 28px rgba(251,87,121,.45)}50%{box-shadow:0 10px 38px rgba(251,87,121,.8)}}
-.hint{font-size:13px;color:#bfb2de;text-align:center;margin-top:-4px}
+.hint{font-size:13px;color:var(--muted);text-align:center;margin-top:-4px}
 .row{display:flex;gap:10px}
-.row a{flex:1;text-align:center;text-decoration:none;color:#f3edff;font-weight:700;font-size:15px;
+.row a{flex:1;text-align:center;text-decoration:none;color:var(--on);font-weight:700;font-size:15px;
 padding:13px 8px;border-radius:14px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.06)}
-footer{font-size:12px;color:#9c90bb;text-align:center;margin-top:6px}
+footer{font-size:12px;color:var(--muted);text-align:center;margin-top:6px}
 @media (prefers-reduced-motion:reduce){.stamp,.turn{animation:none}}
 `;
 
@@ -257,7 +263,7 @@ function layout({title, description, canonicalPath, image, video, body, redirect
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${esc(title)} · TaskCaster</title>
 <meta name="description" content="${esc(description)}">
-<meta name="theme-color" content="#2d1b4e">
+<meta name="theme-color" content="#2A2150">
 <meta name="apple-itunes-app" content="app-id=${APP_STORE_ID}, app-argument=${esc(canonical)}">
 <link rel="canonical" href="${esc(canonical)}">
 ${metaTags({title, description, canonical, image, video})}
