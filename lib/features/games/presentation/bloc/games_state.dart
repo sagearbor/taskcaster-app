@@ -51,3 +51,14 @@ class StarterPackReady extends GamesState {
   @override
   List<Object> get props => [gameId, taskIndex];
 }
+
+/// A "Challenge friends" game was created and is waiting in its lobby; the
+/// listener opens it with the invite dialog up.
+class ChallengeFriendsReady extends GamesState {
+  final String gameId;
+
+  const ChallengeFriendsReady({required this.gameId});
+
+  @override
+  List<Object> get props => [gameId];
+}

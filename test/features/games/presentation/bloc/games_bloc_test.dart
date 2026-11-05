@@ -4,6 +4,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:taskcaster_app/core/models/game.dart';
 import 'package:taskcaster_app/core/models/game_settings.dart';
 import 'package:taskcaster_app/core/models/player.dart';
+import 'package:taskcaster_app/core/models/task.dart';
 import 'package:taskcaster_app/core/models/user.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:taskcaster_app/features/games/domain/repositories/game_repository.dart';
@@ -18,6 +19,7 @@ class FakeGame extends Fake implements Game {}
 void main() {
   setUpAll(() {
     registerFallbackValue(FakeGame());
+    registerFallbackValue(<Task>[]);
   });
 
   group('GamesBloc Tests', () {
@@ -256,6 +258,60 @@ void main() {
           GamesLoaded(games: testGames),
           GamesLoading(),
           GamesLoaded(games: testGames),
+        ],
+      );
+    });
+
+    group('ChallengeFriends', () {
+      final challenger = User(
+        id: 'challenger_1',
+        displayName: 'Sam',
+        email: 'sam@test.com',
+        createdAt: DateTime(2025, 1, 1),
+      );
+
+      blocTest<GamesBloc, GamesState>(
+        'creates a lobby game with a 5-task pack, creator judges',
+        build: () {
+          when(() => mockAuthRepository.getCurrentUser())
+              .thenAnswer((_) async => challenger);
+          when(() => mockGameRepository.createGame(any(), any(), any()))
+              .thenAnswer((_) async => 'challenge_1');
+          when(() => mockGameRepository.addTasksToGame(any(), any()))
+              .thenAnswer((_) async {});
+          return gamesBloc;
+        },
+        act: (bloc) => bloc.add(const ChallengeFriends()),
+        expect: () => [
+          GamesLoading(),
+          const ChallengeFriendsReady(gameId: 'challenge_1'),
+        ],
+        verify: (_) {
+          verify(() => mockGameRepository.createGame(
+                "Sam's challenge",
+                challenger.id,
+                challenger.id,
+              )).called(1);
+          final tasks = verify(() => mockGameRepository.addTasksToGame(
+                'challenge_1',
+                captureAny(),
+              )).captured.single as List<Task>;
+          expect(tasks, hasLength(5));
+        },
+      );
+
+      blocTest<GamesBloc, GamesState>(
+        'emits a friendly error when signed out',
+        build: () {
+          when(() => mockAuthRepository.getCurrentUser())
+              .thenAnswer((_) async => null);
+          return gamesBloc;
+        },
+        act: (bloc) => bloc.add(const ChallengeFriends()),
+        expect: () => [
+          GamesLoading(),
+          const GamesError(
+              message: 'Could not set up your challenge. Please try again.'),
         ],
       );
     });

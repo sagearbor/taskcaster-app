@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taskcaster_app/core/config/environment.dart';
 import 'package:taskcaster_app/core/config/legal_links.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/core/theme/app_theme.dart';
@@ -19,6 +20,7 @@ void main() {
     await sl.reset();
     await ServiceLocator.init(useMockServices: true);
   });
+  tearDown(() => AppConfig.debugLabModesOverride = null);
 
   // Pumps [child] inside a MaterialApp forced to the dark theme, so we can
   // assert screens inherit the dark tokens (not Material defaults).
@@ -68,6 +70,19 @@ void main() {
     expect(Theme.of(ctx).colorScheme.onSurface, AppTheme.onDark);
   });
 
+  testWidgets('AR Lab entry is hidden unless Lab modes are on',
+      (tester) async {
+    AppConfig.debugLabModesOverride = false;
+    await pumpDark(tester, const SettingsScreen());
+    expect(find.text('AR Lab (experimental)'), findsNothing);
+    expect(find.text('EXPERIMENTAL'), findsNothing);
+
+    AppConfig.debugLabModesOverride = true;
+    await pumpDark(tester, const SettingsScreen(key: ValueKey('lab')));
+    await tester.scrollUntilVisible(find.text('AR Lab (experimental)'), 200);
+    expect(find.text('AR Lab (experimental)'), findsOneWidget);
+  });
+
   testWidgets('tapping a theme tile switches the controller mode',
       (tester) async {
     await pumpDark(tester, const SettingsScreen());
@@ -103,9 +118,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // Sheet destinations render; the modal inherited the dark bottom-sheet token.
-    expect(find.text('Quick Play'), findsOneWidget);
-    expect(find.text('Drawing Telephone'), findsOneWidget);
-    final ctx = tester.element(find.text('Quick Play'));
+    expect(find.text('Challenge friends'), findsOneWidget);
+    expect(find.text('Drawing Telephone (same room)'), findsOneWidget);
+    final ctx = tester.element(find.text('Challenge friends'));
     expect(Theme.of(ctx).brightness, Brightness.dark);
     expect(Theme.of(ctx).bottomSheetTheme.backgroundColor,
         AppTheme.darkSurfaceHigh);

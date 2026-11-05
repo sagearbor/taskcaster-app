@@ -482,12 +482,19 @@ class _GameDetailViewState extends State<GameDetailView> {
               child: Container(
                 padding: const EdgeInsets.all(8),
                 color: Colors.white,
-                child: QrImageView(
-                  // The join URL (not the bare code) so scanning routes the
-                  // friend into the app or the Play Store install flow.
-                  data: InviteLinks.joinUrl(game.inviteCode),
-                  version: QrVersions.auto,
-                  size: 160,
+                // Fixed-size box: AlertDialog measures intrinsic sizes, and
+                // QrImageView's inner LayoutBuilder asserts (debug builds)
+                // when asked for them. A tight SizedBox answers for it.
+                child: SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: QrImageView(
+                    // The join URL (not the bare code) so scanning routes the
+                    // friend into the app or the Play Store install flow.
+                    data: InviteLinks.joinUrl(game.inviteCode),
+                    version: QrVersions.auto,
+                    size: 160,
+                  ),
                 ),
               ),
             ),
