@@ -18,6 +18,33 @@ import '../../../arena/domain/repositories/feed_repository.dart';
 import 'task_execution_event.dart';
 import 'task_execution_state.dart';
 
+/// Mark [userId] skipped on [task] and, once nobody is still working on it,
+/// move the task to judging. Shared by the plain and AR skip paths; pure, so
+/// it is safe inside a retried transaction.
+Task skipPlayer(Task task, String userId) {
+  // Treat a missing status (e.g. a player added mid-game) as a fresh,
+  // not-started status instead of erroring out.
+  final currentStatus = task.getPlayerStatus(userId) ??
+      PlayerTaskStatus(playerId: userId, state: TaskPlayerState.not_started);
+  // A submission already handed in is not thrown away by a stray skip.
+  if (currentStatus.hasSubmitted) return task;
+
+  final updatedStatuses = {
+    ...task.playerStatuses,
+    userId: currentStatus.copyWith(state: TaskPlayerState.skipped),
+  };
+  final allDone = updatedStatuses.values
+      .every((s) => s.hasSubmitted || s.state == TaskPlayerState.skipped);
+  final nextStatus = task.status == TaskStatus.ready_to_judge ||
+          task.status == TaskStatus.completed
+      ? task.status
+      : (allDone
+          ? TaskStatus.ready_to_judge
+          : TaskStatus.waiting_for_submissions);
+
+  return task.copyWith(playerStatuses: updatedStatuses, status: nextStatus);
+}
+
 class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
   final GameRepository gameRepository;
 
@@ -55,6 +82,11 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
   }) : super(TaskExecutionInitial()) {
     on<LoadTask>(_onLoadTask);
     on<StartTask>(_onStartTask);
+    // A second "Post it" while one is in flight is dropped (see
+    // [_submitInFlight]), so a double tap can never create two submissions
+    // or two Arena posts. (Done by hand rather than with bloc_concurrency's
+    // droppable(): that transformer never lets bloc.close() finish under
+    // flutter_test's fake clock, which hangs every widget test.)
     on<SubmitTask>(_onSubmitTask);
     on<SkipTask>(_onSkipTask);
   }
@@ -70,6 +102,13 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
       await emit.forEach(
         gameRepository.getGameStream(event.gameId),
         onData: (game) {
+          // Someone else's write mid-submit must not flip the upload bar
+          // (or the inert Post it) back to the live form.
+          final current = state;
+          if (current is TaskExecutionUploading ||
+              current is TaskExecutionSubmitting) {
+            return current;
+          }
           if (game == null) {
             return TaskExecutionError(message: 'Game not found');
           }
@@ -129,34 +168,42 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
         return;
       }
 
-      final task = game.tasks[event.taskIndex];
-      // Treat a missing status (e.g. a player added after the task was created)
-      // as a fresh, not-started status instead of erroring out.
-      final currentStatus = task.getPlayerStatus(event.userId) ??
-          PlayerTaskStatus(
-            playerId: event.userId,
-            state: TaskPlayerState.not_started,
+      if (event.taskIndex >= game.tasks.length) {
+        emit(const TaskExecutionError(message: 'Task not found'));
+        return;
+      }
+
+      // Only this player's status changes, applied to the freshest copy of
+      // the task inside a transaction.
+      final startedAt = DateTime.now();
+      await gameRepository.updateTaskAtomically(
+        event.gameId,
+        event.taskIndex,
+        (fresh) {
+          // Treat a missing status (e.g. a player added after the task was
+          // created) as a fresh, not-started status instead of erroring out.
+          final currentStatus = fresh.getPlayerStatus(event.userId) ??
+              PlayerTaskStatus(
+                playerId: event.userId,
+                state: TaskPlayerState.not_started,
+              );
+          // Never move a player who already handed something in back to
+          // in_progress (a second device, a stale screen).
+          if (currentStatus.hasSubmitted ||
+              currentStatus.state == TaskPlayerState.skipped) {
+            return fresh;
+          }
+          return fresh.copyWith(
+            playerStatuses: {
+              ...fresh.playerStatuses,
+              event.userId: currentStatus.copyWith(
+                state: TaskPlayerState.in_progress,
+                startedAt: currentStatus.startedAt ?? startedAt,
+              ),
+            },
           );
-
-      // Update player status to in_progress
-      final updatedStatus = currentStatus.copyWith(
-        state: TaskPlayerState.in_progress,
-        startedAt: DateTime.now(),
-      );
-
-      final updatedTask = task.copyWith(
-        playerStatuses: {
-          ...task.playerStatuses,
-          event.userId: updatedStatus,
         },
       );
-
-      final updatedTasks = List<Task>.from(game.tasks);
-      updatedTasks[event.taskIndex] = updatedTask;
-
-      final updatedGame = game.copyWith(tasks: updatedTasks);
-
-      await gameRepository.updateGame(event.gameId, updatedGame);
     } catch (e) {
       debugPrint('TaskExecutionBloc.StartTask failed: $e');
       emit(TaskExecutionError(
@@ -172,17 +219,42 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
     SubmitTask event,
     Emitter<TaskExecutionState> emit,
   ) async {
+    final currentState = state;
+    if (_submitInFlight || currentState is! TaskExecutionLoaded) return;
+    _submitInFlight = true;
     try {
-      final currentState = state;
-      if (currentState is! TaskExecutionLoaded) return;
+      await _submit(event, currentState, emit);
+    } finally {
+      _submitInFlight = false;
+    }
+  }
 
-      // Get current game
+  /// True from the moment a SubmitTask is accepted until it has finished.
+  bool _submitInFlight = false;
+
+  Future<void> _submit(
+    SubmitTask event,
+    TaskExecutionLoaded currentState,
+    Emitter<TaskExecutionState> emit,
+  ) async {
+    // Leave the Loaded state BEFORE the first await, so the Post it button
+    // goes inert at once (and the guard above turns away any straggler).
+    // (A clip moves on to TaskExecutionUploading once its upload starts.)
+    emit(TaskExecutionSubmitting(task: currentState.task));
+
+    try {
+      // Read once for what the post needs (timer, twist, settings). The
+      // submission itself is written later against a FRESH copy.
       final game = await gameRepository
           .getGameStream(event.gameId)
           .first;
 
       if (game == null) {
         emit(const TaskExecutionError(message: 'Game not found'));
+        return;
+      }
+      if (event.taskIndex >= game.tasks.length) {
+        emit(const TaskExecutionError(message: 'Task not found'));
         return;
       }
 
@@ -377,70 +449,85 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
         ));
       }
 
-      // Update player status to submitted. `arena:<postId>` is the marker for
-      // an attempt that lives in the Arena rather than behind a link.
-      final updatedStatus = currentStatus.copyWith(
-        state: TaskPlayerState.submitted,
-        submittedAt: now,
-        submissionUrl: event.videoUrl ??
-            (feedPostId != null ? 'arena:$feedPostId' : null),
+      // ---- Record it: upload done, so NOW write, against the freshest copy --
+      // The upload above can take a minute. Writing the game read before it
+      // would wipe everything other players (and the judge) did meanwhile,
+      // so the change is re-applied to the current task in a transaction and
+      // touches only this player's status and submission.
+      final submissionUrl =
+          event.videoUrl ?? (feedPostId != null ? 'arena:$feedPostId' : null);
+      final newSubmissionId = _uuid.v4();
+      await gameRepository.updateTaskAtomically(
+        event.gameId,
+        event.taskIndex,
+        (fresh) {
+          final status = fresh.getPlayerStatus(event.userId) ??
+              PlayerTaskStatus(
+                playerId: event.userId,
+                state: TaskPlayerState.not_started,
+              );
+          // `arena:<postId>` marks an attempt that lives in the Arena rather
+          // than behind a link.
+          final updatedStatuses = {
+            ...fresh.playerStatuses,
+            event.userId: status.copyWith(
+              state: TaskPlayerState.submitted,
+              submittedAt: now,
+              submissionUrl: submissionUrl,
+            ),
+          };
+
+          // Keep the submissions list in step with the per-player status, so
+          // the crowd-score applier can find the post id and the judge /
+          // scoreboard logic (which reads submissions[]) agrees.
+          final submissions = List<Submission>.from(fresh.submissions);
+          final existingIndex =
+              submissions.indexWhere((s) => s.userId == event.userId);
+          final submission = Submission(
+            id: existingIndex >= 0
+                ? submissions[existingIndex].id
+                : newSubmissionId,
+            userId: event.userId,
+            videoUrl: clipUrl ?? event.videoUrl,
+            score: existingIndex >= 0 ? submissions[existingIndex].score : 0,
+            isJudged: false,
+            submittedAt: now,
+            mediaType: mediaType,
+            text: event.text,
+            caption: caption.isEmpty ? null : caption,
+            stamp: stamp,
+            isLate: isLate,
+            elapsedSeconds: elapsedSeconds,
+            feedPostId: feedPostId,
+            videoStoragePath: clipStoragePath,
+            videoBytes: clipBytes,
+            videoContentType: clipContentType,
+            clockOffsetSeconds: clip == null ? null : event.clockOffsetSeconds,
+            timerSeconds: clip == null ? null : timerSeconds,
+          );
+          if (existingIndex >= 0) {
+            submissions[existingIndex] = submission;
+          } else {
+            submissions.add(submission);
+          }
+
+          final allSubmitted =
+              updatedStatuses.values.every((s) => s.hasSubmitted);
+          // Never pull a task that is already being judged (or done) back.
+          final nextStatus = fresh.status == TaskStatus.ready_to_judge ||
+                  fresh.status == TaskStatus.completed
+              ? fresh.status
+              : (allSubmitted
+                  ? TaskStatus.ready_to_judge
+                  : TaskStatus.waiting_for_submissions);
+
+          return fresh.copyWith(
+            playerStatuses: updatedStatuses,
+            submissions: submissions,
+            status: nextStatus,
+          );
+        },
       );
-
-      final updatedPlayerStatuses = {
-        ...task.playerStatuses,
-        event.userId: updatedStatus,
-      };
-
-      // Keep the submissions list in step with the per-player status, so the
-      // crowd-score applier can find the post id and the judge/scoreboard
-      // logic (which reads submissions[]) agrees with the statuses.
-      final updatedSubmissions = List<Submission>.from(task.submissions);
-      final existingIndex =
-          updatedSubmissions.indexWhere((s) => s.userId == event.userId);
-      final submission = Submission(
-        id: existingIndex >= 0 ? updatedSubmissions[existingIndex].id : _uuid.v4(),
-        userId: event.userId,
-        videoUrl: clipUrl ?? event.videoUrl,
-        score: existingIndex >= 0 ? updatedSubmissions[existingIndex].score : 0,
-        isJudged: false,
-        submittedAt: now,
-        mediaType: mediaType,
-        text: event.text,
-        caption: caption.isEmpty ? null : caption,
-        stamp: stamp,
-        isLate: isLate,
-        elapsedSeconds: elapsedSeconds,
-        feedPostId: feedPostId,
-        videoStoragePath: clipStoragePath,
-        videoBytes: clipBytes,
-        videoContentType: clipContentType,
-        clockOffsetSeconds: clip == null ? null : event.clockOffsetSeconds,
-        timerSeconds: clip == null ? null : timerSeconds,
-      );
-      if (existingIndex >= 0) {
-        updatedSubmissions[existingIndex] = submission;
-      } else {
-        updatedSubmissions.add(submission);
-      }
-
-      // Check if all players submitted
-      final allSubmitted =
-          updatedPlayerStatuses.values.every((s) => s.hasSubmitted);
-
-      final updatedTask = task.copyWith(
-        playerStatuses: updatedPlayerStatuses,
-        submissions: updatedSubmissions,
-        status: allSubmitted
-            ? TaskStatus.ready_to_judge
-            : TaskStatus.waiting_for_submissions,
-      );
-
-      final updatedTasks = List<Task>.from(game.tasks);
-      updatedTasks[event.taskIndex] = updatedTask;
-
-      final updatedGame = game.copyWith(tasks: updatedTasks);
-
-      await gameRepository.updateGame(event.gameId, updatedGame);
 
       emit(TaskExecutionSubmitted(
         gameId: event.gameId,
@@ -484,41 +571,16 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
         return;
       }
 
-      final task = game.tasks[event.taskIndex];
-      // Treat a missing status (e.g. a player added mid-game) as a fresh,
-      // not-started status instead of erroring out.
-      final currentStatus = task.getPlayerStatus(event.userId) ??
-          PlayerTaskStatus(
-            playerId: event.userId,
-            state: TaskPlayerState.not_started,
-          );
+      if (event.taskIndex >= game.tasks.length) {
+        emit(const TaskExecutionError(message: 'Task not found'));
+        return;
+      }
 
-      // Update player status to skipped
-      final updatedStatus = currentStatus.copyWith(
-        state: TaskPlayerState.skipped,
+      await gameRepository.updateTaskAtomically(
+        event.gameId,
+        event.taskIndex,
+        (fresh) => skipPlayer(fresh, event.userId),
       );
-
-      final updatedPlayerStatuses = {
-        ...task.playerStatuses,
-        event.userId: updatedStatus,
-      };
-
-      // Check if all players submitted or skipped
-      final allDone = updatedPlayerStatuses.values
-          .every((s) => s.hasSubmitted || s.state == TaskPlayerState.skipped);
-
-      final updatedTask = task.copyWith(
-        playerStatuses: updatedPlayerStatuses,
-        status:
-            allDone ? TaskStatus.ready_to_judge : TaskStatus.waiting_for_submissions,
-      );
-
-      final updatedTasks = List<Task>.from(game.tasks);
-      updatedTasks[event.taskIndex] = updatedTask;
-
-      final updatedGame = game.copyWith(tasks: updatedTasks);
-
-      await gameRepository.updateGame(event.gameId, updatedGame);
 
       emit(TaskExecutionSubmitted(
         gameId: event.gameId,

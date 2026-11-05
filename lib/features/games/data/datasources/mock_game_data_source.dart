@@ -300,21 +300,31 @@ class MockGameDataSource implements GameRemoteDataSource {
   }
 
   @override
-  Future<String> joinGame(String inviteCode, String userId) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    final game = _games.firstWhere(
-      (game) => game['inviteCode'] == inviteCode,
-      orElse: () => {},
-    );
-
-    if (game.isEmpty) {
-      throw Exception('Game not found with invite code: $inviteCode');
+  Future<String?> findGameIdByInviteCode(String inviteCode) async {
+    await Future.delayed(const Duration(milliseconds: 100));
+    for (final game in _games) {
+      if (game['inviteCode'] == inviteCode) return game['id'] as String;
     }
+    return null;
+  }
 
-    // Adding the player (with their real display name) is handled by
-    // GameRepositoryImpl.joinGame; here we just resolve the invite code.
-    return game['id'] as String;
+  @override
+  Future<void> transactGame(String gameId, GameMutation mutate) async {
+    // Simulated latency goes BEFORE the read: from read to write there is no
+    // await, so (on the single-threaded event loop) the update is atomic,
+    // just like a Firestore transaction.
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    final gameIndex = _games.indexWhere((game) => game['id'] == gameId);
+    if (gameIndex == -1) {
+      throw Exception('Game not found');
+    }
+    final updates = mutate(Map<String, dynamic>.from(_games[gameIndex]));
+    if (updates == null || updates.isEmpty) return;
+
+    _games[gameIndex] = {..._games[gameIndex], ...updates};
+    _gamesController.add(List.from(_games));
+    _gameControllers[gameId]?.add(_games[gameIndex]);
   }
 
   void dispose() {

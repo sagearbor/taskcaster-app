@@ -239,9 +239,13 @@ class _JoinInviteDialogState extends State<_JoinInviteDialog> {
       final text = e.toString().toLowerCase();
       setState(() {
         _joining = false;
-        _error = text.contains('not found') || text.contains('no game')
-            ? 'That game has ended or the code is wrong.'
-            : 'Couldn\'t join right now. Check your connection and try again.';
+        // Already started (an ordinary game past its lobby) or full: the
+        // repository's message is player-facing.
+        _error = e is GameJoinException
+            ? e.message
+            : text.contains('not found') || text.contains('no game')
+                ? 'That game has ended or the code is wrong.'
+                : 'Couldn\'t join right now. Check your connection and try again.';
       });
     }
   }
