@@ -3,6 +3,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/models/game.dart';
 import '../../../../core/models/player.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/ar_fx.dart';
 
 /// The winner ceremony shown when a game completes — the emotional peak of the
@@ -190,7 +191,7 @@ class _GameCompletedViewState extends State<GameCompletedView>
               Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: () => _shareResults(sortedPlayers),
                       icon: const Icon(Icons.share),
                       label: const Text('Share Results'),
@@ -249,7 +250,7 @@ class _WinnerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.amber.withOpacity(0.1),
+      color: context.tokens.gold.withOpacity(0.14),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -259,7 +260,7 @@ class _WinnerCard extends StatelessWidget {
               child: Icon(
                 Icons.emoji_events,
                 size: 64,
-                color: Colors.amber[700],
+                color: context.tokens.goldText,
               ),
             ),
             const SizedBox(height: 12),
@@ -279,7 +280,7 @@ class _WinnerCard extends StatelessWidget {
                           .headlineMedium
                           ?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Colors.amber[700],
+                            color: context.tokens.goldText,
                           ),
                     ),
                     const SizedBox(height: 8),
@@ -301,7 +302,7 @@ class _WinnerCard extends StatelessWidget {
                         '$value points',
                         style:
                             Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  color: Colors.amber[700],
+                                  color: context.tokens.goldText,
                                   fontWeight: FontWeight.w600,
                                 ),
                       ),
@@ -344,17 +345,16 @@ class _StandingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color? rankColor;
+    final tokens = context.tokens;
+    final scheme = Theme.of(context).colorScheme;
+    final rankColor = tokens.medalFor(rank);
     IconData? rankIcon;
 
     if (rank == 1) {
-      rankColor = Colors.amber[700];
       rankIcon = Icons.emoji_events;
     } else if (rank == 2) {
-      rankColor = Colors.grey[600];
       rankIcon = Icons.military_tech;
     } else if (rank == 3) {
-      rankColor = Colors.brown[400];
       rankIcon = Icons.military_tech;
     }
 
@@ -367,16 +367,16 @@ class _StandingRow extends StatelessWidget {
         ).animate(animation),
         child: Card(
           margin: const EdgeInsets.only(bottom: 8),
-          color: rank <= 3 ? rankColor?.withOpacity(0.1) : null,
+          color: rankColor?.withOpacity(0.14),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: rankColor ?? Colors.grey[400],
+              backgroundColor: rankColor ?? scheme.surfaceContainerHighest,
               child: rankIcon != null
-                  ? Icon(rankIcon, color: Colors.white, size: 20)
+                  ? Icon(rankIcon, color: tokens.onMedal, size: 20)
                   : Text(
                       '$rank',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: scheme.onSurface,
                         fontWeight: FontWeight.bold,
                       ),
                     ),

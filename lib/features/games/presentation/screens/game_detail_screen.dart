@@ -8,8 +8,6 @@ import '../../../../core/models/game.dart';
 import '../../../../core/services/invite/invite_link_parser.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../../../core/utils/link_utils.dart';
-import '../../../../core/models/task.dart';
-import '../../../../core/models/player_task_status.dart';
 import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../arena/domain/crowd_score_applier.dart';
@@ -23,10 +21,11 @@ import '../bloc/game_detail_bloc.dart';
 import '../widgets/game_lobby_view.dart';
 import '../widgets/game_in_progress_view.dart';
 import '../widgets/game_completed_view.dart';
-import '../widgets/game_status_banner.dart';
+import '../widgets/up_next_card.dart';
 import 'task_execution_screen.dart';
 import 'ar_task_screen.dart';
 import 'judging_screen.dart';
+import 'scoreboard_screen.dart';
 
 class GameDetailScreen extends StatelessWidget {
   final String gameId;
@@ -172,7 +171,7 @@ class _GameDetailViewState extends State<GameDetailView> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
-                backgroundColor: Colors.red,
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
             );
           }
@@ -224,46 +223,39 @@ class _GameDetailViewState extends State<GameDetailView> {
             final currentUserId = authState is AuthAuthenticated ? authState.user.id : '';
             final isJudge = state.game.judgeId == currentUserId;
 
-            return Column(
-              children: [
-                // Add status banner at the top
-                GameStatusBanner(
+            return switch (state.game.status) {
+              GameStatus.lobby => GameLobbyView(
+                  game: state.game,
+                  onInvite: () => _showShareDialog(context, state.game),
+                ),
+              GameStatus.inProgress => GameInProgressView(
                   game: state.game,
                   currentUserId: currentUserId,
                   isJudge: isJudge,
-                  onAction: () {
-                    // Handle banner action based on game state
-                    _handleBannerAction(context, state.game, currentUserId);
-                  },
+                  onUpNext: (action) =>
+                      _handleUpNext(context, state.game, action),
                 ),
-                Expanded(
-                  child: switch (state.game.status) {
-                    GameStatus.lobby => GameLobbyView(game: state.game),
-                    GameStatus.inProgress => GameInProgressView(game: state.game),
-                    GameStatus.completed => GameCompletedView(
-                        game: state.game,
-                        currentUserId: currentUserId,
-                        // Generic rematch reshuffles 5 random party tasks and
-                        // resets judgePlays=true — wrong for a House Hunt, whose
-                        // rematch IS "Send one back" (role swap + fresh hunt).
-                        // So suppress it for hunts.
-                        onRematch: HouseHuntService.isHouseHuntGame(state.game)
-                            ? null
-                            : () => context
-                                .read<GameDetailBloc>()
-                                .add(RematchGame(game: state.game)),
-                        // Role swap: only on a finished House Hunt, pre-targeted
-                        // at the other player (the original hider you hunt back).
-                        onSendHouseHunt:
-                            HouseHuntService.isHouseHuntGame(state.game)
-                                ? () => _sendHouseHuntBack(
-                                    context, state.game, currentUserId)
-                                : null,
-                      ),
-                  },
+              GameStatus.completed => GameCompletedView(
+                  game: state.game,
+                  currentUserId: currentUserId,
+                  // Generic rematch reshuffles 5 random party tasks and
+                  // resets judgePlays=true — wrong for a House Hunt, whose
+                  // rematch IS "Send one back" (role swap + fresh hunt).
+                  // So suppress it for hunts.
+                  onRematch: HouseHuntService.isHouseHuntGame(state.game)
+                      ? null
+                      : () => context
+                          .read<GameDetailBloc>()
+                          .add(RematchGame(game: state.game)),
+                  // Role swap: only on a finished House Hunt, pre-targeted
+                  // at the other player (the original hider you hunt back).
+                  onSendHouseHunt:
+                      HouseHuntService.isHouseHuntGame(state.game)
+                          ? () => _sendHouseHuntBack(
+                              context, state.game, currentUserId)
+                          : null,
                 ),
-              ],
-            );
+            };
           }
 
           return const SizedBox.shrink();
@@ -289,51 +281,18 @@ class _GameDetailViewState extends State<GameDetailView> {
     );
   }
 
-  void _handleBannerAction(BuildContext context, Game game, String currentUserId) {
-    // Handle different banner actions based on game state
-    if (game.status == GameStatus.lobby && game.creatorId == currentUserId && game.players.length >= 2) {
-      // Start game action
-      context.read<GameDetailBloc>().add(StartGame(gameId: game.id));
-    } else if (game.status == GameStatus.inProgress && game.currentTask != null) {
-      // Use the safe getter rather than tasks[currentTaskIndex], which could
-      // throw a RangeError if the index ever drifts past the task list.
-      final currentTask = game.currentTask!;
-
-      // Non-playing judge (House Hunt: hider only judges). Route strictly by the
-      // TASK state — the judge has no playerStatus, so we must NEVER fall into
-      // the playerStatus == null branch below (which opens the seeker's submit
-      // UI). Only "ready to judge" is actionable; the waiting banner is inert.
-      if (game.judgeId == currentUserId && !game.settings.judgePlays) {
-        final hasUnjudgedSubmissions =
-            currentTask.submittedCount > currentTask.judgedCount;
-        if (currentTask.status == TaskStatus.ready_to_judge ||
-            hasUnjudgedSubmissions) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => BlocProvider.value(
-                value: context.read<GameDetailBloc>(),
-                child: JudgingScreen(
-                  gameId: game.id,
-                  taskIndex: game.currentTaskIndex,
-                ),
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
-      final playerStatus = currentTask.playerStatuses[currentUserId];
-
-      if (playerStatus == null ||
-          playerStatus.state == TaskPlayerState.not_started ||
-          playerStatus.state == TaskPlayerState.in_progress) {
-        // Navigate to task execution (mirrors the working push in
-        // game_in_progress_view.dart). TaskExecutionScreen builds its own
-        // bloc and reads the app-wide AuthBloc, so no provider forwarding
-        // is required here.
-        // AR tasks launch the AR flow (capability check + scaffold); all other
-        // task types use the standard task-execution screen.
+  /// Runs the "Up next" hero's one action. [UpNext.resolve] has already
+  /// decided WHAT the action is from the game state (including the House Hunt
+  /// rule that a non-playing judge is never routed into the submit flow), so
+  /// this only routes.
+  void _handleUpNext(BuildContext context, Game game, UpNextAction action) {
+    final currentTask = game.currentTask;
+    switch (action) {
+      case UpNextAction.play:
+        if (currentTask == null) return;
+        // AR tasks launch the AR flow (capability check + scaffold); all
+        // other task types use the standard task-execution screen, which
+        // builds its own bloc.
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => currentTask.isArTask
@@ -348,10 +307,9 @@ class _GameDetailViewState extends State<GameDetailView> {
                   ),
           ),
         );
-      } else if (game.judgeId == currentUserId && currentTask.status == TaskStatus.ready_to_judge) {
-        // Navigate to judging. JudgingScreen and its downstream screens read
-        // GameDetailBloc, which is only provided inside this screen, so we
-        // forward it down the route via BlocProvider.value.
+      case UpNextAction.judge:
+        // JudgingScreen and its downstream screens read GameDetailBloc, which
+        // is only provided inside this screen, so forward it down the route.
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => BlocProvider.value(
@@ -363,18 +321,19 @@ class _GameDetailViewState extends State<GameDetailView> {
             ),
           ),
         );
-      } else if (currentTask.status == TaskStatus.completed) {
-        // Navigate to scoreboard
+      case UpNextAction.results:
         context.read<GameDetailBloc>().add(
-          ViewTaskResultsEvent(
-            gameId: game.id,
-            taskIndex: game.currentTaskIndex,
-          ),
+              ViewTaskResultsEvent(
+                gameId: game.id,
+                taskIndex: game.currentTaskIndex,
+              ),
+            );
+      case UpNextAction.scoreboard:
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ScoreboardScreen(game: game)),
         );
-      }
-    } else if (game.status == GameStatus.lobby && game.players.length < 2) {
-      // Share invite code
-      _showShareDialog(context, game);
+      case UpNextAction.none:
+        break;
     }
   }
 

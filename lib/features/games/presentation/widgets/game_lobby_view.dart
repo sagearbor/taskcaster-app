@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/models/game.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../../../core/utils/link_utils.dart';
 import '../../../../core/widgets/user_avatar.dart';
@@ -18,9 +19,14 @@ import '../bloc/game_detail_bloc.dart';
 class GameLobbyView extends StatelessWidget {
   final Game game;
 
+  /// Opens the invite / share sheet. Null hides nothing — the hero then falls
+  /// back to copying the invite code.
+  final VoidCallback? onInvite;
+
   const GameLobbyView({
     super.key,
     required this.game,
+    this.onInvite,
   });
 
   @override
@@ -40,92 +46,10 @@ class GameLobbyView extends StatelessWidget {
             child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Game Status Card
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              Icons.people,
-                              color: Theme.of(context).colorScheme.secondary,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Waiting for players',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Text(
-                                  '${game.players.length} player${game.players.length == 1 ? '' : 's'} joined',
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      InkWell(
-                        onTap: () => LinkUtils.copyToClipboard(
-                          context,
-                          game.inviteCode,
-                          label: 'Invite code copied',
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Invite Code: ',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                              Text(
-                                game.inviteCode,
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.copy,
-                                size: 18,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _LobbyHero(
+                game: game,
+                isCreator: isCreator,
+                onInvite: onInvite,
               ),
               const SizedBox(height: 16),
 
@@ -205,20 +129,20 @@ class GameLobbyView extends StatelessWidget {
                                   subtitle: Row(
                                     children: [
                                       if (isPlayerCreator) ...[
-                                        Icon(Icons.star, size: 16, color: Colors.amber[700]),
+                                        Icon(Icons.star_rounded, size: 16, color: context.tokens.goldText),
                                         const SizedBox(width: 4),
-                                        Text('Creator', style: TextStyle(color: Colors.amber[700])),
+                                        Text('Creator', style: TextStyle(color: context.tokens.goldText)),
                                       ],
                                       if (isPlayerJudge) ...[
                                         if (isPlayerCreator) const SizedBox(width: 8),
-                                        Icon(Icons.gavel, size: 16, color: Colors.purple[200]),
+                                        Icon(Icons.gavel, size: 16, color: Theme.of(context).colorScheme.primary),
                                         const SizedBox(width: 4),
-                                        Text('Judge', style: TextStyle(color: Colors.purple[200])),
+                                        Text('Judge', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
                                       ],
                                       if (isCurrentUser && !isPlayerCreator && !isPlayerJudge) ...[
-                                        Icon(Icons.person, size: 16, color: Colors.blue[300]),
+                                        Icon(Icons.person, size: 16, color: Theme.of(context).colorScheme.primary),
                                         const SizedBox(width: 4),
-                                        Text('You', style: TextStyle(color: Colors.blue[300])),
+                                        Text('You', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
                                       ],
                                     ],
                                   ),
@@ -295,18 +219,6 @@ class GameLobbyView extends StatelessWidget {
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
-                                      if (task.description.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          task.description,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
                                     ],
                                   ),
                                 ),
@@ -341,10 +253,10 @@ class GameLobbyView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                FilledButton.icon(
+                OutlinedButton.icon(
                   onPressed: () => _showCreateTaskDialog(context, game),
                   icon: const Icon(Icons.edit_note),
-                  label: const Text('Create your own task'),
+                  label: const Text('Write your own task'),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
@@ -358,63 +270,6 @@ class GameLobbyView extends StatelessWidget {
                   },
                   icon: const Icon(Icons.playlist_add),
                   label: const Text('Browse community tasks'),
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: game.players.length >= 2 && game.tasks.isNotEmpty
-                      ? () {
-                          context.read<GameDetailBloc>().add(StartGame(gameId: game.id));
-                        }
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.all(16),
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: const Icon(Icons.play_arrow),
-                  label: Text(
-                    'Start Game',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  game.players.length < 2
-                      ? 'Need at least 2 players to start'
-                      : game.tasks.isEmpty
-                          ? 'Need to add tasks before starting'
-                          : 'Ready to start! (${game.tasks.length} task${game.tasks.length == 1 ? '' : 's'}, ${game.players.length} player${game.players.length == 1 ? '' : 's'})',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: game.players.length >= 2 && game.tasks.isNotEmpty
-                        ? Colors.green[300]
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.schedule, color: Colors.blue[200]),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Waiting for the game creator to start the game...',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.blue[200],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ],
             ],
@@ -514,6 +369,174 @@ class GameLobbyView extends StatelessWidget {
       titleController.dispose();
       descController.dispose();
     });
+  }
+}
+
+/// Lobby hero: the invite code front and centre and exactly one button —
+/// "Start game" once the creator has a crew and tasks, otherwise "Invite
+/// friends" (or "Add tasks" when the game has none yet).
+class _LobbyHero extends StatelessWidget {
+  final Game game;
+  final bool isCreator;
+  final VoidCallback? onInvite;
+
+  const _LobbyHero({
+    required this.game,
+    required this.isCreator,
+    this.onInvite,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = context.tokens;
+    final players = game.players.length;
+    final needPlayers = players < 2;
+    final needTasks = game.tasks.isEmpty;
+    final canStart = isCreator && !needPlayers && !needTasks;
+
+    final String kicker;
+    final String title;
+    final String detail;
+    if (!isCreator) {
+      final creator = game.players
+          .where((p) => p.userId == game.creatorId)
+          .map((p) => p.displayName)
+          .firstOrNull;
+      kicker = 'YOU\'RE IN';
+      title = 'Waiting for ${creator ?? 'the host'} to start';
+      detail = '$players player${players == 1 ? '' : 's'} in the lobby';
+    } else if (needPlayers) {
+      kicker = 'INVITE YOUR CREW';
+      title = 'You need one more player';
+      detail = 'Send the link or read out the code.';
+    } else if (needTasks) {
+      kicker = 'ALMOST THERE';
+      title = 'Add a task or two';
+      detail = '$players players are ready.';
+    } else {
+      kicker = 'READY WHEN YOU ARE';
+      title = '$players players, ${game.tasks.length} tasks';
+      detail = 'Late joiners can still use the code.';
+    }
+
+    final String buttonLabel;
+    final IconData buttonIcon;
+    final VoidCallback? onPressed;
+    if (canStart) {
+      buttonLabel = 'Start game';
+      buttonIcon = Icons.play_arrow_rounded;
+      onPressed = () =>
+          context.read<GameDetailBloc>().add(StartGame(gameId: game.id));
+    } else if (isCreator && !needPlayers && needTasks) {
+      buttonLabel = 'Add tasks';
+      buttonIcon = Icons.playlist_add;
+      onPressed = () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => CommunityBrowserScreen(targetGameId: game.id),
+            ),
+          );
+    } else {
+      buttonLabel = 'Invite friends';
+      buttonIcon = Icons.ios_share_rounded;
+      onPressed = onInvite ??
+          () => LinkUtils.copyToClipboard(
+                context,
+                game.inviteCode,
+                label: 'Invite code copied',
+              );
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: tokens.heroGradient,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              kicker,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: tokens.onHero,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: theme.textTheme.headlineSmall
+                  ?.copyWith(color: tokens.onHero, height: 1.15),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              detail,
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: tokens.onHeroMuted),
+            ),
+            const SizedBox(height: 16),
+            // Invite code: tap to copy.
+            Material(
+              color: tokens.onHero.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => LinkUtils.copyToClipboard(
+                  context,
+                  game.inviteCode,
+                  label: 'Invite code copied',
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    children: [
+                      Text(
+                        'CODE',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: tokens.onHeroMuted,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          game.inviteCode,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: tokens.onHero,
+                            letterSpacing: 4,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.copy_rounded, size: 18, color: tokens.onHero),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const Key('lobby-hero-button'),
+                onPressed: onPressed,
+                icon: Icon(buttonIcon),
+                label: Text(buttonLabel),
+                style: FilledButton.styleFrom(
+                  backgroundColor: tokens.onHero,
+                  foregroundColor: AppTheme.violetDeep,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -743,7 +766,7 @@ class _InviteFriendsCardState extends State<_InviteFriendsCard> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
+                FilledButton.tonal(
                   onPressed: _saving ? null : _addEmailInvite,
                   child: _saving
                       ? const SizedBox(

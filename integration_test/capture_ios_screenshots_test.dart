@@ -193,8 +193,8 @@ void main() {
     await _tapText(tester, 'Quick Play');
     await tester.pumpAndSettle(const Duration(seconds: 2));
 
-    // Open the first task via the "New task available!" banner's "View".
-    await _tapText(tester, 'View', first: true);
+    // Open the current task via the game screen's "Up next" hero button.
+    await _tapText(tester, 'Start', first: true);
 
     // 5. Task view — a prebuilt task with the video-link submit box.
     await _waitFor(tester, find.byType(TextField), 'the task submit field');
