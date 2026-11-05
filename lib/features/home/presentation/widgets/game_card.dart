@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/models/game.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/user_avatar.dart';
 
 class GameCard extends StatelessWidget {
   final Game game;
@@ -63,11 +64,11 @@ class GameCard extends StatelessWidget {
                       game.gameName.isNotEmpty
                           ? game.gameName[0].toUpperCase()
                           : '?',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontFamily: 'Fredoka',
                           fontSize: 24,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white),
+                          color: UserAvatar.foregroundFor(accent)),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -132,17 +133,17 @@ class GameCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
+                        color: context.tokens.gold.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.secondary,
+                          color: context.tokens.gold,
                           width: 1,
                         ),
                       ),
                       child: Text(
                         'Code: ${game.inviteCode}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.secondary,
+                          color: context.tokens.goldText,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -158,13 +159,15 @@ class GameCard extends StatelessWidget {
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppTheme.violetSoft,
+                        color: Theme.of(context).colorScheme.primaryContainer,
                         borderRadius: BorderRadius.circular(30),
                       ),
                       child: Text(
                         player.displayName,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppTheme.violetDeep,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
@@ -198,25 +201,29 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     late final Color accent;
+    late final Color textColor;
     late final String text;
 
     switch (status) {
       case GameStatus.lobby:
-        accent = AppTheme.gold;
+        accent = tokens.gold;
+        textColor = tokens.goldText;
         text = 'Lobby';
         break;
       case GameStatus.inProgress:
-        accent = AppTheme.violet;
+        accent = Theme.of(context).colorScheme.primary;
+        textColor = accent;
         text = 'Live';
         break;
       case GameStatus.completed:
-        accent = AppTheme.coral;
+        accent = tokens.coral;
+        textColor = tokens.coralText;
         text = 'Done';
         break;
     }
-    final backgroundColor = accent.withOpacity(0.12);
-    final textColor = accent;
+    final backgroundColor = accent.withOpacity(0.14);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
