@@ -17,6 +17,7 @@ import 'package:taskcaster_app/features/games/domain/repositories/game_repositor
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_bloc.dart';
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_event.dart';
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_state.dart';
+import '../../../../helpers/atomic_task_writes.dart';
 
 class MockGameRepository extends Mock implements GameRepository {}
 
@@ -85,10 +86,7 @@ void main() {
     source = MockFeedDataSource();
     feedRepository = FeedRepositoryImpl(source);
     written = [];
-    when(() => gameRepository.updateGame(any(), any()))
-        .thenAnswer((invocation) async {
-      written.add(invocation.positionalArguments[1] as Game);
-    });
+    stubAtomicTaskWrites(gameRepository, onWrite: written.add);
   });
 
   tearDown(() async {

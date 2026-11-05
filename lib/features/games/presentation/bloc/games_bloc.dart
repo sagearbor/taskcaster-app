@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -34,7 +35,9 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     required this.authRepository,
     this.feedRepository,
   }) : super(GamesInitial()) {
-    on<LoadGames>(_onLoadGames);
+    // restartable(): each LoadGames cancels the previous subscription, so the
+    // create/join/delete handlers re-adding it never stack listeners.
+    on<LoadGames>(_onLoadGames, transformer: restartable());
     on<CreateGame>(_onCreateGame);
     on<JoinGame>(_onJoinGame);
     on<DeleteGame>(_onDeleteGame);
@@ -163,6 +166,9 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
         createdAt: DateTime.now(),
         mode: GameMode.async,
         settings: GameSettings.quickPlay(),
+        // Friends may still join a Quick Play game mid-way (see
+        // GameRepository.joinGame and the games rule).
+        gameKind: Game.kindQuick,
       );
 
       // Create in Firestore via updateGame (since createGame doesn't support full Game objects)

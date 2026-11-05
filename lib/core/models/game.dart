@@ -49,6 +49,11 @@ class Game extends Equatable {
   /// ten hand-written solo tasks from `StarterPackData`.
   static const String kindStarter = 'starter';
 
+  /// [gameKind] of a Quick Play game: created already in progress, and the
+  /// one kind (with [kindStarter]) that friends may still join after the
+  /// lobby. firestore.rules mirrors this exception.
+  static const String kindQuick = 'quick';
+
   const Game({
     required this.id,
     required this.gameName,

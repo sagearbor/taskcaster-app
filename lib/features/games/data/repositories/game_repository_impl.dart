@@ -82,15 +82,11 @@ class GameRepositoryImpl implements GameRepository {
 
     // Bump the template's clone counter (popularity signal). Best-effort:
     // never fail a clone if the counter update is rejected.
+    // Only the counter is written: firestore.rules lets a non-member bump
+    // cloneCount by exactly one on a public game, and nothing else.
     try {
-      final data = await remoteDataSource.getGameStream(template.id).first;
-      if (data != null) {
-        final current = Game.fromMap({...data, 'id': template.id});
-        await updateGame(
-          template.id,
-          current.copyWith(cloneCount: current.cloneCount + 1),
-        );
-      }
+      await _transact(template.id,
+          (current, raw) => {'cloneCount': current.cloneCount + 1});
     } catch (_) {}
 
     return gameId;
@@ -229,13 +225,14 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Future<String> createGame(String gameName, String creatorId, String judgeId) async {
+    final inviteCode = await _uniqueInviteCode();
     final gameData = {
       'id': _uuid.v4(),
       'gameName': gameName,
       'creatorId': creatorId,
       'judgeId': judgeId,
       'status': GameStatus.lobby.name,
-      'inviteCode': _generateInviteCode(),
+      'inviteCode': inviteCode,
       'createdAt': DateTime.now().toIso8601String(),
       'players': [
         {
@@ -264,6 +261,7 @@ class GameRepositoryImpl implements GameRepository {
   @override
   Future<String> createStarterGame(User user) async {
     final gameId = _uuid.v4();
+    final inviteCode = await _uniqueInviteCode();
 
     final tasks = StarterPackData.tasks()
         .map((task) => task.copyWith(
@@ -285,7 +283,7 @@ class GameRepositoryImpl implements GameRepository {
       // GameSettings.crowdJudged and CrowdScoreApplier.
       judgeId: user.id,
       status: GameStatus.inProgress,
-      inviteCode: _generateInviteCode(),
+      inviteCode: inviteCode,
       createdAt: DateTime.now(),
       players: [
         Player(
@@ -329,107 +327,203 @@ class GameRepositoryImpl implements GameRepository {
     );
   }
 
-  @override
-  Future<String> joinGame(String inviteCode, String userId, String displayName) async {
-    final gameId = await remoteDataSource.joinGame(inviteCode, userId);
+  // ---- Atomic writes ------------------------------------------------------
+  //
+  // Every write a player (not just the owner) can trigger goes through
+  // [_transact]: the game is re-read inside a transaction, the change is
+  // applied to THAT copy, and only the touched fields are written. Before
+  // this, writers read the game, did slow work, then set(merge) whole arrays
+  // back, so concurrent players silently erased each other.
 
-    // Add the player to the roster if not already present. Idempotent: if the
-    // data source (e.g. Firestore) already added the player, this is a no-op,
-    // which avoids double-adding across the mock and real implementations.
-    final data = await remoteDataSource.getGameStream(gameId).first;
-    if (data != null) {
-      final game = Game.fromMap({...data, 'id': gameId});
-      final alreadyJoined = game.players.any((p) => p.userId == userId);
-      if (!alreadyJoined) {
-        final updated = game.copyWith(players: [
-          ...game.players,
-          Player(userId: userId, displayName: displayName, totalScore: 0),
-        ]);
-        await updateGame(gameId, updated);
-      }
+  /// Run [mutate] against the freshest copy of [gameId] inside a transaction.
+  /// [mutate] gets both the parsed game and the raw document (the raw lists
+  /// are what firestore.rules compares, so roster edits splice those rather
+  /// than re-encoding them). Returns the fields to update, or null for none.
+  Future<void> _transact(
+    String gameId,
+    Map<String, dynamic>? Function(Game game, Map<String, dynamic> raw) mutate,
+  ) {
+    return remoteDataSource.transactGame(gameId, (raw) {
+      final game = Game.fromMap({...raw, 'id': gameId});
+      return mutate(game, raw);
+    });
+  }
+
+  static List<Map<String, dynamic>> _encodeTasks(List<Task> tasks) =>
+      tasks.map((t) => t.toMap()).toList();
+
+  static List<Map<String, dynamic>> _encodePlayers(List<Player> players) =>
+      players.map((p) => p.toMap()).toList();
+
+  static bool _isOwner(Game game, String uid) =>
+      uid == game.creatorId || uid == game.judgeId;
+
+  /// Kinds that are created already in progress and still take new players.
+  static bool _joinableAfterLobby(Game game) =>
+      game.gameKind == Game.kindQuick || game.gameKind == Game.kindStarter;
+
+  @override
+  Future<String> joinGame(
+      String inviteCode, String userId, String displayName) async {
+    final gameId = await remoteDataSource.findGameIdByInviteCode(inviteCode);
+    if (gameId == null) {
+      throw Exception('Game not found with invite code: $inviteCode');
     }
+
+    await _transact(gameId, (game, raw) {
+      // Already in: nothing to do (and nothing to race).
+      if (game.players.any((p) => p.userId == userId)) return null;
+
+      if (game.status != GameStatus.lobby && !_joinableAfterLobby(game)) {
+        throw const GameJoinException(
+            'That game has already started. Ask the host for a rematch.');
+      }
+      final maxPlayers = game.settings.maxPlayers;
+      if (maxPlayers != null && game.players.length >= maxPlayers) {
+        throw const GameJoinException('That game is full.');
+      }
+
+      // Append to the stored lists untouched: the rules let a non-member
+      // add exactly themselves (score 0) and change nothing else.
+      final players = List<dynamic>.from(raw['players'] as List? ?? const []);
+      final playerIds =
+          List<dynamic>.from(raw['playerIds'] as List? ?? game.playerIds);
+      players.add(Player(
+        userId: userId,
+        displayName: displayName,
+        totalScore: 0,
+      ).toMap());
+      playerIds.add(userId);
+      return {'players': players, 'playerIds': playerIds};
+    });
 
     return gameId;
   }
 
   @override
   Future<void> leaveGame(String gameId, String userId) async {
-    final data = await remoteDataSource.getGameStream(gameId).first;
-    if (data == null) {
-      throw Exception('Game not found');
-    }
-    final game = Game.fromMap({...data, 'id': gameId});
+    await _transact(gameId, (game, raw) {
+      // No-op if the player wasn't on the roster.
+      if (!game.players.any((p) => p.userId == userId)) return null;
 
-    final remaining =
-        game.players.where((p) => p.userId != userId).toList();
-    // No-op if the player wasn't on the roster.
-    if (remaining.length == game.players.length) return;
+      final players = (raw['players'] as List? ?? const [])
+          .where((p) => (p as Map)['userId'] != userId)
+          .toList();
+      final playerIds =
+          List<dynamic>.from(raw['playerIds'] as List? ?? game.playerIds)
+            ..remove(userId);
 
-    await updateGame(gameId, game.copyWith(players: remaining));
+      // Drop the leaver from every task, so nobody waits on (or tries to
+      // judge) a player who is gone. A task they were the last holdout on
+      // moves forward.
+      final tasks = game.tasks.map((task) {
+        if (!task.playerStatuses.containsKey(userId)) return task;
+        var updated = task.copyWith(
+          playerStatuses: Map.of(task.playerStatuses)..remove(userId),
+        );
+        if (updated.status != TaskStatus.completed) {
+          if (updated.allPlayersJudged) {
+            updated = updated.copyWith(status: TaskStatus.completed);
+          } else if (updated.allPlayersSubmitted) {
+            updated = updated.copyWith(status: TaskStatus.ready_to_judge);
+          }
+        }
+        return updated;
+      }).toList();
+
+      return {
+        'players': players,
+        'playerIds': playerIds,
+        'tasks': _encodeTasks(tasks),
+      };
+    });
   }
 
   @override
   Future<void> startGame(String gameId) async {
-    // Load the current game state
-    final game = await remoteDataSource.getGameStream(gameId).first;
+    await _transact(gameId, (gameObj, raw) {
+      // Only a lobby game starts. A second tap (or a second device) must not
+      // re-seed statuses over submissions already made.
+      if (gameObj.status != GameStatus.lobby) return null;
 
-    if (game == null) {
-      throw Exception('Game not found');
-    }
-
-    // Convert from map to Game object
-    final gameObj = Game.fromMap({...game, 'id': gameId});
-
-    // Validate game can be started
-    if (gameObj.players.length < 2) {
-      throw Exception('Need at least 2 players to start');
-    }
-
-    if (gameObj.tasks.isEmpty) {
-      throw Exception('Need at least 1 task to start');
-    }
-
-    // Initialize playerStatuses for all tasks. When the judge doesn't play
-    // (settings.judgePlays == false, e.g. House Hunt where the hider only
-    // judges), skip the judge — a seeded status they never fulfil would keep
-    // allPlayersJudged false forever. Guard: only skip when someone else is
-    // actually playing, so a solo judge-is-the-player game still works.
-    final contestants = _contestantsOf(gameObj);
-    final updatedTasks = gameObj.tasks.map((task) {
-      final playerStatuses = <String, PlayerTaskStatus>{};
-
-      for (final player in contestants) {
-        playerStatuses[player.userId] = PlayerTaskStatus(
-          playerId: player.userId,
-          state: TaskPlayerState.not_started,
-        );
+      if (gameObj.players.length < 2) {
+        throw Exception('Need at least 2 players to start');
+      }
+      if (gameObj.tasks.isEmpty) {
+        throw Exception('Need at least 1 task to start');
       }
 
-      return task.copyWith(
-        playerStatuses: playerStatuses,
-        status: TaskStatus.waiting_for_submissions,
-      );
-    }).toList();
+      // Initialize playerStatuses for all tasks. When the judge doesn't play
+      // (settings.judgePlays == false, e.g. House Hunt where the hider only
+      // judges), skip the judge: a seeded status they never fulfil would
+      // keep allPlayersJudged false forever. Guard: only skip when someone
+      // else is actually playing, so a solo judge-is-the-player game works.
+      final contestants = _contestantsOf(gameObj);
+      final updatedTasks = gameObj.tasks.map((task) {
+        final playerStatuses = <String, PlayerTaskStatus>{
+          for (final player in contestants)
+            player.userId: PlayerTaskStatus(
+              playerId: player.userId,
+              state: TaskPlayerState.not_started,
+            ),
+        };
+        return task.copyWith(
+          playerStatuses: playerStatuses,
+          status: TaskStatus.waiting_for_submissions,
+        );
+      }).toList();
 
-    // Calculate deadline for first task (if settings specify)
-    DateTime? firstTaskDeadline;
-    if (gameObj.settings.taskDeadline != null) {
-      firstTaskDeadline = DateTime.now().add(gameObj.settings.taskDeadline!);
-    }
+      // Deadline for the first task (if settings specify one).
+      final taskDeadline = gameObj.settings.taskDeadline;
+      if (taskDeadline != null) {
+        updatedTasks[0] = updatedTasks[0]
+            .copyWith(deadline: DateTime.now().add(taskDeadline));
+      }
 
-    // Update first task with deadline
-    if (updatedTasks.isNotEmpty && firstTaskDeadline != null) {
-      updatedTasks[0] = updatedTasks[0].copyWith(deadline: firstTaskDeadline);
-    }
+      return {
+        'status': GameStatus.inProgress.name,
+        'tasks': _encodeTasks(updatedTasks),
+        'currentTaskIndex': 0,
+      };
+    });
+  }
 
-    // Update game to in-progress with initialized tasks
-    final updatedGame = gameObj.copyWith(
-      status: GameStatus.inProgress,
-      tasks: updatedTasks,
-      currentTaskIndex: 0,
-    );
+  @override
+  Future<void> updateTaskAtomically(
+    String gameId,
+    int taskIndex,
+    Task Function(Task fresh) mutate,
+  ) async {
+    await _transact(gameId, (game, raw) {
+      if (taskIndex < 0 || taskIndex >= game.tasks.length) {
+        throw Exception('Task not found');
+      }
+      final tasks = List<Task>.from(game.tasks);
+      tasks[taskIndex] = mutate(tasks[taskIndex]);
+      return {'tasks': _encodeTasks(tasks)};
+    });
+  }
 
-    await updateGame(gameId, updatedGame);
+  @override
+  Future<void> advanceToTask(String gameId, int taskIndex,
+      {required String callerId}) async {
+    await _transact(gameId, (game, raw) {
+      if (!_isOwner(game, callerId)) return null;
+      // Forward only, and never past the end: every viewer's countdown may
+      // fire, and a late one must not drag the game backwards.
+      if (taskIndex <= game.currentTaskIndex) return null;
+      if (taskIndex >= game.tasks.length) return null;
+      return {'currentTaskIndex': taskIndex};
+    });
+  }
+
+  @override
+  Future<void> completeGame(String gameId, {required String callerId}) async {
+    await _transact(gameId, (game, raw) {
+      if (!_isOwner(game, callerId)) return null;
+      if (game.status == GameStatus.completed) return null;
+      return {'status': GameStatus.completed.name};
+    });
   }
 
   /// The players expected to submit to tasks. Everyone, unless the game says
@@ -485,144 +579,58 @@ class GameRepositoryImpl implements GameRepository {
   @override
   Future<void> submitTaskAnswer(
       String gameId, String taskId, Submission submission) async {
-    final data = await remoteDataSource.getGameStream(gameId).first;
-    if (data == null) {
-      throw Exception('Game not found');
-    }
-    final game = Game.fromMap({...data, 'id': gameId});
+    await _transact(gameId, (game, raw) {
+      final taskIndex = game.tasks.indexWhere((t) => t.id == taskId);
+      if (taskIndex == -1) {
+        throw Exception('Task not found');
+      }
+      final task = game.tasks[taskIndex];
 
-    final taskIndex = game.tasks.indexWhere((t) => t.id == taskId);
-    if (taskIndex == -1) {
-      throw Exception('Task not found');
-    }
-    final task = game.tasks[taskIndex];
+      // Record the submission and mark the submitting player's status.
+      final statuses = Map<String, PlayerTaskStatus>.from(task.playerStatuses);
+      final existing = statuses[submission.userId] ??
+          PlayerTaskStatus(
+            playerId: submission.userId,
+            state: TaskPlayerState.not_started,
+          );
+      statuses[submission.userId] = existing.copyWith(
+        state: TaskPlayerState.submitted,
+        submittedAt: DateTime.now(),
+        submissionUrl: submission.videoUrl,
+      );
 
-    // Record the submission and mark the submitting player's status.
-    final statuses = Map<String, PlayerTaskStatus>.from(task.playerStatuses);
-    final existing = statuses[submission.userId] ??
-        PlayerTaskStatus(
-          playerId: submission.userId,
-          state: TaskPlayerState.not_started,
-        );
-    statuses[submission.userId] = existing.copyWith(
-      state: TaskPlayerState.submitted,
-      submittedAt: DateTime.now(),
-      submissionUrl: submission.videoUrl,
-    );
+      // One submission per player: a resubmission replaces the earlier one.
+      final submissions = [
+        ...task.submissions.where((s) => s.userId != submission.userId),
+        submission,
+      ];
 
-    final updatedTasks = List<Task>.from(game.tasks);
-    var updatedTask = task.copyWith(
-      submissions: [...task.submissions, submission],
-      playerStatuses: statuses,
-    );
+      var updatedTask = task.copyWith(
+        submissions: submissions,
+        playerStatuses: statuses,
+      );
 
-    // Advance the task to ready_to_judge once every player has submitted.
-    if (updatedTask.allPlayersSubmitted &&
-        updatedTask.status == TaskStatus.waiting_for_submissions) {
-      updatedTask = updatedTask.copyWith(status: TaskStatus.ready_to_judge);
-    }
+      // Advance the task to ready_to_judge once every player has submitted.
+      if (updatedTask.allPlayersSubmitted &&
+          updatedTask.status == TaskStatus.waiting_for_submissions) {
+        updatedTask = updatedTask.copyWith(status: TaskStatus.ready_to_judge);
+      }
 
-    updatedTasks[taskIndex] = updatedTask;
-
-    await updateGame(gameId, game.copyWith(tasks: updatedTasks));
+      final tasks = List<Task>.from(game.tasks);
+      tasks[taskIndex] = updatedTask;
+      return {'tasks': _encodeTasks(tasks)};
+    });
   }
 
   @override
-  Future<void> judgeSubmission(String gameId, int taskIndex, String playerId, int score) async {
-    // Load current game
-    final game = await remoteDataSource.getGameStream(gameId).first;
-    if (game == null) {
-      throw Exception('Game not found');
-    }
-
-    final gameObj = Game.fromMap({...game, 'id': gameId});
-
-    if (taskIndex >= gameObj.tasks.length) {
-      throw Exception('Task not found');
-    }
-
-    // Update the task's player status with the score
-    final updatedTasks = List<Task>.from(gameObj.tasks);
-    final task = updatedTasks[taskIndex];
-
-    final updatedPlayerStatuses = Map<String, PlayerTaskStatus>.from(task.playerStatuses);
-    // Tolerate a missing status (e.g. a player added mid-game) by treating it
-    // as a fresh, not-started status instead of throwing.
-    final playerStatus = updatedPlayerStatuses[playerId] ??
-        PlayerTaskStatus(
-          playerId: playerId,
-          state: TaskPlayerState.not_started,
-        );
-
-    // Update player status with score.
-    updatedPlayerStatuses[playerId] = playerStatus.copyWith(
-      score: score,
-      state: TaskPlayerState.judged,
-      scoredAt: DateTime.now(),
-    );
-
-    // Keystone: keep the dual submission model in sync. Scoring writes the
-    // per-player status above; here we also stamp the matching entry in
-    // task.submissions so completion/scoreboard logic (which reads
-    // submissions[].isJudged/score) agrees. If no submission row exists yet
-    // (the task-execution flow only writes playerStatuses), create one from
-    // the player's status so the task can actually complete.
-    final updatedSubmissions = List<Submission>.from(task.submissions);
-    final subIndex =
-        updatedSubmissions.indexWhere((s) => s.userId == playerId);
-    if (subIndex != -1) {
-      updatedSubmissions[subIndex] = updatedSubmissions[subIndex].copyWith(
-        score: score,
-        isJudged: true,
-      );
-    } else {
-      updatedSubmissions.add(Submission(
-        id: _uuid.v4(),
-        userId: playerId,
-        videoUrl: playerStatus.submissionUrl,
-        score: score,
-        isJudged: true,
-        submittedAt: playerStatus.submittedAt ?? DateTime.now(),
-      ));
-    }
-
-    // Update task with new player statuses + submissions, then advance status.
-    var updatedTask = task.copyWith(
-      playerStatuses: updatedPlayerStatuses,
-      submissions: updatedSubmissions,
-    );
-
-    if (updatedTask.allPlayersJudged) {
-      updatedTask = updatedTask.copyWith(status: TaskStatus.completed);
-    } else if (updatedTask.allPlayersSubmitted) {
-      updatedTask = updatedTask.copyWith(status: TaskStatus.ready_to_judge);
-    }
-
-    updatedTasks[taskIndex] = updatedTask;
-
-    // Update player's total score.
-    final updatedPlayers = gameObj.players.map((player) {
-      if (player.userId == playerId) {
-        return player.copyWith(
-          totalScore: player.totalScore + score,
-        );
+  Future<void> judgeSubmission(
+      String gameId, int taskIndex, String playerId, int score) async {
+    await _transact(gameId, (game, raw) {
+      if (taskIndex >= game.tasks.length) {
+        throw Exception('Task not found');
       }
-      return player;
-    }).toList();
-
-    // Update game with new tasks and players. When every task is completed,
-    // the whole game is completed.
-    var updatedGame = gameObj.copyWith(
-      tasks: updatedTasks,
-      players: updatedPlayers,
-    );
-
-    if (updatedGame.tasks.isNotEmpty &&
-        updatedGame.tasks.every((t) => t.status == TaskStatus.completed)) {
-      updatedGame = updatedGame.copyWith(status: GameStatus.completed);
-    }
-
-    await updateGame(gameId, updatedGame);
+      return _scoreUpdates(game, taskIndex, playerId, score);
+    });
   }
 
   @override
@@ -633,94 +641,165 @@ class GameRepositoryImpl implements GameRepository {
     int score, {
     int? rawResult,
   }) async {
-    // Load current game.
-    final game = await remoteDataSource.getGameStream(gameId).first;
-    if (game == null) {
-      throw Exception('Game not found');
-    }
+    await _transact(gameId, (game, raw) {
+      if (taskIndex >= game.tasks.length) {
+        throw Exception('Task not found');
+      }
 
-    final gameObj = Game.fromMap({...game, 'id': gameId});
+      // The judge/creator (solo play, Quick Play) self-judges instantly.
+      if (_isOwner(game, playerId)) {
+        return _scoreUpdates(game, taskIndex, playerId, score,
+            rawResult: rawResult);
+      }
 
-    if (taskIndex >= gameObj.tasks.length) {
-      throw Exception('Task not found');
-    }
+      // Anyone else may not write scores (firestore.rules: only the judge or
+      // creator touches players[].totalScore). Record the AR result as a
+      // submission carrying its score; the judge confirms it.
+      final task = game.tasks[taskIndex];
+      final status = task.playerStatuses[playerId] ??
+          PlayerTaskStatus(
+            playerId: playerId,
+            state: TaskPlayerState.not_started,
+          );
+      final now = DateTime.now();
+      final statuses = Map<String, PlayerTaskStatus>.from(task.playerStatuses)
+        ..[playerId] = status.copyWith(
+          state: TaskPlayerState.submitted,
+          submittedAt: status.submittedAt ?? now,
+          score: score,
+        );
 
-    final updatedTasks = List<Task>.from(gameObj.tasks);
-    final task = updatedTasks[taskIndex];
+      final submissions = List<Submission>.from(task.submissions);
+      final subIndex = submissions.indexWhere((s) => s.userId == playerId);
+      if (subIndex != -1) {
+        submissions[subIndex] =
+            submissions[subIndex].copyWith(score: score, isJudged: false);
+      } else {
+        submissions.add(Submission(
+          id: _uuid.v4(),
+          userId: playerId,
+          videoUrl: status.submissionUrl,
+          score: score,
+          isJudged: false,
+          submittedAt: status.submittedAt ?? now,
+        ));
+      }
 
-    // AR is an instant self-judge: stamp the player's status straight to
-    // judged (mirroring judgeSubmission), tolerating a missing status.
-    final updatedPlayerStatuses =
-        Map<String, PlayerTaskStatus>.from(task.playerStatuses);
-    final playerStatus = updatedPlayerStatuses[playerId] ??
+      var updatedTask = task.copyWith(
+        playerStatuses: statuses,
+        submissions: submissions,
+        arResult: rawResult ?? task.arResult,
+      );
+      if (updatedTask.status == TaskStatus.waiting_for_submissions &&
+          updatedTask.allPlayersSubmitted) {
+        updatedTask = updatedTask.copyWith(status: TaskStatus.ready_to_judge);
+      }
+
+      final tasks = List<Task>.from(game.tasks);
+      tasks[taskIndex] = updatedTask;
+      return {'tasks': _encodeTasks(tasks)};
+    });
+  }
+
+  /// The scoreboard mutation shared by [judgeSubmission] and an owner's AR
+  /// self-judge: stamp [playerId] judged with [score] on task [taskIndex],
+  /// keep the submission row in step, move the player's total by the CHANGE
+  /// in their score for this task, and roll the task / game forward.
+  Map<String, dynamic> _scoreUpdates(
+    Game game,
+    int taskIndex,
+    String playerId,
+    int score, {
+    int? rawResult,
+  }) {
+    final task = game.tasks[taskIndex];
+    final now = DateTime.now();
+
+    // Tolerate a missing status (e.g. a player added mid-game) by treating
+    // it as a fresh, not-started status instead of throwing.
+    final playerStatus = task.playerStatuses[playerId] ??
         PlayerTaskStatus(
           playerId: playerId,
           state: TaskPlayerState.not_started,
         );
 
-    updatedPlayerStatuses[playerId] = playerStatus.copyWith(
-      score: score,
-      state: TaskPlayerState.judged,
-      submittedAt: playerStatus.submittedAt ?? DateTime.now(),
-      scoredAt: DateTime.now(),
-    );
+    // Re-judging (re-opened judging, a second device, a crowd score landing
+    // twice) replaces the earlier score rather than adding to it.
+    final previousScore =
+        playerStatus.isJudged ? (playerStatus.score ?? 0) : 0;
 
-    // Keep the dual submission model in sync, exactly like judgeSubmission:
-    // stamp the matching submission row, or synthesize one if none exists
-    // (AR players never go through the video-submission flow).
-    final updatedSubmissions = List<Submission>.from(task.submissions);
-    final subIndex =
-        updatedSubmissions.indexWhere((s) => s.userId == playerId);
-    if (subIndex != -1) {
-      updatedSubmissions[subIndex] = updatedSubmissions[subIndex].copyWith(
+    final statuses = Map<String, PlayerTaskStatus>.from(task.playerStatuses)
+      ..[playerId] = playerStatus.copyWith(
         score: score,
-        isJudged: true,
+        state: TaskPlayerState.judged,
+        submittedAt: playerStatus.submittedAt ?? now,
+        scoredAt: now,
       );
+
+    // Keystone: keep the dual submission model in sync. Scoring writes the
+    // per-player status above; here we also stamp the matching entry in
+    // task.submissions so completion/scoreboard logic (which reads
+    // submissions[].isJudged/score) agrees. If no submission row exists yet
+    // (the task-execution flow only writes playerStatuses), create one from
+    // the player's status so the task can actually complete.
+    final submissions = List<Submission>.from(task.submissions);
+    final subIndex = submissions.indexWhere((s) => s.userId == playerId);
+    if (subIndex != -1) {
+      submissions[subIndex] =
+          submissions[subIndex].copyWith(score: score, isJudged: true);
     } else {
-      updatedSubmissions.add(Submission(
+      submissions.add(Submission(
         id: _uuid.v4(),
         userId: playerId,
         videoUrl: playerStatus.submissionUrl,
         score: score,
         isJudged: true,
-        submittedAt: playerStatus.submittedAt ?? DateTime.now(),
+        submittedAt: playerStatus.submittedAt ?? now,
       ));
     }
 
     var updatedTask = task.copyWith(
-      playerStatuses: updatedPlayerStatuses,
-      submissions: updatedSubmissions,
-      // Record the raw AR gameplay result for display/analytics.
+      playerStatuses: statuses,
+      submissions: submissions,
       arResult: rawResult ?? task.arResult,
     );
-
     if (updatedTask.allPlayersJudged) {
       updatedTask = updatedTask.copyWith(status: TaskStatus.completed);
     } else if (updatedTask.allPlayersSubmitted) {
       updatedTask = updatedTask.copyWith(status: TaskStatus.ready_to_judge);
     }
 
-    updatedTasks[taskIndex] = updatedTask;
+    final tasks = List<Task>.from(game.tasks);
+    tasks[taskIndex] = updatedTask;
 
-    // Bump the player's total score.
-    final updatedPlayers = gameObj.players.map((player) {
-      if (player.userId == playerId) {
-        return player.copyWith(totalScore: player.totalScore + score);
-      }
-      return player;
-    }).toList();
+    final delta = score - previousScore;
+    final players = game.players
+        .map((p) => p.userId == playerId
+            ? p.copyWith(totalScore: p.totalScore + delta)
+            : p)
+        .toList();
 
-    var updatedGame = gameObj.copyWith(
-      tasks: updatedTasks,
-      players: updatedPlayers,
-    );
-
-    if (updatedGame.tasks.isNotEmpty &&
-        updatedGame.tasks.every((t) => t.status == TaskStatus.completed)) {
-      updatedGame = updatedGame.copyWith(status: GameStatus.completed);
+    final updates = <String, dynamic>{
+      'tasks': _encodeTasks(tasks),
+      'players': _encodePlayers(players),
+    };
+    // When every task is completed, the whole game is completed.
+    if (tasks.isNotEmpty &&
+        tasks.every((t) => t.status == TaskStatus.completed)) {
+      updates['status'] = GameStatus.completed.name;
     }
+    return updates;
+  }
 
-    await updateGame(gameId, updatedGame);
+  /// A fresh invite code no other game is using.
+  Future<String> _uniqueInviteCode() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      final code = _generateInviteCode();
+      if (await remoteDataSource.findGameIdByInviteCode(code) == null) {
+        return code;
+      }
+    }
+    throw Exception('Could not find a free invite code. Please try again.');
   }
 
   String _generateInviteCode() {

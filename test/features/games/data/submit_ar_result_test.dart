@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/models/player_task_status.dart';
 import 'package:taskcaster_app/core/di/service_locator.dart';
 import 'package:taskcaster_app/core/models/game.dart';
 import 'package:taskcaster_app/core/models/task.dart';
@@ -43,10 +44,16 @@ void main() {
       ]);
       await repo.startGame(gameId);
 
-      // Both players self-judge their AR result instantly (no judge UI, no
-      // video submission). rawResult carries the gameplay metric.
+      // The creator (also the judge) self-judges instantly. The challenger
+      // may not write scores (firestore.rules), so their AR result lands as a
+      // submission carrying the score, and the judge confirms it.
+      // rawResult carries the gameplay metric.
       await repo.submitArResult(gameId, 0, challengerId, 8, rawResult: 8);
       await repo.submitArResult(gameId, 0, creatorId, 5, rawResult: 5);
+      final pending = await repo.getGameStream(gameId).first;
+      final proposed =
+          pending!.tasks.single.getPlayerStatus(challengerId)!.score!;
+      await repo.judgeSubmission(gameId, 0, challengerId, proposed);
 
       final done = await repo.getGameStream(gameId).first;
       final task = done!.tasks.single;
@@ -71,7 +78,8 @@ void main() {
       expect(done.status, GameStatus.completed);
     });
 
-    test('a single AR self-judge advances only that player', () async {
+    test("a challenger's AR result waits for the judge; nobody else moves",
+        () async {
       const creatorId = 'alice';
       const challengerId = 'bob';
 
@@ -94,13 +102,16 @@ void main() {
 
       final mid = await repo.getGameStream(gameId).first;
       final task = mid!.tasks.single;
-      // Bob is judged; Alice is not — task not yet complete, game in progress.
-      expect(task.getPlayerStatus(challengerId)!.isJudged, isTrue);
+      // Bob has handed in a scored result awaiting the judge; Alice has not
+      // played. Task not complete, game in progress, no points yet.
+      final bob = task.getPlayerStatus(challengerId)!;
+      expect(bob.state, TaskPlayerState.submitted);
+      expect(bob.score, 7);
       expect(task.getPlayerStatus(creatorId)!.isJudged, isFalse);
       expect(task.status, isNot(TaskStatus.completed));
       expect(mid.status, GameStatus.inProgress);
       expect(mid.players.firstWhere((p) => p.userId == challengerId).totalScore,
-          7);
+          0);
     });
   });
 }
