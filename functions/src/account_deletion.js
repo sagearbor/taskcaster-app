@@ -19,7 +19,12 @@
  *   push_subscriptions/{uid}           web push targets AND the iOS/Android
  *                                      FCM device tokens (fcmTokens, moved
  *                                      here from users/{uid} by WP-12)
- *   Storage submissions/{uid}/         every clip the user uploaded
+ *   montage_quota/{uid}                the per-day render counters (and
+ *                                      their days/ subcollection)
+ *   Storage submissions/{uid}/         every clip the user uploaded; only the
+ *                                      Admin SDK can do this, storage.rules
+ *                                      deny client delete/list under
+ *                                      submissions/
  *   users/{uid}                        the whole subtree (private/, friends/)
  *   invites the user sent or received
  *   games                              the uid leaves players/playerIds and
@@ -41,6 +46,7 @@ const PUSH_SUBSCRIPTIONS = 'push_subscriptions';
 const USERS = 'users';
 const GAMES = 'games';
 const INVITES = 'invites';
+const {MONTAGE_QUOTA} = require('./guards');
 
 /** Storage prefix every player upload lives under (see storage.rules). */
 const submissionsPrefix = (uid) => `submissions/${uid}/`;
@@ -168,6 +174,7 @@ async function deleteUserData(uid, {db, bucket, FieldValue}) {
   const games = await leaveGames(db, uid);
   const invites = await deleteInvites(db, uid);
   await db.recursiveDelete(db.collection(PUSH_SUBSCRIPTIONS).doc(uid));
+  await db.recursiveDelete(db.collection(MONTAGE_QUOTA).doc(uid));
   await db.recursiveDelete(db.collection(USERS).doc(uid));
   await deleteStorageClips(bucket, uid);
 

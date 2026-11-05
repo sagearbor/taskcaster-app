@@ -100,6 +100,7 @@ test('deleting an account removes its data in one trigger run (emulator)', {skip
     subs: {k: {endpoint: 'https://x'}},
     fcmTokens: {'device-token-1': new Date().toISOString()},
   });
+  await db.doc(`montage_quota/${uid}/days/20261105`).set({count: 3});
   await db.doc(`users/${uid}`).set({displayName: 'Doomed'});
   await db.doc(`users/${uid}/private/profile`).set({email: 'd@example.com'});
   await db.doc(`users/${uid}/friends/other`).set({uid: 'other'});
@@ -125,6 +126,7 @@ test('deleting an account removes its data in one trigger run (emulator)', {skip
   assert.deepEqual(theirs.graderIds, [], 'uid pulled from graderIds');
   assert.equal(theirs.gradeSum, 5, 'other player\'s score unchanged');
   assert.equal(await exists(`push_subscriptions/${uid}`), false);
+  assert.equal(await exists(`montage_quota/${uid}/days/20261105`), false, 'quota counters deleted');
   assert.equal(await exists(`users/${uid}`), false);
   assert.equal(await exists(`users/${uid}/private/profile`), false);
   assert.equal(await exists(`users/${uid}/friends/other`), false);
