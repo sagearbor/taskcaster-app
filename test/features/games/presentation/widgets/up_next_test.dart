@@ -6,6 +6,7 @@ import 'package:taskcaster_app/core/models/player.dart';
 import 'package:taskcaster_app/core/models/player_task_status.dart';
 import 'package:taskcaster_app/core/models/task.dart';
 import 'package:taskcaster_app/core/theme/app_theme.dart';
+import 'package:taskcaster_app/features/games/presentation/bloc/judging_bloc.dart';
 import 'package:taskcaster_app/features/games/presentation/widgets/up_next_card.dart';
 
 PlayerTaskStatus _s(String id, TaskPlayerState state, {int? score}) =>
@@ -156,7 +157,21 @@ void main() {
         isJudge: false,
       );
       expect(u.action, UpNextAction.results);
-      expect(u.detail, 'You got 4/5.');
+      // A judge scores out of 10 (JudgingBloc.maxScore), never out of 5.
+      expect(u.detail, 'You got 4/10.');
+    });
+
+    test('a judge-mode score uses the judge scale as its max', () {
+      final u = UpNext.resolve(
+        _game(
+          taskStatus: TaskStatus.completed,
+          statuses: {'p1': _s('p1', TaskPlayerState.judged, score: 9)},
+        ),
+        currentUserId: 'p1',
+        isJudge: false,
+      );
+      expect(u.detail, 'You got 9/${JudgingBloc.maxScore}.');
+      expect(JudgingBloc.maxScore, 10);
     });
   });
 
