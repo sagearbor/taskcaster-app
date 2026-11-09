@@ -13,6 +13,7 @@ const {
   resultDocId,
   pointsFor,
   settleTask,
+  gameUpdatesFor,
   settleInStore,
   tasksToSweep,
   scoreInNotification,
@@ -156,6 +157,43 @@ test('after 24 h everything locks with whatever grades exist, and the task compl
   assert.equal(late.complete, true, 'c no longer holds the task up');
 });
 
+test('a task nobody posts to still expires 24 h after it opened, and the next task opens', () => {
+  const g = makeGame({taskIds: ['t1', 't2']});
+  g.tasks[0].openedAt = iso(T0);
+  const early = settleTask({game: g, taskId: 't1', grades: [], results: {}, nowMs: T0 + LOCK_AFTER_MS - 1});
+  assert.equal(early.expired, false);
+  assert.equal(early.complete, false);
+  const late = settleTask({game: g, taskId: 't1', grades: [], results: {}, nowMs: T0 + LOCK_AFTER_MS});
+  assert.equal(late.expired, true);
+  assert.deepEqual(late.locks, []);
+  assert.equal(late.complete, true, 'nobody posted, so nobody holds the task up');
+  const nowIso = iso(T0 + LOCK_AFTER_MS);
+  const updates = gameUpdatesFor({game: g, outcome: late, allResults: [], nowIso});
+  assert.equal(updates.tasks[0].status, 'completed');
+  assert.equal(updates.currentTaskIndex, 1);
+  assert.equal(updates.tasks[1].openedAt, nowIso, 'the next task starts its own clock');
+});
+
+test('an unstamped current task with no entries starts its clock the first time it is settled', () => {
+  const g = makeGame({taskIds: ['t1', 't2']});
+  const first = settleTask({game: g, taskId: 't1', grades: [], results: {}, nowMs: T0});
+  assert.equal(first.expired, false);
+  assert.equal(first.openedAt, iso(T0));
+  const updates = gameUpdatesFor({game: g, outcome: first, allResults: [], nowIso: iso(T0)});
+  assert.equal(updates.tasks[0].openedAt, iso(T0), 'the open time is stamped');
+  // A task that is not current (and has no entries) has no clock yet.
+  const later = settleTask({game: g, taskId: 't2', grades: [], results: {}, nowMs: T0});
+  assert.equal(later.openedAt, null);
+});
+
+test('the first entry still opens the window when it predates openedAt', () => {
+  const g = makeGame();
+  g.tasks[0].openedAt = iso(T0 + 60_000);
+  post(g, 't1', 'a', T0);
+  const out = settleTask({game: g, taskId: 't1', grades: [], results: {}, nowMs: T0 + LOCK_AFTER_MS});
+  assert.equal(out.expired, true);
+});
+
 test('an already-locked entry is never locked (or scored) twice', () => {
   const g = makeGame({uids: ['a', 'b']});
   post(g, 't1', 'a');
@@ -177,6 +215,13 @@ test('the sweep visits open tasks with at least one entry, in group games only',
   assert.deepEqual(tasksToSweep(g), ['t1']);
   assert.deepEqual(tasksToSweep({...g, settings: {}}), []);
   assert.deepEqual(tasksToSweep({...g, status: 'completed'}), []);
+});
+
+test('the sweep visits the current task even before anyone posts', () => {
+  const g = makeGame({taskIds: ['t1', 't2']});
+  assert.deepEqual(tasksToSweep(g), ['t1']);
+  g.currentTaskIndex = 1;
+  assert.deepEqual(tasksToSweep(g), ['t2']);
 });
 
 test('the push names the score, never the graders', () => {

@@ -218,6 +218,46 @@ void main() {
       ]);
       expect(late.complete, isTrue, reason: 'c never posted');
     });
+
+    test('a task nobody posts to still expires 24 h after it opened', () {
+      final g0 = game();
+      final opened = g0.copyWith(
+          tasks: [g0.tasks.first.copyWith(openedAt: t0)]);
+      final early = PeerGrading.settle(
+          game: opened,
+          taskId: 't1',
+          grades: const [],
+          locked: const {},
+          now: t0.add(const Duration(hours: 23)))!;
+      expect(early.complete, isFalse);
+      final late = PeerGrading.settle(
+          game: opened,
+          taskId: 't1',
+          grades: const [],
+          locked: const {},
+          now: t0.add(PeerGrading.lockAfter))!;
+      expect(late.locks, isEmpty);
+      expect(late.complete, isTrue, reason: 'nobody posted in 24 h');
+    });
+
+    test('an unstamped current task starts its clock when first settled', () {
+      final out = PeerGrading.settle(
+          game: game(),
+          taskId: 't1',
+          grades: const [],
+          locked: const {},
+          now: t0)!;
+      expect(out.openedAt, t0);
+      expect(out.complete, isFalse);
+      final next = PeerGrading.apply(game(), out, totals: const {}, now: t0);
+      expect(next.tasks.first.openedAt, t0);
+    });
+
+    test('Task.openedAt round-trips', () {
+      final task = game().tasks.first.copyWith(openedAt: t0);
+      expect(Task.fromMap(task.toMap()).openedAt, t0);
+      expect(Task.fromMap(game().tasks.first.toMap()).openedAt, isNull);
+    });
   });
 
   group('a group game through the repository (mock backend)', () {
@@ -380,6 +420,24 @@ void main() {
       expect(after.tasks[0].playerStatuses['a']!.score, 10);
       expect(after.tasks[0].playerStatuses['b']!.score, 0,
           reason: 'nobody graded b in time');
+    });
+
+    test('starting and advancing a game opens each task, so an empty task expires',
+        () async {
+      final id = await startGroupGame(['a', 'b'], ['t1', 't2']);
+      final started = await current(id);
+      expect(started.tasks[0].openedAt, isNotNull,
+          reason: 'the first task opens when the game starts');
+      expect(started.tasks[1].openedAt, isNull);
+
+      // Nobody posts. 25 h later the sweep still completes the task.
+      ds.clock = () => DateTime.now().add(const Duration(hours: 25));
+      ds.settlePeerTask(id, 't1');
+      final after = await current(id);
+      expect(after.tasks[0].isCompleted, isTrue);
+      expect(after.currentTaskIndex, 1);
+      expect(after.tasks[1].openedAt, isNotNull,
+          reason: 'the next task starts its own clock');
     });
 
     test('Taskmaster mode (and the default) keeps a judge', () async {

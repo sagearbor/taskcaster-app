@@ -65,11 +65,15 @@ class PeerSettlement {
   final Map<String, List<String>> peerGraders;
   final bool complete;
 
+  /// When the task's 24 h window opened (null if it has not).
+  final DateTime? openedAt;
+
   const PeerSettlement({
     required this.taskIndex,
     required this.locks,
     required this.peerGraders,
     required this.complete,
+    this.openedAt,
   });
 }
 
@@ -83,7 +87,9 @@ class PeerSettlement {
 class PeerGrading {
   const PeerGrading._();
 
-  /// An entry locks this long after the task's first entry at the latest.
+  /// An entry locks this long after the task opened at the latest
+  /// ([Task.openedAt], else its first entry; the current task with neither
+  /// opens the first time it is settled, so it always expires).
   static const Duration lockAfter = Duration(hours: 24);
 
   static String gradeDocId(String taskId, String targetUid, String graderUid) =>
@@ -173,7 +179,7 @@ class PeerGrading {
           );
     }
 
-    DateTime? openedAt;
+    DateTime? openedAt = task.openedAt;
     for (final uid in roster) {
       if (!posted(uid)) continue;
       final at = task.playerStatuses[uid]?.submittedAt;
@@ -181,6 +187,7 @@ class PeerGrading {
         openedAt = at;
       }
     }
+    if (openedAt == null && game.currentTaskIndex == taskIndex) openedAt = now;
     final expired =
         openedAt != null && now.difference(openedAt) >= lockAfter;
 
@@ -214,6 +221,7 @@ class PeerGrading {
         for (final e in byTarget.entries) e.key: (e.value.keys.toList()..sort()),
       },
       complete: complete,
+      openedAt: openedAt,
     );
   }
 
@@ -250,6 +258,7 @@ class PeerGrading {
       submissions: submissions,
       peerGraders: outcome.peerGraders,
       status: outcome.complete ? TaskStatus.completed : null,
+      openedAt: task.openedAt ?? outcome.openedAt,
     );
     tasks[outcome.taskIndex] = task;
 
@@ -265,7 +274,10 @@ class PeerGrading {
         next = next.copyWith(status: GameStatus.completed);
       } else if (game.currentTaskIndex == outcome.taskIndex &&
           outcome.taskIndex < tasks.length - 1) {
-        next = next.copyWith(currentTaskIndex: outcome.taskIndex + 1);
+        tasks[outcome.taskIndex + 1] = tasks[outcome.taskIndex + 1].copyWith(
+            openedAt: tasks[outcome.taskIndex + 1].openedAt ?? now);
+        next = next.copyWith(
+            tasks: tasks, currentTaskIndex: outcome.taskIndex + 1);
       }
     }
     return next;
