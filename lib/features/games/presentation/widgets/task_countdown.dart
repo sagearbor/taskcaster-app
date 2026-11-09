@@ -17,11 +17,15 @@ class TaskCountdown extends StatefulWidget {
   /// display.
   final int graceSeconds;
 
+  /// The wall clock, injectable so tests are deterministic.
+  final DateTime Function() now;
+
   const TaskCountdown({
     super.key,
     required this.startedAt,
     required this.durationSeconds,
     this.graceSeconds = 30,
+    this.now = DateTime.now,
   });
 
   @override
@@ -35,11 +39,11 @@ class _TaskCountdownState extends State<TaskCountdown> {
   @override
   void initState() {
     super.initState();
-    _elapsed = DateTime.now().difference(widget.startedAt).inSeconds;
+    _elapsed = widget.now().difference(widget.startedAt).inSeconds;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {
-        _elapsed = DateTime.now().difference(widget.startedAt).inSeconds;
+        _elapsed = widget.now().difference(widget.startedAt).inSeconds;
       });
     });
   }
