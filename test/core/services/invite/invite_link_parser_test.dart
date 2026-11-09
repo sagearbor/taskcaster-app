@@ -270,4 +270,25 @@ void main() {
       expect(InviteLinks.codeFromReferrer('%E0%A4%A'), isNull);
     });
   });
+
+  group('withoutWebLaunchParams', () {
+    test('drops join/ref/task/from, keeps the rest and the fragment', () {
+      expect(
+          InviteLinks.withoutWebLaunchParams(
+              Uri.parse('https://h.web.app/?join=ABC234&ref=u&x=1#/game')),
+          '/?x=1#/game');
+      expect(
+          InviteLinks.withoutWebLaunchParams(
+              Uri.parse('https://h.web.app/?task=t1&from=p')),
+          '/');
+    });
+
+    test('null when there is nothing to strip', () {
+      expect(InviteLinks.withoutWebLaunchParams(Uri.parse('https://h.web.app/#/')),
+          isNull);
+      expect(
+          InviteLinks.withoutWebLaunchParams(Uri.parse('https://h.web.app/?x=1')),
+          isNull);
+    });
+  });
 }

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'invite_link_parser.dart';
+import 'web_url.dart';
 
 /// Where a pending invite code came from.
 enum PendingInviteSource {
@@ -34,13 +35,15 @@ class PendingInviteService extends ChangeNotifier {
     bool? isAndroid,
     bool? isWeb,
     Uri Function()? webLaunchUri,
+    void Function(String url)? replaceWebUrl,
   })  : _getInitialLink = getInitialLink,
         _uriLinkStream = uriLinkStream,
         _getInstallReferrer = getInstallReferrer ?? _playInstallReferrer,
         _isAndroid = isAndroid ??
             (!kIsWeb && defaultTargetPlatform == TargetPlatform.android),
         _isWeb = isWeb ?? kIsWeb,
-        _webLaunchUri = webLaunchUri ?? (() => Uri.base);
+        _webLaunchUri = webLaunchUri ?? (() => Uri.base),
+        _replaceWebUrl = replaceWebUrl ?? replaceBrowserUrl;
 
   /// shared_preferences flag: the install referrer has been read (or the read
   /// was attempted) on this install — never read it again.
@@ -53,6 +56,7 @@ class PendingInviteService extends ChangeNotifier {
   final bool _isAndroid;
   final bool _isWeb;
   final Uri Function() _webLaunchUri;
+  final void Function(String url) _replaceWebUrl;
 
   StreamSubscription<Uri>? _linkSubscription;
   bool _initialized = false;
@@ -72,6 +76,7 @@ class PendingInviteService extends ChangeNotifier {
     final link = _pendingLink;
     if (link == null) return null;
     _pendingLink = null;
+    _clearWebLaunchParams();
     notifyListeners();
     return link;
   }
@@ -175,8 +180,22 @@ class PendingInviteService extends ChangeNotifier {
     _pendingCode = null;
     _pendingRef = null;
     _source = null;
+    _clearWebLaunchParams();
     notifyListeners();
     return code;
+  }
+
+  /// Web: the launch URL's `?join=` / `?task=` has been handled, so drop it
+  /// from the address bar (history.replaceState) — a reload must not join or
+  /// open the task a second time.
+  void _clearWebLaunchParams() {
+    if (!_isWeb) return;
+    try {
+      final cleaned = InviteLinks.withoutWebLaunchParams(_webLaunchUri());
+      if (cleaned != null) _replaceWebUrl(cleaned);
+    } catch (e) {
+      debugPrint('PendingInviteService: clearing launch URL failed: $e');
+    }
   }
 
   @override

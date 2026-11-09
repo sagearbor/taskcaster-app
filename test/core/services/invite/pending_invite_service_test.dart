@@ -231,11 +231,13 @@ void main() {
   });
 
   group('PendingInviteService — web launch URL', () {
-    PendingInviteService webService(String url, {List<int>? linkCalls}) {
+    PendingInviteService webService(String url,
+        {List<int>? linkCalls, List<String>? replaced}) {
       return PendingInviteService(
         isWeb: true,
         isAndroid: false,
         webLaunchUri: () => Uri.parse(url),
+        replaceWebUrl: (u) => replaced?.add(u),
         getInitialLink: () async {
           linkCalls?.add(1);
           return null;
@@ -262,6 +264,45 @@ void main() {
       final service = webService('http://localhost:5000/?join=QRS789');
       await service.init();
       expect(service.pendingCode, 'QRS789');
+    });
+
+    test('consuming ?join= strips it from the address bar (reload is a no-op)',
+        () async {
+      final replaced = <String>[];
+      final service = webService(
+          'https://taskmaster-app-3d480.web.app/?join=abc234&ref=u9&utm=x#/',
+          replaced: replaced);
+      await service.init();
+      expect(replaced, isEmpty, reason: 'kept until the invite is handled');
+      expect(service.consume(), 'ABC234');
+      expect(replaced, ['/?utm=x#/']);
+    });
+
+    test('consuming ?task= strips task and from', () async {
+      final replaced = <String>[];
+      final service = webService(
+          'https://taskmaster-app-3d480.web.app/?task=starter-03&from=p1',
+          replaced: replaced);
+      await service.init();
+      expect(service.consumeLink(), isA<TaskLink>());
+      expect(replaced, ['/']);
+    });
+
+    test('off the web the URL is never touched', () async {
+      final replaced = <String>[];
+      final service = PendingInviteService(
+        isWeb: false,
+        isAndroid: false,
+        webLaunchUri: () => Uri.parse('https://x.web.app/?join=ABC234'),
+        replaceWebUrl: replaced.add,
+        getInitialLink: () async =>
+            Uri.parse('https://taskmaster-app-3d480.web.app/join/?code=ABC234'),
+        uriLinkStream: links.stream,
+        getInstallReferrer: () async => null,
+      );
+      await service.init();
+      expect(service.consume(), 'ABC234');
+      expect(replaced, isEmpty);
     });
 
     test('a plain page load leaves nothing pending', () async {
