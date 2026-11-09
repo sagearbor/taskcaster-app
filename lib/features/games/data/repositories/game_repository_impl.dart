@@ -482,6 +482,9 @@ class GameRepositoryImpl implements GameRepository {
         );
       }).toList();
 
+      // The first task opens now (starts a group game's 24 h lock window).
+      updatedTasks[0] = updatedTasks[0].copyWith(openedAt: DateTime.now());
+
       // Deadline for the first task (if settings specify one).
       final taskDeadline = gameObj.settings.taskDeadline;
       if (taskDeadline != null) {
@@ -522,7 +525,10 @@ class GameRepositoryImpl implements GameRepository {
       // fire, and a late one must not drag the game backwards.
       if (taskIndex <= game.currentTaskIndex) return null;
       if (taskIndex >= game.tasks.length) return null;
-      return {'currentTaskIndex': taskIndex};
+      final tasks = List<Task>.from(game.tasks);
+      tasks[taskIndex] = tasks[taskIndex]
+          .copyWith(openedAt: tasks[taskIndex].openedAt ?? DateTime.now());
+      return {'currentTaskIndex': taskIndex, 'tasks': _encodeTasks(tasks)};
     });
   }
 

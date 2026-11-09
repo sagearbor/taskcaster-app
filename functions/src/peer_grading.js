@@ -17,7 +17,7 @@
  * SDK.
  *
  * An entry LOCKS when every other player who has not skipped the task has
- * graded it, or 24 hours after the task's first entry, whichever is first. Its
+ * graded it, or 24 hours after the task opened, whichever is first. Its
  * points are `round(mean x 2)` (0..10, the Arena's crowd formula, so the
  * friend scoreboard uses the same 0..10 scale as a human judge); an entry
  * nobody graded locks at 0. Each lock is recorded once in a server-owned
@@ -41,7 +41,14 @@
 
 const GROUP = 'group';
 
-/** An entry's score locks this long after the task's first entry at most. */
+/**
+ * An entry's score locks this long after the task opened at most. A task opens
+ * when it becomes the current task (`task.openedAt`, stamped by the client on
+ * start/advance and by this module when it advances); tasks without that stamp
+ * (written before it existed) open at their first entry, or — for the current
+ * task — the first time the settle pass sees them, so even a task nobody posts
+ * to always expires.
+ */
 const LOCK_AFTER_MS = 24 * 60 * 60 * 1000;
 
 const GAMES = 'games';
@@ -93,6 +100,7 @@ function isValidScore(score) {
  *   peerGraders: Record<string, string[]>,
  *   complete: boolean,
  *   expired: boolean,
+ *   openedAt: string|null,   ISO time the 24 h window opened
  * }}
  */
 function settleTask({game, taskId, grades, results, nowMs}) {
@@ -121,13 +129,16 @@ function settleTask({game, taskId, grades, results, nowMs}) {
     if (!forTarget.has(g.graderUid)) forTarget.set(g.graderUid, g.score);
   }
 
-  // The 24 h window opens with the task's first entry.
-  let openedAt = null;
+  // The 24 h window opens when the task did (or at its first entry, if earlier
+  // or unstamped). The current task with neither opens now, so it still expires.
+  const stamped = Date.parse(task.openedAt || '');
+  let openedAt = Number.isFinite(stamped) ? stamped : null;
   for (const uid of roster) {
     if (!posted(uid)) continue;
     const at = Date.parse(statuses[uid].submittedAt || '');
     if (Number.isFinite(at) && (openedAt === null || at < openedAt)) openedAt = at;
   }
+  if (openedAt === null && (game.currentTaskIndex || 0) === taskIndex) openedAt = nowMs;
   const expired = openedAt !== null && nowMs - openedAt >= LOCK_AFTER_MS;
 
   const locked = new Set(Object.keys(results || {}));
@@ -149,7 +160,10 @@ function settleTask({game, taskId, grades, results, nowMs}) {
   const peerGraders = {};
   for (const [target, given] of byTarget) peerGraders[target] = [...given.keys()].sort();
 
-  return {taskIndex, locks, peerGraders, complete, expired};
+  return {
+    taskIndex, locks, peerGraders, complete, expired,
+    openedAt: openedAt === null ? null : new Date(openedAt).toISOString(),
+  };
 }
 
 /**
@@ -172,6 +186,7 @@ function gameUpdatesFor({game, outcome, allResults, nowIso}) {
   task.playerStatuses = statuses;
   task.submissions = submissions;
   task.peerGraders = outcome.peerGraders;
+  if (!task.openedAt && outcome.openedAt) task.openedAt = outcome.openedAt;
   if (outcome.complete) task.status = 'completed';
   tasks[outcome.taskIndex] = task;
 
@@ -190,6 +205,8 @@ function gameUpdatesFor({game, outcome, allResults, nowIso}) {
       updates.status = 'completed';
     } else if ((game.currentTaskIndex || 0) === outcome.taskIndex && outcome.taskIndex < tasks.length - 1) {
       updates.currentTaskIndex = outcome.taskIndex + 1;
+      const next = tasks[outcome.taskIndex + 1];
+      if (next && !next.openedAt) tasks[outcome.taskIndex + 1] = {...next, openedAt: nowIso};
     }
   }
 
@@ -295,14 +312,16 @@ function firestorePeerStore({db}) {
 
 /**
  * Pure: which tasks of an open group game the scheduled pass should settle —
- * any not completed that has at least one entry (an entry starts the 24 h
- * clock; a skip or a leave can also be the last thing a task was waiting on).
+ * the current task (its 24 h clock runs even with no entries) and any other
+ * not completed that has at least one entry (a skip or a leave can also be
+ * the last thing a task was waiting on).
  */
 function tasksToSweep(game) {
   if (!isGroupGame(game) || game.status !== 'inProgress') return [];
+  const current = game.currentTaskIndex || 0;
   return (game.tasks || [])
-    .filter((t) => t && t.status !== 'completed')
-    .filter((t) => Object.values(t.playerStatuses || {}).some((s) => s && POSTED.has(s.state)))
+    .filter((t, i) => t && t.status !== 'completed' && (i === current || t.openedAt ||
+      Object.values(t.playerStatuses || {}).some((s) => s && POSTED.has(s.state))))
     .map((t) => t.id);
 }
 

@@ -89,6 +89,9 @@ class FeedRepositoryImpl implements FeedRepository {
           // Never your own post, never one you've already graded.
           if (p.userId == viewerId) return false;
           if (p.graderIds.contains(viewerId)) return false;
+          // A post its owner made private is not the crowd's to grade (the
+          // rules refuse a stranger reading it by id).
+          if (p.shareable == false) return false;
           return true;
         }).toList()
           ..sort(_queueOrder);

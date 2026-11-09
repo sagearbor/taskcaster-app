@@ -5,6 +5,7 @@ import '../../../../core/models/player_task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/peer_grading.dart';
+import '../bloc/judging_bloc.dart';
 import 'timer_pill.dart';
 
 /// What the hero button on the game screen does.
@@ -130,8 +131,9 @@ class UpNext {
 
     if (task.status == TaskStatus.completed) {
       final score = status?.score;
-      // Group grades are round(mean x 2): out of 10.
-      final outOf = game.isGroupJudged ? 10 : 5;
+      // Group grades are round(mean x 2): out of 10. A judge scores
+      // JudgingBloc.minScore..maxScore (also out of 10).
+      final outOf = game.isGroupJudged ? 10 : JudgingBloc.maxScore;
       return make('SCORES ARE IN', 'See results', UpNextAction.results,
           detail: score != null ? 'You got $score/$outOf.' : null);
     }

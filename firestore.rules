@@ -415,7 +415,33 @@ service cloud.firestore {
         return !request.resource.data.keys().hasAny(['playbackUrl', 'posterUrl']);
       }
 
-      allow read: if isSignedIn();
+      // A post its owner made private (`shareable == false`). Friend-game
+      // posts with the flag unset still reach the cross-game Arena by design
+      // (games.settings.shareToArena), where strangers list and grade them,
+      // so only an explicit "no" makes a post private.
+      function isPrivatePost() {
+        return resource.data.get('shareable', null) == false;
+      }
+
+      // The reader is on the roster of the game the post was made in.
+      function inPostGame() {
+        let gameId = resource.data.get('gameId', null);
+        let gamePath = /databases/$(database)/documents/games/$(gameId);
+        return gameId is string && gameId != '' && exists(gamePath) &&
+               request.auth.uid in get(gamePath).data.get('playerIds', []);
+      }
+
+      // By id: a private post only for its author and its game's players.
+      allow get: if isSignedIn() &&
+                    (!isPrivatePost() ||
+                     request.auth.uid == resource.data.userId ||
+                     inPostGame());
+
+      // Queries (the Arena queue, Watch together, your own posts) cannot be
+      // filtered on `shareable` without dropping every post that lacks the
+      // field, so they stay open to signed-in users; the app's Arena queue
+      // skips private posts itself.
+      allow list: if isSignedIn();
 
       // Post as yourself only — never as the house, never as someone else.
       allow create: if isSignedIn() &&

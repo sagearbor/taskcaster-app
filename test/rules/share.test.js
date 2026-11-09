@@ -116,6 +116,31 @@ describe('firestore.rules — WP-09 sharing', function () {
     );
   });
 
+  // ---- reading a private post by id ----
+
+  it('ALLOWED: a private post is readable by its author and its game\'s players', async () => {
+    await seed('games/g1', { playerIds: ['author', 'friend'], players: [] });
+    await seedPost('p1', { shareable: false });
+    await assertSucceeds(getDoc(doc(as('author'), 'feed_posts/p1')));
+    await assertSucceeds(getDoc(doc(as('friend'), 'feed_posts/p1')));
+  });
+
+  it('DENIED: a private post read by id by anyone else', async () => {
+    await seed('games/g1', { playerIds: ['author', 'friend'], players: [] });
+    await seedPost('p1', { shareable: false });
+    await seedPost('p2', { shareable: false, gameId: 'no-such-game' });
+    await assertFails(getDoc(doc(as('mallory'), 'feed_posts/p1')));
+    await assertFails(getDoc(doc(as('mallory'), 'feed_posts/p2')));
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), 'feed_posts/p1')));
+  });
+
+  it('ALLOWED: public and unset (Arena) posts stay readable by any signed-in user', async () => {
+    await seedPost('p1', { shareable: true });
+    await seedPost('p2');
+    await assertSucceeds(getDoc(doc(as('mallory'), 'feed_posts/p1')));
+    await assertSucceeds(getDoc(doc(as('mallory'), 'feed_posts/p2')));
+  });
+
   // ---- share_attributions ----
 
   function attribution(overrides = {}) {

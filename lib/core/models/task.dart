@@ -69,6 +69,11 @@ class Task extends Equatable {
   /// player's grade queue. Empty for every judge-mode task.
   final Map<String, List<String>> peerGraders;
 
+  /// When this task became the game's current task. Group-graded games
+  /// (WP-13) start their 24 h lock window here, so a task nobody posts to
+  /// still expires. Null on tasks that never opened (and on legacy docs).
+  final DateTime? openedAt;
+
   const Task({
     required this.id,
     required this.title,
@@ -88,6 +93,7 @@ class Task extends Equatable {
     this.rubric,
     this.twist,
     this.peerGraders = const {},
+    this.openedAt,
   });
 
   factory Task.fromMap(Map<String, dynamic> map) {
@@ -141,6 +147,9 @@ class Task extends Equatable {
             ),
           ) ??
           const {},
+      openedAt: map['openedAt'] is String
+          ? DateTime.tryParse(map['openedAt'] as String)
+          : null,
     );
   }
 
@@ -167,6 +176,7 @@ class Task extends Equatable {
       'twist': twist,
       // Round-trip it: clients rewrite the whole tasks array.
       'peerGraders': peerGraders,
+      if (openedAt != null) 'openedAt': openedAt!.toUtc().toIso8601String(),
     };
   }
 
@@ -189,6 +199,7 @@ class Task extends Equatable {
     String? rubric,
     String? twist,
     Map<String, List<String>>? peerGraders,
+    DateTime? openedAt,
   }) {
     return Task(
       id: id ?? this.id,
@@ -209,6 +220,7 @@ class Task extends Equatable {
       rubric: rubric ?? this.rubric,
       twist: twist ?? this.twist,
       peerGraders: peerGraders ?? this.peerGraders,
+      openedAt: openedAt ?? this.openedAt,
     );
   }
 
@@ -311,5 +323,6 @@ class Task extends Equatable {
         rubric,
         twist,
         peerGraders,
+        openedAt,
       ];
 }

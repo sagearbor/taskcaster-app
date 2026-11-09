@@ -205,6 +205,31 @@ class InviteLinks {
     }
   }
 
+  /// The web launch URL's one-shot query params (`join`, `ref`, `task`,
+  /// `from`): once handled, they are stripped from the address bar so a
+  /// reload does not join / open the task again.
+  static const List<String> webLaunchParams = [
+    webJoinParam,
+    'ref',
+    webTaskParam,
+    fromParam,
+  ];
+
+  /// [uri] as a same-origin relative URL (path, remaining query, fragment)
+  /// with [webLaunchParams] removed, or null when it has none of them.
+  static String? withoutWebLaunchParams(Uri uri) {
+    final params = uri.queryParametersAll;
+    if (!webLaunchParams.any(params.containsKey)) return null;
+    final kept = {
+      for (final e in params.entries)
+        if (!webLaunchParams.contains(e.key)) e.key: e.value,
+    };
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    final query = kept.isEmpty ? '' : '?${Uri(queryParameters: kept).query}';
+    final fragment = uri.hasFragment ? '#${uri.fragment}' : '';
+    return '$path$query$fragment';
+  }
+
   static String? _idFrom(List<String> rest) {
     if (rest.length != 1) return null;
     return _validId(rest.first);
