@@ -116,6 +116,36 @@ void main() {
     expect(find.text('ART'), findsOneWidget);
   });
 
+  testWidgets('a house text/photo entry keeps its HOUSE chip', (tester) async {
+    await _pump(
+      tester,
+      PostCard(
+        post: _post(
+          isHouse: true,
+          mediaType: SubmissionMediaType.text,
+          text: 'The cat is also in the oven.',
+        ),
+      ),
+    );
+    expect(find.text('HOUSE'), findsOneWidget);
+  });
+
+  testWidgets('overlay is drawn over the media, footer stays visible',
+      (tester) async {
+    await _pump(
+      tester,
+      PostCard(
+        post: _post(photoData: _tinyPngBase64),
+        overlay: const ColoredBox(
+          key: Key('test-overlay'),
+          color: Colors.black54,
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('test-overlay')), findsOneWidget);
+    expect(find.text('Sophie'), findsOneWidget);
+  });
+
   testWidgets('no stamp sticker when stamp is null', (tester) async {
     await _pump(tester, PostCard(post: _post(stamp: null)));
     expect(find.byType(StampSticker), findsNothing);

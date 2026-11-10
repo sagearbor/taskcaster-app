@@ -42,6 +42,11 @@ class ArenaVideo extends StatefulWidget {
   /// burned in — do not draw a second one.
   final bool burnedIn;
 
+  /// Draw the `0:03 / 0:07` position pill when there is no countdown overlay.
+  /// Arena house posts turn it off: their burned-in clock is the only clock
+  /// the card should show.
+  final bool showPosition;
+
   /// Start playing as soon as the clip is ready. Muted regardless.
   final bool autoPlay;
 
@@ -62,6 +67,7 @@ class ArenaVideo extends StatefulWidget {
     this.clockOffsetSeconds,
     this.isLate = false,
     this.burnedIn = false,
+    this.showPosition = true,
     this.autoPlay = true,
     this.loop = true,
     this.onEnded,
@@ -292,21 +298,22 @@ class ArenaVideoState extends State<ArenaVideo> {
           left: 10,
           child: _SoundToggle(muted: _muted, onPressed: _toggleSound),
         ),
-        Positioned(
-          bottom: 10,
-          right: 10,
-          // House and montage clips carry the clock in their pixels; a clip
-          // with no task timer has no clock to draw. Either way the viewer
-          // still gets a position readout.
-          child: showCountdown
-              ? CountdownBurn(
-                  timerSeconds: widget.timerSeconds,
-                  clockOffsetSeconds: widget.clockOffsetSeconds,
-                  positionSeconds: _position,
-                  isLate: widget.isLate,
-                )
-              : _PositionPill(position: _position, end: capSeconds),
-        ),
+        if (showCountdown || widget.showPosition)
+          Positioned(
+            bottom: 10,
+            right: 10,
+            // House and montage clips carry the clock in their pixels; a clip
+            // with no task timer has no clock to draw. Either way the viewer
+            // still gets a position readout.
+            child: showCountdown
+                ? CountdownBurn(
+                    timerSeconds: widget.timerSeconds,
+                    clockOffsetSeconds: widget.clockOffsetSeconds,
+                    positionSeconds: _position,
+                    isLate: widget.isLate,
+                  )
+                : _PositionPill(position: _position, end: capSeconds),
+          ),
       ],
     );
   }

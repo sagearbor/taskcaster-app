@@ -15,9 +15,12 @@ import 'package:taskcaster_app/features/arena/domain/repositories/montage_reposi
 import 'package:taskcaster_app/features/arena/presentation/screens/arena_screen.dart';
 import 'package:taskcaster_app/features/arena/presentation/widgets/ad_slot_card.dart';
 import 'package:taskcaster_app/features/arena/presentation/widgets/grade_bar.dart';
+import 'package:taskcaster_app/features/arena/presentation/widgets/grade_reveal.dart';
 import 'package:taskcaster_app/features/arena/presentation/widgets/post_card.dart';
+import 'package:taskcaster_app/core/services/sfx/game_sfx.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 class MockFeedRepository extends Mock implements FeedRepository {}
 
@@ -27,6 +30,11 @@ FeedPost _post(
   String id, {
   String rubric = 'Emotional truth',
   String taskId = 'starter-01',
+  String displayName = 'Greg',
+  String text = 'A very sad potato.',
+  bool isHouse = false,
+  int gradeCount = 0,
+  int gradeSum = 0,
 }) {
   return FeedPost(
     id: id,
@@ -34,15 +42,37 @@ FeedPost _post(
     taskId: taskId,
     taskTitle: 'A vegetable that has just received terrible news',
     rubric: rubric,
-    userId: 'other-user',
-    displayName: 'Greg',
+    userId: isHouse ? 'house' : 'other-user',
+    displayName: isHouse ? StarterPackData.housePosterName : displayName,
     mediaType: SubmissionMediaType.text,
-    text: 'A very sad potato.',
+    text: text,
     caption: 'Done in 12 s',
     stamp: 'NAILED IT',
+    isHouse: isHouse,
     createdAt: DateTime(2026, 1, 1),
     elapsedSeconds: 12,
+    gradeCount: gradeCount,
+    gradeSum: gradeSum,
   );
+}
+
+class _RecordingSfx implements GameSfx {
+  final List<String> calls = [];
+
+  @override
+  void pop({double pitch = 1.0}) => calls.add('pop');
+  @override
+  void fanfare() => calls.add('fanfare');
+  @override
+  void boom() => calls.add('boom');
+  @override
+  void tick() => calls.add('tick');
+  @override
+  void go() => calls.add('go');
+  @override
+  void whoosh() => calls.add('whoosh');
+  @override
+  void sizzle() => calls.add('sizzle');
 }
 
 void main() {
@@ -88,8 +118,7 @@ void main() {
           graderId: any(named: 'graderId'),
           score: any(named: 'score'),
         )).thenAnswer((_) async {});
-    when(() => mockFeedRepository.boostPostsOf(any()))
-        .thenAnswer((_) async {});
+    when(() => mockFeedRepository.boostPostsOf(any())).thenAnswer((_) async {});
     when(() => mockFeedRepository.tapPost(
           any(),
           taps: any(named: 'taps'),
@@ -102,6 +131,8 @@ void main() {
     await queueController.close();
     authBloc.close();
     AdSlotCard.debugAlwaysShow = false;
+    ArenaScreen.debugOpenNextTask = null;
+    ArenaScreen.debugChallengeFriends = null;
   });
 
   // The Arena's loaded body is a scrollable column (a queue, not a fixed
@@ -303,11 +334,16 @@ void main() {
         ));
   });
 
-  testWidgets('isDone shows the "graded everything" copy with a Back button',
+  testWidgets(
+      'isDone: the next starter task is the primary button, Back a text link',
       (tester) async {
+    var opened = 0;
+    ArenaScreen.debugOpenNextTask = (_) async => opened++;
     await pumpArena(tester);
     await tester.pump();
-    unlockedController.add({'starter-01'});
+    // Task 1 of the pack (starter-09-v2, 30 s) is done; task 2 is next.
+    final pack = StarterPackData.tasks();
+    unlockedController.add({pack[0].id});
     await tester.pump();
     queueController.add([_post('p1')]);
     await tester.pump();
@@ -316,10 +352,309 @@ void main() {
     await tester.pump();
 
     expect(
-      find.textContaining("You've graded everything you've unlocked"),
+      find.text("You've graded everything you've unlocked."),
       findsOneWidget,
     );
-    expect(find.widgetWithText(OutlinedButton, 'Back'), findsOneWidget);
+    expect(find.text('Do the next task to unlock more.'), findsOneWidget);
+    expect(
+      find.widgetWithText(
+          FilledButton, 'Next task — ${pack[1].durationSeconds} s'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(TextButton, 'Back'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('arena-next-up')));
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  testWidgets(
+      'isDone with all ten done: tomorrow\'s daily task and Challenge friends',
+      (tester) async {
+    var challenged = 0;
+    ArenaScreen.debugChallengeFriends = (_) async => challenged++;
+    await pumpArena(tester);
+    await tester.pump();
+    unlockedController.add({for (final t in StarterPackData.tasks()) t.id});
+    await tester.pump();
+    queueController.add([_post('p1')]);
+    await tester.pump();
+
+    await tester.tap(find.text('Skip'));
+    await tester.pump();
+
+    expect(find.text('Come back tomorrow for the daily task.'), findsOneWidget);
+    expect(
+        find.widgetWithText(FilledButton, 'Challenge friends'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('arena-next-up')));
+    await tester.pump();
+    expect(challenged, 1);
+  });
+
+  testWidgets('empty-but-unlocked is not a dead end either', (tester) async {
+    await pumpArena(tester);
+    await tester.pump();
+    unlockedController.add({StarterPackData.tasks().first.id});
+    await tester.pump();
+    queueController.add(const []);
+    await tester.pump();
+
+    expect(find.byKey(const Key('arena-next-up')), findsOneWidget);
+    expect(find.textContaining('Next task — '), findsOneWidget);
+  });
+
+  testWidgets('Back on the next-up panel pops the Arena', (tester) async {
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      authBloc.add(AuthCheckRequested());
+      await authBloc.stream.firstWhere((s) => s is AuthAuthenticated);
+    });
+    await tester.pumpWidget(
+      BlocProvider<AuthBloc>.value(
+        value: authBloc,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ArenaScreen()),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump(const Duration(seconds: 1));
+    unlockedController.add({'starter-01'});
+    await tester.pump();
+    queueController.add(const []);
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(TextButton, 'Back'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(ArenaScreen), findsNothing);
+  });
+
+  group('grade reveal', () {
+    late _RecordingSfx sfx;
+
+    setUp(() {
+      sfx = _RecordingSfx();
+      sl.registerLazySingleton<GameSfx>(() => sfx);
+    });
+
+    Future<void> loadQueue(WidgetTester tester, List<FeedPost> posts,
+        {Size? size, double dpr = 1.0}) async {
+      await pumpArena(
+        tester,
+        physicalSize: size ?? const Size(800, 2000),
+        devicePixelRatio: dpr,
+      );
+      await tester.pump();
+      unlockedController.add({'starter-01'});
+      await tester.pump();
+      queueController.add(posts);
+      await tester.pump();
+    }
+
+    testWidgets(
+        'shows You vs the crowd mean INCLUDING your grade, then advances',
+        (tester) async {
+      // 11 earlier grades summing 33 (mean 3.0). You give 4:
+      // (33 + 4) / 12 = 3.08 -> "3.1", 12 grades, +0.92 -> GENEROUS.
+      await loadQueue(tester, [
+        _post('p1', gradeCount: 11, gradeSum: 33),
+        _post('p2', text: 'Second post'),
+      ]);
+
+      await tester.tap(find.text('4'));
+      await tester.pump();
+
+      expect(find.byType(GradeRevealOverlay), findsOneWidget);
+      expect(find.text('3.1'), findsOneWidget);
+      expect(find.text('12 grades'), findsOneWidget);
+      expect(find.text(GradeReveal.generous), findsOneWidget);
+      expect(find.text(GradeRevealOverlay.skipHint), findsOneWidget);
+      // The graded post is still the one on screen.
+      expect(find.text('A very sad potato.'), findsOneWidget);
+      // ...but the grade is already saved and counted: nobody waits on us.
+      expect(find.text('✓ 1 graded'), findsOneWidget);
+      verify(() => mockFeedRepository.gradePost(
+            postId: 'p1',
+            graderId: 'viewer-1',
+            score: 4,
+          )).called(1);
+
+      await tester.pump(ArenaScreen.revealHold);
+      await tester.pump();
+
+      expect(find.byType(GradeRevealOverlay), findsNothing);
+      expect(find.text('Second post'), findsOneWidget);
+    });
+
+    testWidgets('the reveal fully covers the media: an opaque scrim',
+        (tester) async {
+      await loadQueue(tester, [_post('p1', gradeCount: 2, gradeSum: 6)]);
+      await tester.tap(find.text('4'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final boxes = tester.widgetList<DecoratedBox>(find.descendant(
+        of: find.byType(GradeRevealOverlay),
+        matching: find.byType(DecoratedBox),
+      ));
+      final scrim = boxes.first.decoration as BoxDecoration;
+      final colors = scrim.gradient?.colors ?? [scrim.color!];
+      expect(colors.every((c) => c.alpha == 255), isTrue);
+    });
+
+    testWidgets('a tap anywhere skips the wait', (tester) async {
+      await loadQueue(tester, [
+        _post('p1', gradeCount: 2, gradeSum: 6),
+        _post('p2', text: 'Second post'),
+      ]);
+
+      await tester.tap(find.text('3'));
+      await tester.pump();
+      expect(find.byType(GradeRevealOverlay), findsOneWidget);
+
+      // Tapping a chip during the reveal only skips; it does not grade the
+      // next post blind.
+      await tester.tap(find.text('5'));
+      await tester.pump();
+
+      expect(find.byType(GradeRevealOverlay), findsNothing);
+      expect(find.text('Second post'), findsOneWidget);
+      expect(find.text('✓ 1 graded'), findsOneWidget);
+    });
+
+    testWidgets('within 0.5 of the crowd is IN TUNE', (tester) async {
+      // (4 + 4) / 2 = 4.0
+      await loadQueue(tester, [_post('p1', gradeCount: 1, gradeSum: 4)]);
+      await tester.tap(find.text('4'));
+      await tester.pump();
+
+      expect(find.text('4.0'), findsOneWidget);
+      expect(find.text('2 grades'), findsOneWidget);
+      expect(find.text(GradeReveal.inTune), findsOneWidget);
+    });
+
+    testWidgets('below the crowd is HARSH', (tester) async {
+      // (15 + 1) / 4 = 4.0, you said 1.
+      await loadQueue(tester, [_post('p1', gradeCount: 3, gradeSum: 15)]);
+      await tester.tap(find.text('1'));
+      await tester.pump();
+
+      expect(find.text('4.0'), findsOneWidget);
+      expect(find.text(GradeReveal.harsh), findsOneWidget);
+    });
+
+    testWidgets('the first grader sets the bar', (tester) async {
+      await loadQueue(tester, [_post('p1')]);
+      await tester.tap(find.text('2'));
+      await tester.pump();
+
+      expect(find.text(GradeReveal.firstGradeLine), findsOneWidget);
+      expect(find.text('CROWD'), findsNothing);
+      expect(find.text(GradeReveal.inTune), findsNothing);
+    });
+
+    testWidgets('after the last post the reveal plays, then the next-up panel',
+        (tester) async {
+      await loadQueue(tester, [_post('p1', gradeCount: 1, gradeSum: 3)]);
+      await tester.tap(find.text('3'));
+      await tester.pump();
+      expect(find.byType(GradeRevealOverlay), findsOneWidget);
+
+      await tester.pump(ArenaScreen.revealHold);
+      await tester.pump();
+      expect(find.byKey(const Key('arena-next-up')), findsOneWidget);
+    });
+
+    testWidgets('pop on every grade, fanfare when the crowd says 5',
+        (tester) async {
+      await loadQueue(tester, [
+        _post('p1', gradeCount: 1, gradeSum: 2),
+        _post('p2', gradeCount: 3, gradeSum: 15),
+      ]);
+
+      await tester.tap(find.text('3'));
+      await tester.pump();
+      expect(sfx.calls, ['pop']);
+
+      await tester.tap(find.text('Skip'), warnIfMissed: false);
+      await tester.pump();
+      await tester.tap(find.text('5'));
+      await tester.pump();
+      expect(sfx.calls, ['pop', 'pop', 'fanfare']);
+    });
+
+    for (final size in [
+      (const Size(390, 844), 3.0, '390x844@3x'),
+      (const Size(360, 640), 2.0, '360x640@2x'),
+    ]) {
+      testWidgets('reveal has no overflow at ${size.$3}', (tester) async {
+        await loadQueue(
+          tester,
+          [_post('p1', gradeCount: 11, gradeSum: 33)],
+          size: size.$1 * size.$2,
+          dpr: size.$2,
+        );
+        await tester.ensureVisible(find.text('4'));
+        await tester.pump();
+        await tester.tap(find.text('4'));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.takeException(), isNull);
+        expect(find.byType(GradeRevealOverlay), findsOneWidget);
+
+        await tester.pump(ArenaScreen.revealHold);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('arena-next-up')), findsOneWidget);
+      });
+    }
+  });
+
+  group('tease header', () {
+    Future<void> tease(WidgetTester tester, List<FeedPost> posts) async {
+      await pumpArena(tester);
+      await tester.pump();
+      unlockedController.add(<String>{});
+      await tester.pump();
+      queueController.add(posts);
+      await tester.pump();
+    }
+
+    testWidgets('only the house entry: name the robot, not everyone',
+        (tester) async {
+      await tease(tester, [
+        _post('h1', taskId: 'starter-09-v2', isHouse: true),
+      ]);
+      expect(find.text("How Greg's assistant did on task 1"), findsOneWidget);
+      expect(find.text('How everyone else did on task 1'), findsNothing);
+    });
+
+    testWidgets('one player plus the house names both', (tester) async {
+      await tease(tester, [
+        _post('p1', taskId: 'starter-09-v2', displayName: 'Sophie'),
+        _post('h1', taskId: 'starter-09-v2', isHouse: true),
+      ]);
+      expect(find.text("How Sophie and Greg's assistant did on task 1"),
+          findsOneWidget);
+    });
+
+    testWidgets('two or more players: everyone else', (tester) async {
+      await tease(tester, [
+        _post('p1', taskId: 'starter-09-v2'),
+        _post('p2', taskId: 'starter-09-v2'),
+        _post('h1', taskId: 'starter-09-v2', isHouse: true),
+      ]);
+      expect(find.text('How everyone else did on task 1'), findsOneWidget);
+    });
   });
 
   testWidgets('shows the ad slot before the 6th post when ads are visible',
@@ -380,6 +715,9 @@ void main() {
 
     for (var i = 0; i < 3; i++) {
       await tester.tap(find.text('4'));
+      await tester.pump();
+      // Skip the grade reveal (any tap does it).
+      await tester.tap(find.byKey(const Key('arena-reveal-skip')));
       await tester.pump();
     }
 

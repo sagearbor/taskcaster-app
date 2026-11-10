@@ -1,13 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../../core/config/environment.dart';
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/services/sfx/game_sfx.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../games/domain/repositories/game_repository.dart';
+import '../../../games/presentation/bloc/games_bloc.dart';
+import '../../../games/presentation/screens/game_detail_screen.dart';
+import '../../../games/presentation/screens/task_execution_screen.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
+import '../../domain/models/feed_post.dart';
 import '../../domain/models/montage.dart';
 import '../../domain/repositories/feed_repository.dart';
 import '../bloc/arena_bloc.dart';
@@ -16,6 +25,7 @@ import '../bloc/arena_state.dart';
 import '../widgets/ad_slot_card.dart';
 import '../widgets/finale_card.dart';
 import '../widgets/grade_bar.dart';
+import '../widgets/grade_reveal.dart';
 import '../widgets/post_card.dart';
 
 /// The Arena: a watch-and-grade queue, one post at a time, gated to tasks the
@@ -32,11 +42,21 @@ class ArenaScreen extends StatelessWidget {
   /// task they came from.
   static const String yourTurnResult = 'your-turn';
 
+  /// How long the grade reveal holds before the next post slides in. Any tap
+  /// skips it.
+  static const Duration revealHold = Duration(milliseconds: 1200);
+
+  /// Test hooks for the "nothing left to grade" buttons. Null in the app,
+  /// which opens the real task / lobby screens.
+  @visibleForTesting
+  static Future<void> Function(BuildContext context)? debugOpenNextTask;
+  @visibleForTesting
+  static Future<void> Function(BuildContext context)? debugChallengeFriends;
+
   @override
   Widget build(BuildContext context) {
     final authState = context.read<AuthBloc>().state;
-    final viewerId =
-        authState is AuthAuthenticated ? authState.user.id : '';
+    final viewerId = authState is AuthAuthenticated ? authState.user.id : '';
 
     return BlocProvider(
       create: (_) => ArenaBloc(feedRepository: sl<FeedRepository>())
@@ -138,6 +158,11 @@ class _ArenaEmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!nothingUnlocked) {
+      return const _NextUpPanel(
+        title: 'Nothing new to grade right now — check back soon.',
+      );
+    }
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -147,23 +172,206 @@ class _ArenaEmptyView extends StatelessWidget {
             const Icon(Icons.theater_comedy, size: 72, color: AppTheme.violet),
             const SizedBox(height: 24),
             Text(
-              nothingUnlocked
-                  ? 'Post yours to unlock everyone else\'s'
-                  : 'Nothing new to grade right now — check back soon.',
+              'Post yours to unlock everyone else\'s',
               style: Theme.of(context).textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
-            if (nothingUnlocked) ...[
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Do a task'),
-              ),
-            ],
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Do a task'),
+            ),
           ],
         ),
       ),
     );
+  }
+}
+
+/// The end of the queue is never a dead end: the primary button is the next
+/// Starter Pack task (which is also what unlocks more to grade). With all ten
+/// done it points at tomorrow's daily task and at friends instead. Back stays
+/// as a quiet text link.
+class _NextUpPanel extends StatefulWidget {
+  final String title;
+
+  const _NextUpPanel({required this.title});
+
+  @override
+  State<_NextUpPanel> createState() => _NextUpPanelState();
+}
+
+class _NextUpPanelState extends State<_NextUpPanel> {
+  bool _busy = false;
+
+  /// The first Starter Pack task the viewer has not posted to, or null once
+  /// all ten are done. Posts are the record of what was submitted, so the
+  /// Arena's unlocked set answers this without a game read.
+  static int? _nextStarterSeconds(Set<String> unlocked) {
+    for (final t in StarterPackData.tasks()) {
+      if (!unlocked.contains(t.id)) return t.durationSeconds;
+    }
+    return null;
+  }
+
+  Future<void> _run(Future<void> Function(BuildContext) action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action(context);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final unlocked = context.read<ArenaBloc>().unlockedTaskIds;
+    final seconds = _nextStarterSeconds(unlocked);
+    final allDone = seconds == null;
+
+    final primaryLabel =
+        allDone ? 'Challenge friends' : 'Next task — $seconds s';
+    final primaryAction = allDone
+        ? (ArenaScreen.debugChallengeFriends ?? _challengeFriends)
+        : (ArenaScreen.debugOpenNextTask ?? _openNextTask);
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.theater_comedy, size: 64, color: AppTheme.violet),
+            const SizedBox(height: 20),
+            Text(
+              widget.title,
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              allDone
+                  ? 'Come back tomorrow for the daily task.'
+                  : 'Do the next task to unlock more.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton(
+                key: const Key('arena-next-up'),
+                onPressed: _busy ? null : () => _run(primaryAction),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.coral,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: _busy
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        primaryLabel,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Back'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens the player's next unsubmitted Starter Pack task with the clock
+  /// armed, replacing everything above Home so the back stack stays short.
+  static Future<void> _openNextTask(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final bloc = GamesBloc(
+      gameRepository: sl<GameRepository>(),
+      authRepository: sl<AuthRepository>(),
+    )..add(const StartStarterPack());
+    try {
+      await for (final state in bloc.stream) {
+        if (state is StarterPackReady) {
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => TaskExecutionScreen(
+                gameId: state.gameId,
+                taskIndex: state.taskIndex,
+                autoStart: true,
+              ),
+            ),
+            (route) => route.isFirst,
+          );
+          break;
+        }
+        if (state is GamesError) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text("Couldn't open your next task.")),
+          );
+          break;
+        }
+      }
+    } finally {
+      await bloc.close();
+    }
+  }
+
+  /// Creates a "Challenge friends" game and lands in its lobby with the
+  /// invite sheet already up — same as Home's all-done hero.
+  static Future<void> _challengeFriends(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final bloc = GamesBloc(
+      gameRepository: sl<GameRepository>(),
+      authRepository: sl<AuthRepository>(),
+    )..add(const ChallengeFriends());
+    try {
+      await for (final state in bloc.stream) {
+        if (state is ChallengeFriendsReady) {
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => GameDetailScreen(
+                gameId: state.gameId,
+                promptShareOnLoad: true,
+              ),
+            ),
+            (route) => route.isFirst,
+          );
+          break;
+        }
+        if (state is GamesError) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text("Couldn't set up the challenge.")),
+          );
+          break;
+        }
+      }
+    } finally {
+      await bloc.close();
+    }
   }
 }
 
@@ -203,7 +411,7 @@ class _ArenaTeaserViewState extends State<_ArenaTeaserView> {
                   child: Text(
                     posts.isEmpty
                         ? 'Post yours to unlock everyone else\'s'
-                        : 'How everyone else did on task 1',
+                        : teaserHeader(posts),
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
@@ -230,7 +438,8 @@ class _ArenaTeaserViewState extends State<_ArenaTeaserView> {
                     child: Row(
                       children: [
                         Icon(Icons.lock_outline,
-                            size: 16, color: theme.colorScheme.onSurfaceVariant),
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -266,8 +475,8 @@ class _ArenaTeaserViewState extends State<_ArenaTeaserView> {
                 height: 56,
                 child: FilledButton(
                   key: const Key('arena-your-turn'),
-                  onPressed: () => Navigator.of(context)
-                      .pop(ArenaScreen.yourTurnResult),
+                  onPressed: () =>
+                      Navigator.of(context).pop(ArenaScreen.yourTurnResult),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppTheme.coral,
                     foregroundColor: Colors.white,
@@ -287,6 +496,22 @@ class _ArenaTeaserViewState extends State<_ArenaTeaserView> {
         ),
       ],
     );
+  }
+
+  /// Only claim "everyone else" when there is a crowd: two or more real
+  /// players. One robot is "Greg's assistant", not everyone.
+  static String teaserHeader(List<FeedPost> posts) {
+    final players = posts.where((p) => !p.isHouse).toList();
+    if (players.length >= 2) return 'How everyone else did on task 1';
+    final hasHouse = players.length < posts.length;
+    final names = [
+      if (players.isNotEmpty)
+        players.single.displayName.trim().isEmpty
+            ? 'a stranger'
+            : players.single.displayName.trim(),
+      if (hasHouse) StarterPackData.housePosterName,
+    ];
+    return 'How ${names.join(' and ')} did on task 1';
   }
 
   static int? _durationFor(String taskId) {
@@ -320,45 +545,60 @@ class _ArenaLoadedBodyState extends State<_ArenaLoadedBody> {
     return isCadenceHit && _adConsumedForIndex != index;
   }
 
+  /// The post just graded, held on screen with the crowd's verdict over it.
+  /// The bloc has already moved on (the grade is saved and counted the moment
+  /// it is tapped); this only delays what the viewer SEES next.
+  GradeReveal? _reveal;
+  Timer? _revealTimer;
+
+  GameSfx? get _sfx => sl.isRegistered<GameSfx>() ? sl<GameSfx>() : null;
+
+  void _grade(FeedPost post, int score) {
+    final reveal = GradeReveal.of(post, score);
+    _sfx?.pop();
+    if (reveal.isCrowdFive) _sfx?.fanfare();
+    context.read<ArenaBloc>().add(GradeCurrent(score: score));
+    _revealTimer?.cancel();
+    _revealTimer = Timer(ArenaScreen.revealHold, _endReveal);
+    setState(() => _reveal = reveal);
+  }
+
+  void _endReveal() {
+    _revealTimer?.cancel();
+    _revealTimer = null;
+    if (mounted && _reveal != null) setState(() => _reveal = null);
+  }
+
+  @override
+  void dispose() {
+    _revealTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
+    final reveal = _reveal;
 
-    if (state.isDone) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                "You've graded everything you've unlocked. Do the next "
-                'task to unlock more.',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Back'),
-              ),
-            ],
+    if (reveal == null) {
+      if (state.isDone) {
+        return const _NextUpPanel(
+          title: "You've graded everything you've unlocked.",
+        );
+      }
+
+      final index = state.index;
+      if (_shouldShowAdFor(index)) {
+        return SingleChildScrollView(
+          child: AdSlotCard(
+            onContinue: () => setState(() => _adConsumedForIndex = index),
           ),
-        ),
-      );
+        );
+      }
     }
 
-    final index = state.index;
-    if (_shouldShowAdFor(index)) {
-      return SingleChildScrollView(
-        child: AdSlotCard(
-          onContinue: () => setState(() => _adConsumedForIndex = index),
-        ),
-      );
-    }
-
-    final post = state.current!;
-    return SingleChildScrollView(
+    final post = reveal?.post ?? state.current!;
+    final body = SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 24),
       child: Column(
         key: ValueKey(post.id),
@@ -377,9 +617,11 @@ class _ArenaLoadedBodyState extends State<_ArenaLoadedBody> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: PostCard(
               post: post,
-              onTap: (atSecond) => context
-                  .read<ArenaBloc>()
-                  .add(TapCurrent(atSecond: atSecond)),
+              onTap: (atSecond) =>
+                  context.read<ArenaBloc>().add(TapCurrent(atSecond: atSecond)),
+              // Over the media only, so the name and caption stay readable.
+              overlay:
+                  reveal == null ? null : GradeRevealOverlay(reveal: reveal),
             ),
           ),
           Padding(
@@ -393,8 +635,8 @@ class _ArenaLoadedBodyState extends State<_ArenaLoadedBody> {
                 ),
                 const SizedBox(height: 12),
                 GradeBar(
-                  onGrade: (score) =>
-                      context.read<ArenaBloc>().add(GradeCurrent(score: score)),
+                  selected: reveal?.you,
+                  onGrade: (score) => _grade(post, score),
                 ),
                 Center(
                   child: TextButton(
@@ -408,6 +650,17 @@ class _ArenaLoadedBodyState extends State<_ArenaLoadedBody> {
           ),
         ],
       ),
+    );
+
+    // While the reveal holds, the whole screen is one big "skip" button: a
+    // fast grader taps once and is on the next post. The wrapper is always
+    // there (just inert without a reveal) so the card and grade bar keep
+    // their state — the clip does not restart and the chip still bounces.
+    return GestureDetector(
+      key: const Key('arena-reveal-skip'),
+      behavior: HitTestBehavior.translucent,
+      onTap: reveal == null ? null : _endReveal,
+      child: AbsorbPointer(absorbing: reveal != null, child: body),
     );
   }
 }
