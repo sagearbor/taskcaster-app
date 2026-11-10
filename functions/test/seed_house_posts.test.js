@@ -79,21 +79,30 @@ test('startingGrade accepts only a sane 1-5 pair', () => {
   assert.deepEqual(startingGrade({}), {gradeCount: 0, gradeSum: 0});
 });
 
-test('house_posts.json: four per starter task, entry 0 keeps the legacy id, no ART on a video', () => {
+test('house_posts.json: four per starter task, two per daily task, entry 0 keeps the legacy id, no ART on a video', () => {
   const posts = loadHousePosts();
   const byTask = new Map();
   for (const p of posts) {
     if (!byTask.has(p.taskId)) byTask.set(p.taskId, []);
     byTask.get(p.taskId).push(p);
   }
-  assert.equal(byTask.size, 10);
+  const starter = [...byTask.keys()].filter((id) => id.startsWith('starter-'));
+  const daily = [...byTask.keys()].filter((id) => id.startsWith('daily-'));
+  assert.equal(starter.length, 10);
+  assert.equal(daily.length, 30);
+  assert.equal(byTask.size, 40);
   for (const [taskId, list] of byTask) {
-    assert.deepEqual(list.map((p) => p.id),
-      [`house-${taskId}`, `house-${taskId}-1`, `house-${taskId}-2`, `house-${taskId}-3`]);
-    assert.equal(new Set(list.map((p) => p.displayName)).size, 4, taskId);
-    assert.equal(new Set(list.map((p) => p.stamp)).size, 4, taskId);
+    const n = taskId.startsWith('daily-') ? 2 : 4;
+    const ids = [`house-${taskId}`];
+    for (let k = 1; k < n; k++) ids.push(`house-${taskId}-${k}`);
+    assert.deepEqual(list.map((p) => p.id), ids);
+    assert.equal(new Set(list.map((p) => p.displayName)).size, n, taskId);
+    assert.equal(new Set(list.map((p) => p.stamp)).size, n, taskId);
+    assert.equal(list[0].displayName, "Greg's assistant", taskId);
     for (const p of list) {
       if (p.mediaType === 'video') assert.notEqual(p.stamp, 'ART', p.id);
+      // Daily house entries are text: there are no seeded daily clips.
+      if (taskId.startsWith('daily-')) assert.equal(p.mediaType, 'text', p.id);
       const start = startingGrade(p);
       assert.ok(start.gradeCount >= 4 && start.gradeCount <= 30, p.id);
     }

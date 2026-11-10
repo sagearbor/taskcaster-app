@@ -241,7 +241,6 @@ class _StarterRecapViewState extends State<StarterRecapView>
     final locked = entries.where((e) => e.lockedScore != null).toList();
     final total = locked.fold<int>(0, (a, e) => a + e.lockedScore!);
     final next = entries.where((e) => !e.posted).firstOrNull;
-    final isStarter = widget.game.isStarter;
 
     return ListView(
       key: const Key('starter-recap'),
@@ -255,7 +254,9 @@ class _StarterRecapViewState extends State<StarterRecapView>
           const SizedBox(height: 14),
         ],
         _RecapHeader(
-          title: isStarter ? 'Your First Ten' : widget.game.gameName,
+          // The app bar already names the game ("Your First Ten"); the card
+          // says what it shows instead of repeating it.
+          title: 'Your score',
           posted: postedCount,
           taskCount: entries.length,
           lockedCount: locked.length,

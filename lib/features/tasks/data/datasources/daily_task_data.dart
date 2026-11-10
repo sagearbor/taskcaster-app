@@ -1,4 +1,6 @@
 import '../../../../core/models/task.dart';
+import '../../../arena/domain/models/feed_post.dart' show Stamps;
+import 'starter_pack_data.dart' show HouseEntry, StarterPackData;
 
 /// The Daily Task (WP-6): one task a day, the same for everyone on Earth.
 ///
@@ -410,6 +412,609 @@ class DailyTaskData {
           durationSeconds: 90,
         ),
       ];
+
+  // ---- House entries -----------------------------------------------------
+
+  /// Two seeded house entries per daily task, so the first player of the day
+  /// who unlocks it sees a small crowd rather than an empty Arena.
+  ///
+  /// Entry 0 is always [StarterPackData.housePosterName]; entry 1 rotates
+  /// through the starter pack's personas by task number: daily-01 is
+  /// [StarterPackData.auntPam], daily-02 [StarterPackData.theIntern],
+  /// daily-03 [StarterPackData.daveFromAccounts], and round again. Every
+  /// daily house entry is a TEXT post, video tasks included (there are no
+  /// seeded clips for the daily pool).
+  ///
+  /// Seeded on Firestore by functions/scripts/seed_house_posts.js from
+  /// functions/scripts/house_posts.json, which
+  /// test/features/arena/data/house_posts_seed_test.dart keeps in step.
+  static const Map<String, List<HouseEntry>> houseEntries = {
+    'daily-01': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'The toaster. Shot from below, it looks ready to promise '
+            'lower taxes and deliver crumbs.',
+        stamp: Stamps.art,
+        gradeCount: 21,
+        gradeSum: 86,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'I photographed the cat from below. She was not '
+            'addressing a rally. She was addressing me, and I have '
+            'agreed to her terms.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 9,
+        gradeSum: 29,
+      ),
+    ],
+    'daily-02': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: '★☆☆☆☆ Sits on me for nine hours, then goes to bed. Eats '
+            'over me. Loses coins in me as if I were a bank. I will '
+            'admit the posture is excellent, because I am doing all '
+            'of it.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 24,
+        gradeSum: 97,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: '★☆☆☆☆ Sorted my cushions by colour, then by firmness, '
+            'then by colour again. Grudgingly: hoovers under me '
+            'weekly, with a spreadsheet.',
+        stamp: Stamps.technically,
+        gradeCount: 13,
+        gradeSum: 48,
+      ),
+    ],
+    'daily-03': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Left: \'Charmed.\' Right: \'Likewise.\' Two seconds from the '
+            'end the right hand opens. It has been holding the remote '
+            'this whole time.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 19,
+        gradeSum: 74,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'They shook. The secret was that they are the same '
+            'person.',
+        stamp: Stamps.noRegrets,
+        gradeCount: 7,
+        gradeSum: 19,
+      ),
+    ],
+    'daily-04': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Victim: one fish finger, face down in ketchup. Suspect: '
+            'the other fish finger, still warm. Weapon: a breadstick, '
+            'half eaten. He destroyed the evidence the only way he '
+            'knew how.',
+        stamp: Stamps.art,
+        gradeCount: 22,
+        gradeSum: 91,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'Victim: a grape. Suspect: another grape. I could not '
+            'tell them apart afterwards, so I let them both go. The '
+            'weapon was a biscuit and I ate it to be safe.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 10,
+        gradeSum: 31,
+      ),
+    ],
+    'daily-05': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'I sit before a glowing slate and move small words from '
+            'one box into another box. The lord pays me in coin and '
+            'in meetings.',
+        stamp: Stamps.technically,
+        gradeCount: 18,
+        gradeSum: 69,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'I am a scribe of the counting house, keeper of the great '
+            'ledger. I have written the same letter four times '
+            'because the abbot changed his mind. I also make the '
+            'abbot\'s ale.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 15,
+        gradeSum: 58,
+      ),
+    ],
+    'daily-06': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'A single paperclip on black velvet (a sock). The blur in '
+            'the foreground is my thumb, which the crowd has agreed '
+            'is couture.',
+        stamp: Stamps.art,
+        gradeCount: 20,
+        gradeSum: 83,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'A teabag. The blur is the rest of my life.',
+        stamp: Stamps.noRegrets,
+        gradeCount: 11,
+        gradeSum: 40,
+      ),
+    ],
+    'daily-07': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Forty seconds of excellent points, made with real '
+            'passion. The door waited, then closed itself very '
+            'slowly. Creak. The door won.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 21,
+        gradeSum: 80,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'I apologised to the door halfway through, which I think '
+            'was a mistake. It creaked in a way I took as '
+            'forgiveness. My husband says it was the wind.',
+        stamp: Stamps.technically,
+        gradeCount: 9,
+        gradeSum: 27,
+      ),
+    ],
+    'daily-08': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Little Red Riding Hood is visiting her grandmother and '
+            'has no signal in the woods. For anything urgent, please '
+            'contact Grandmother, who has been acting strangely and '
+            'has very big ears.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 26,
+        gradeSum: 108,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'Rapunzel is out of the tower until further notice. For '
+            'access requests, contact the witch. I have attached an '
+            'FAQ, an org chart and a ladder.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 12,
+        gradeSum: 45,
+      ),
+    ],
+    'daily-09': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'The lord of the house gazes into the middle distance. '
+            'The sock, his heir, stares straight down the lens, as if '
+            'it already knows about the will.',
+        stamp: Stamps.art,
+        gradeCount: 23,
+        gradeSum: 95,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'Me, looking at the wall. The sock, looking at you. It '
+            'has been like that since Tuesday.',
+        stamp: Stamps.technically,
+        gradeCount: 8,
+        gradeSum: 23,
+      ),
+    ],
+    'daily-10': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Band: The Neighbour\'s Bins. Album: Wednesday, Probably. '
+            'Track one: \'Who Parks Like That\'.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 22,
+        gradeSum: 88,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'Band: A Lovely Tree. Album: Nice Day for It. Track one: '
+            '\'The Gutter Wants Doing (and You Said You Would Do It in '
+            'March)\'.',
+        stamp: Stamps.noRegrets,
+        gradeCount: 10,
+        gradeSum: 34,
+      ),
+    ],
+    'daily-11': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: '\'Wheat flour... palm oil... sugar...\' He made it as far '
+            'as \'emulsifier E471\' before collapsing. The last '
+            'ingredient was salt, and so were the tears.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 20,
+        gradeSum: 79,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'Read all 34 ingredients of a stock cube in a cape. Wept '
+            'on cue at \'yeast extract\'. Also did the French side, '
+            'unprompted.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 14,
+        gradeSum: 55,
+      ),
+    ],
+    'daily-12': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Six mugs turned towards the kettle, which has just '
+            'admitted it never liked tea. A gap in the second row '
+            'where a seventh mug walked out.',
+        stamp: Stamps.art,
+        gradeCount: 19,
+        gradeSum: 77,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'Six forks facing the calculator. One fork has gone home.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 9,
+        gradeSum: 30,
+      ),
+    ],
+    'daily-13': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'You will finally find what you were looking for, and it '
+            'will be smaller than you remember. Lucky numbers: 4, 11, '
+            '-2, 38.',
+        stamp: Stamps.technically,
+        gradeCount: 21,
+        gradeSum: 83,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'A stranger will bring you news of a parcel. Do not let '
+            'them in. Lucky numbers: 7, 14, -1 (this is your bank '
+            'balance, dear).',
+        stamp: Stamps.noRegrets,
+        gradeCount: 11,
+        gradeSum: 36,
+      ),
+    ],
+    'daily-14': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Eyebrows to the ceiling. Searched the fridge, the bread '
+            'bin and, very thoroughly, the inside of a single grape. '
+            'The keys were in the door the whole time.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 24,
+        gradeSum: 94,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'Four acts, title cards, a piano score I hummed myself. '
+            'Searched the freezer drawer by drawer. The keys were in '
+            'my hand, which was the twist I set up in act one.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 13,
+        gradeSum: 51,
+      ),
+    ],
+    'daily-15': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Jeans for a jaw, a striped jumper for hair and a satsuma '
+            'for a nose. Mother says the likeness is uncanny. Mother '
+            'has not called since.',
+        stamp: Stamps.art,
+        gradeCount: 22,
+        gradeSum: 90,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'Grey T-shirt. Grey T-shirt. Remote control for a nose. '
+            'It is me.',
+        stamp: Stamps.technically,
+        gradeCount: 10,
+        gradeSum: 33,
+      ),
+    ],
+    'daily-16': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Listen carefully. In 2019 you will be offered the middle '
+            'seat on a train to Didcot. Do not take it. Stand. '
+            'Everything depends on this.',
+        stamp: Stamps.noRegrets,
+        gradeCount: 20,
+        gradeSum: 82,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'Darling, the blue Tupperware lid does not fit the blue '
+            'Tupperware. It never will. Buy the green one. Tell no '
+            'one I contacted you.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 12,
+        gradeSum: 41,
+      ),
+    ],
+    'daily-17': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Two clothes pegs for eyebrows and a fork for a mouth, '
+            'angled down. It looks at me the way my driving '
+            'instructor did.',
+        stamp: Stamps.art,
+        gradeCount: 21,
+        gradeSum: 85,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'Twelve iterations. Final face: two USB sticks and a '
+            'bookmark, mouth at precisely 14 degrees of '
+            'disappointment. I asked it for feedback. It had some.',
+        stamp: Stamps.technically,
+        gradeCount: 11,
+        gradeSum: 39,
+      ),
+    ],
+    'daily-18': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: '\'Locally sourced. Hand-poured. Clear as the day it left '
+            'the pipe.\' Ninety seconds of charm, then the price: '
+            '£2,400, or four easy payments of £900.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 25,
+        gradeSum: 101,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: '\'Water.\' Holds up glass. \'Eleven thousand pounds.\'',
+        stamp: Stamps.noRegrets,
+        gradeCount: 9,
+        gradeSum: 31,
+      ),
+    ],
+    'daily-19': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'I have your left sock,\nthe pen you swore was '
+            'stolen.\nSleep well, Big Kevin.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 23,
+        gradeSum: 92,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'Under my bed lives\nonly a hoover and some\nleaflets. '
+            'Night, Chuckles.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 10,
+        gradeSum: 30,
+      ),
+    ],
+    'daily-20': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Meet Bolt: a whisk for a body, four corkscrew legs, an '
+            'egg-timer heart. Photographed chewing the oven manual. '
+            'He has been told.',
+        stamp: Stamps.art,
+        gradeCount: 22,
+        gradeSum: 87,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'Built a fully poseable dog from the cutlery drawer, with '
+            'a tea-towel blanket and a microchip (a SIM card). Caught '
+            'on the sofa. Vet booked for Tuesday.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 12,
+        gradeSum: 46,
+      ),
+    ],
+    'daily-21': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'One minute fifty of swirling a coin and staring '
+            'meaningfully. In the last two seconds the coin falls out '
+            'of my sleeve. I bowed anyway.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 22,
+        gradeSum: 85,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'Spoon. Two minutes. Still a spoon. Bowed.',
+        stamp: Stamps.technically,
+        gradeCount: 9,
+        gradeSum: 28,
+      ),
+    ],
+    'daily-22': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: '\'What news of the milk? Hath it been fetched, or doth it '
+            'linger yet in yonder Co-op?\' [Exit, pursued by a reply '
+            'that just says \'k\'.]',
+        stamp: Stamps.nailedIt,
+        gradeCount: 24,
+        gradeSum: 99,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: '\'Good morrow, my son. Didst thou receive the photo of '
+            'the dog? It is the same dog as yesterday.\' [She sends it '
+            'again.]',
+        stamp: Stamps.noRegrets,
+        gradeCount: 11,
+        gradeSum: 38,
+      ),
+    ],
+    'daily-23': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Feet in a washing-up bowl of sand, a beach towel, '
+            'sunglasses on the cat. In the corner, quite clearly, a '
+            'radiator.',
+        stamp: Stamps.technically,
+        gradeCount: 21,
+        gradeSum: 80,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'Ring light at 5600K, a sand-coloured duvet, wave sounds '
+            'on the laptop and a cocktail umbrella I folded myself. '
+            'Left my lanyard on. It says Swindon.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 13,
+        gradeSum: 49,
+      ),
+    ],
+    'daily-24': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'The Hoover Shuffle: push, pull, apologise to the '
+            'skirting board. At full speed it looks like grief, but '
+            'in a good way.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 20,
+        gradeSum: 78,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'The Dishwasher. Bend. Stare. Close it again. It cleared '
+            'the floor.',
+        stamp: Stamps.noRegrets,
+        gradeCount: 8,
+        gradeSum: 25,
+      ),
+    ],
+    'daily-25': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Warning: may contain opinions about parking. Do not '
+            'operate before coffee. Store in a cool, dark room with '
+            'the curtains shut until noon.',
+        stamp: Stamps.technically,
+        gradeCount: 23,
+        gradeSum: 90,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'Warning: will tell you about her knee. Contains nuts '
+            '(the family). Store upright in a warm kitchen, near the '
+            'biscuit tin.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 12,
+        gradeSum: 40,
+      ),
+    ],
+    'daily-26': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'Titanic. The pillow at the bow, arms out (its corners). '
+            'Me behind it, holding on, gazing at the horizon of my '
+            'hallway.',
+        stamp: Stamps.art,
+        gradeCount: 24,
+        gradeSum: 98,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'A full Notting Hill recreation: matching font, credits '
+            'block, a five-star quote I wrote myself. The pillow got '
+            'top billing. I got the note \'more chemistry\'.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 14,
+        gradeSum: 53,
+      ),
+    ],
+    'daily-27': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'To whoever keeps opening me \'just to look\': I am not a '
+            'television. There is nothing new. There was nothing new '
+            'an hour ago. Regards, The Fridge.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 26,
+        gradeSum: 105,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'Someone knows. (Toaster)',
+        stamp: Stamps.dontAsk,
+        gradeCount: 10,
+        gradeSum: 34,
+      ),
+    ],
+    'daily-28': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: '\'Bijou. Characterful. South-facing, if you turn round.\' '
+            'Ends on the damp patch: \'and here, a feature wall that '
+            'changes with the seasons.\'',
+        stamp: Stamps.technically,
+        gradeCount: 22,
+        gradeSum: 86,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.auntPam,
+        text: 'I got so carried away I made an offer on my own spare '
+            'room. The flaw is the boiler. I called it vintage, then '
+            'I cried a little.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 10,
+        gradeSum: 32,
+      ),
+    ],
+    'daily-29': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'A banana with one bruise for every bad decision, propped '
+            'up beside the fruit bowl it was not invited into. Still '
+            'smiling (felt tip).',
+        stamp: Stamps.noRegrets,
+        gradeCount: 21,
+        gradeSum: 84,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.theIntern,
+        text: 'Brought a stapler out of retirement and gave it a tiny '
+            'cup of coffee and a badge that says \'Here to help\'. It '
+            'is out of staples. It is still here to help.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 15,
+        gradeSum: 57,
+      ),
+    ],
+    'daily-30': [
+      HouseEntry(
+        posterName: StarterPackData.housePosterName,
+        text: 'I accept this award for Putting the Bins Out, which I '
+            'did today, mostly on time. I would like to thank my '
+            'neighbour, who parked in the exact spot I needed and '
+            'then stood there watching.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 23,
+        gradeSum: 93,
+      ),
+      HouseEntry(
+        posterName: StarterPackData.daveFromAccounts,
+        text: 'For making toast. Thanks to the toaster, for nothing.',
+        stamp: Stamps.technically,
+        gradeCount: 9,
+        gradeSum: 29,
+      ),
+    ],
+  };
 
   // ---- Days ---------------------------------------------------------------
 

@@ -27,7 +27,10 @@ class _SfxMuteButtonState extends State<SfxMuteButton> {
         key: const Key('sfx-mute-toggle'),
         tooltip: muted ? 'Sound off. Tap for sound' : 'Sound on. Tap to mute',
         iconSize: 22,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        // It lives in the app bar: drawn in the bar's foreground colour
+        // (white on violet), never body ink, which read grey-on-violet.
+        color: Theme.of(context).appBarTheme.foregroundColor ??
+            Theme.of(context).colorScheme.onPrimary,
         icon: Icon(
           muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
         ),

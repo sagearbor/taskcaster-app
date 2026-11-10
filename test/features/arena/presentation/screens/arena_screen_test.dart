@@ -20,6 +20,7 @@ import 'package:taskcaster_app/features/arena/presentation/widgets/post_card.dar
 import 'package:taskcaster_app/core/services/sfx/game_sfx.dart';
 import 'package:taskcaster_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/daily_task_data.dart';
 import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 class MockFeedRepository extends Mock implements FeedRepository {}
@@ -73,6 +74,8 @@ class _RecordingSfx implements GameSfx {
   void whoosh() => calls.add('whoosh');
   @override
   void sizzle() => calls.add('sizzle');
+  @override
+  void prime() {}
 }
 
 void main() {
@@ -133,6 +136,8 @@ void main() {
     AdSlotCard.debugAlwaysShow = false;
     ArenaScreen.debugOpenNextTask = null;
     ArenaScreen.debugChallengeFriends = null;
+    ArenaScreen.debugOpenDailyTask = null;
+    ArenaScreen.debugClock = null;
   });
 
   // The Arena's loaded body is a scrollable column (a queue, not a fixed
@@ -368,27 +373,99 @@ void main() {
     expect(opened, 1);
   });
 
-  testWidgets(
-      'isDone with all ten done: tomorrow\'s daily task and Challenge friends',
-      (tester) async {
-    var challenged = 0;
-    ArenaScreen.debugChallengeFriends = (_) async => challenged++;
+  // 19:00 UTC: five hours until the next daily task.
+  final dailyNow = DateTime.utc(2026, 11, 9, 19);
+  final todaysTask = DailyTaskData.taskFor(dailyNow);
+
+  Future<void> reachAllDonePanel(WidgetTester tester,
+      {Set<String> extraUnlocked = const {}}) async {
+    ArenaScreen.debugClock = () => dailyNow;
     await pumpArena(tester);
     await tester.pump();
-    unlockedController.add({for (final t in StarterPackData.tasks()) t.id});
+    unlockedController.add({
+      for (final t in StarterPackData.tasks()) t.id,
+      ...extraUnlocked,
+    });
     await tester.pump();
     queueController.add([_post('p1')]);
     await tester.pump();
-
     await tester.tap(find.text('Skip'));
     await tester.pump();
+  }
 
-    expect(find.text('Come back tomorrow for the daily task.'), findsOneWidget);
+  testWidgets('all ten done, daily not posted: the primary is today\'s task',
+      (tester) async {
+    var opened = 0;
+    ArenaScreen.debugOpenDailyTask = (_) async => opened++;
+    when(() => mockFeedRepository.watchPostsByUser(any()))
+        .thenAnswer((_) => Stream.value(const []));
+    await reachAllDonePanel(tester);
+
+    expect(find.text("Today's task is waiting. Same one for everyone."),
+        findsOneWidget);
+    expect(
+      find.widgetWithText(
+          FilledButton, "Today's task — ${todaysTask.durationSeconds} s"),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Come back tomorrow'), findsNothing);
+    await tester.tap(find.byKey(const Key('arena-next-up')));
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  testWidgets('a daily post from 30 days ago does not count as today',
+      (tester) async {
+    ArenaScreen.debugOpenDailyTask = (_) async {};
+    final old = FeedPost.fromMap({
+      ..._post('mine-old', taskId: todaysTask.id).toMap(),
+      'userId': 'viewer-1',
+      'createdAt': dailyNow.subtract(const Duration(days: 30)).toIso8601String(),
+    });
+    when(() => mockFeedRepository.watchPostsByUser(any()))
+        .thenAnswer((_) => Stream.value([old]));
+    await reachAllDonePanel(tester, extraUnlocked: {todaysTask.id});
+    await tester.pump();
+
+    expect(find.textContaining("Today's task — "), findsOneWidget);
+  });
+
+  testWidgets(
+      'all ten done and today\'s task posted: done for today, Challenge friends',
+      (tester) async {
+    var challenged = 0;
+    ArenaScreen.debugChallengeFriends = (_) async => challenged++;
+    final mine = FeedPost.fromMap({
+      ..._post('mine', taskId: todaysTask.id).toMap(),
+      'userId': 'viewer-1',
+      'createdAt': dailyNow.subtract(const Duration(hours: 1)).toIso8601String(),
+    });
+    when(() => mockFeedRepository.watchPostsByUser(any()))
+        .thenAnswer((_) => Stream.value([mine]));
+    await reachAllDonePanel(tester, extraUnlocked: {todaysTask.id});
+    await tester.pump();
+
+    expect(find.text('Done for today · new task in 5 h 0 m'), findsOneWidget);
     expect(
         find.widgetWithText(FilledButton, 'Challenge friends'), findsOneWidget);
     await tester.tap(find.byKey(const Key('arena-next-up')));
     await tester.pump();
     expect(challenged, 1);
+  });
+
+  testWidgets('the all-done panel fits 360x640 with no overflow',
+      (tester) async {
+    when(() => mockFeedRepository.watchPostsByUser(any()))
+        .thenAnswer((_) => Stream.value(const []));
+    ArenaScreen.debugClock = () => dailyNow;
+    await pumpArena(tester, physicalSize: const Size(360, 640));
+    await tester.pump();
+    unlockedController.add({for (final t in StarterPackData.tasks()) t.id});
+    await tester.pump();
+    queueController.add(const []);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('arena-next-up')), findsOneWidget);
   });
 
   testWidgets('empty-but-unlocked is not a dead end either', (tester) async {

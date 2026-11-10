@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
+import '../../../tasks/data/datasources/daily_task_data.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
 import '../../domain/models/feed_post.dart';
 import '../../domain/repositories/feed_repository.dart';
@@ -207,7 +208,8 @@ class FeedRepositoryImpl implements FeedRepository {
   /// The seeded house entries as raw documents, with deterministic ids.
   /// Exposed so tests (and the Firestore source) can assert the exact shape.
   ///
-  /// Every starter task gets all of its [StarterPackData.houseEntries]. Entry 0
+  /// Every starter task gets all of its [StarterPackData.houseEntries], and
+  /// every daily task its two [DailyTaskData.houseEntries]. Starter entry 0
   /// ([StarterPackData.housePosterName]) on a video task is a VIDEO post: a
   /// short generated clip in the bucket at `house/<taskId>.mp4`, public-read,
   /// with the task countdown already burned into its pixels (which is why
@@ -253,6 +255,29 @@ class FeedRepositoryImpl implements FeedRepository {
               createdAt: DateTime.utc(2026, 1, 1),
             ).toMap();
           }(),
+      // The daily pool (WP-6): two TEXT entries per task, video tasks
+      // included (there are no seeded clips for daily tasks).
+      for (final task in DailyTaskData.tasks())
+        for (final (index, entry)
+            in (DailyTaskData.houseEntries[task.id] ?? const <HouseEntry>[])
+                .indexed)
+          FeedPost(
+            id: houseIdFor(task.id, index),
+            gameId: '',
+            taskId: task.id,
+            taskTitle: task.title,
+            rubric: task.rubric,
+            userId: houseUserId,
+            displayName: entry.posterName,
+            mediaType: SubmissionMediaType.text,
+            text: entry.text,
+            caption: task.twist,
+            stamp: entry.stamp,
+            isHouse: true,
+            gradeCount: entry.gradeCount,
+            gradeSum: entry.gradeSum,
+            createdAt: DateTime.utc(2026, 1, 1),
+          ).toMap(),
     ];
   }
 }

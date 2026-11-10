@@ -4,6 +4,7 @@ import 'package:taskcaster_app/core/models/task.dart';
 import 'package:taskcaster_app/features/arena/data/datasources/mock_feed_data_source.dart';
 import 'package:taskcaster_app/features/arena/data/repositories/feed_repository_impl.dart';
 import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/daily_task_data.dart';
 import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 FeedPost makePost({
@@ -436,7 +437,10 @@ void main() {
       await repo.ensureHouseEntries();
 
       final seeded = source.posts;
-      expect(seeded.length, StarterPackData.houseEntries.length * 4);
+      expect(
+          seeded.length,
+          StarterPackData.houseEntries.length * 4 +
+              DailyTaskData.houseEntries.length * 2);
       for (final row in seeded) {
         expect(row['isHouse'], isTrue);
         expect(row['userId'], FeedRepositoryImpl.houseUserId);
@@ -463,6 +467,32 @@ void main() {
       }
     });
 
+    test('every daily task gets two text entries: the house, then a persona',
+        () async {
+      await repo.ensureHouseEntries();
+      const personas = [
+        StarterPackData.auntPam,
+        StarterPackData.theIntern,
+        StarterPackData.daveFromAccounts,
+      ];
+      for (final (i, task) in DailyTaskData.tasks().indexed) {
+        final rows =
+            source.posts.where((r) => r['taskId'] == task.id).toList();
+        expect(rows.map((r) => r['id']),
+            ['house-${task.id}', 'house-${task.id}-1'],
+            reason: task.id);
+        expect(rows.map((r) => r['displayName']),
+            [StarterPackData.housePosterName, personas[i % 3]],
+            reason: task.id);
+        for (final r in rows) {
+          expect(r['mediaType'], SubmissionMediaType.text.name,
+              reason: r['id'] as String);
+          expect(r['videoUrl'], isNull);
+          expect(r['caption'], task.twist);
+        }
+      }
+    });
+
     test('houseIdFor keeps the legacy id for entry 0', () {
       expect(FeedRepositoryImpl.houseIdFor('starter-07'), 'house-starter-07');
       expect(FeedRepositoryImpl.houseIdFor('starter-07', 0), 'house-starter-07');
@@ -475,7 +505,8 @@ void main() {
       await repo.ensureHouseEntries();
       for (final row in source.posts) {
         final post = FeedPost.fromMap(row);
-        final entry = StarterPackData.houseEntries[post.taskId]!
+        final entry = (StarterPackData.houseEntries[post.taskId] ??
+                DailyTaskData.houseEntries[post.taskId]!)
             .firstWhere((e) => e.text == post.text);
         expect(post.stamp, entry.stamp, reason: post.id);
         if (post.mediaType == SubmissionMediaType.video) {
@@ -524,6 +555,8 @@ void main() {
       await repo.ensureHouseEntries();
 
       for (final row in source.posts) {
+        // Daily entries are all text; the next test covers them.
+        if ((row['taskId'] as String).startsWith('daily-')) continue;
         final task =
             StarterPackData.tasks().firstWhere((t) => t.id == row['taskId']);
         if (task.submissionType == SubmissionType.video) continue;

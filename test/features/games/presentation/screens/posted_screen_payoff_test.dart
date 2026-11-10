@@ -15,6 +15,7 @@ import 'package:taskcaster_app/features/games/domain/repositories/game_repositor
 import 'package:taskcaster_app/features/games/presentation/screens/game_detail_screen.dart';
 import 'package:taskcaster_app/features/games/presentation/screens/posted_screen.dart';
 import 'package:taskcaster_app/features/games/presentation/widgets/stamp_sticker.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/daily_task_data.dart';
 import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 class MockGameRepository extends Mock implements GameRepository {}
@@ -37,6 +38,8 @@ class RecordingSfx implements GameSfx {
   void whoosh() => calls.add('whoosh');
   @override
   void sizzle() => calls.add('sizzle');
+  @override
+  void prime() {}
 }
 
 // A 1x1 transparent PNG.
@@ -373,4 +376,79 @@ void main() {
       expect(seeTheirs.dy, lessThanOrEqualTo(640));
     });
   }
+
+  /// Integration pass: today's task (WP-6) on the Posted screen (WP-5).
+  group('a daily game', () {
+    final task = DailyTaskData.tasks()[3];
+    Game daily() => Game(
+          id: 'g1',
+          gameName: 'Daily task, 9 Nov',
+          creatorId: 'me',
+          judgeId: 'me',
+          status: GameStatus.inProgress,
+          inviteCode: 'ABC123',
+          createdAt: DateTime.utc(2026, 11, 9),
+          players: const [],
+          settings: const GameSettings(crowdJudged: true, shareToArena: true),
+          gameKind: Game.kindDaily,
+          tasks: [
+            task.copyWith(submissions: [
+              Submission(
+                id: 's0',
+                userId: 'me',
+                score: 0,
+                isJudged: false,
+                submittedAt: DateTime.utc(2026, 11, 9),
+              ),
+            ]),
+          ],
+        );
+
+    for (final brightness in Brightness.values) {
+      testWidgets(
+          'no progress dots; See theirs leads, Back home follows; 360x640 '
+          '($brightness)', (tester) async {
+        when(() => feed.watchPost('mine')).thenAnswer((_) => Stream.value(
+            _post(taskId: task.id, stamp: Stamps.dontAsk)));
+        when(() => games.getGameStream('g1'))
+            .thenAnswer((_) => Stream.value(daily()));
+        await pump(
+            tester,
+            PostedScreen(
+              gameId: 'g1',
+              taskIndex: 0,
+              taskTitle: task.title,
+              feedPostId: 'mine',
+              taskId: task.id,
+              userId: 'me',
+              shareService: shareService(),
+            ),
+            size: const Size(360, 640),
+            brightness: brightness);
+        await tester.pump(const Duration(seconds: 3));
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('starter-progress')), findsNothing);
+        expect(find.byKey(const Key('see-theirs-button')), findsOneWidget);
+        expect(
+          find.descendant(
+              of: find.byKey(const Key('next-task-button')),
+              matching: find.text('Back home')),
+          findsOneWidget,
+        );
+        expect(
+            tester.getBottomLeft(find.byKey(const Key('see-theirs-button'))).dy,
+            lessThanOrEqualTo(640));
+        // No task-specific lines for daily tasks: the stamp's bucket.
+        final line = HouseReactions.pick(
+            postId: 'mine', stamp: Stamps.dontAsk, taskId: task.id);
+        expect(HouseReactions.byTask[task.id], isNull);
+        expect(HouseReactions.byStamp[Stamps.dontAsk], contains(line));
+        final rich = tester.widget<RichText>(find.descendant(
+            of: find.byKey(const Key('house-reaction')),
+            matching: find.byType(RichText)));
+        expect(rich.text.toPlainText(), "Greg's assistant: $line");
+      });
+    }
+  });
 }

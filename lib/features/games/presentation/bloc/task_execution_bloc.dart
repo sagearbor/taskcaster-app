@@ -16,6 +16,8 @@ import '../../../../core/services/video/video_uploader.dart';
 import '../../../arena/domain/auto_edit.dart';
 import '../../../arena/domain/models/feed_post.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
+import '../../../tasks/data/datasources/daily_task_data.dart';
+import '../../../../core/models/game.dart';
 import 'task_execution_event.dart';
 import 'task_execution_state.dart';
 
@@ -445,12 +447,14 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
           elapsedSeconds: elapsedSeconds,
           // WP-09: Starter Pack attempts are public by design (the share
           // page treats an absent flag the same way); say so explicitly.
+          // Daily Task attempts (WP-6) are public the same way: everyone
+          // gets the same task that day, and the Arena is the point.
           // Friend-game posts stay unset = private until the owner shares.
           // Fun audit WP-1: an automated walk (E2eMode) posts privately, so
           // its test patterns never reach the public Arena or a finale.
           shareable: E2eMode.isOn
               ? false
-              : (task.id.startsWith('starter-') ? true : null),
+              : (_isPublicByDesign(game, task) ? true : null),
         ));
       }
 
@@ -601,4 +605,12 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
       ));
     }
   }
+
+  /// Posts that go to the public Arena without the owner sharing them: the
+  /// Starter Pack and the Daily Task, both played against strangers.
+  static bool _isPublicByDesign(Game game, Task task) =>
+      game.isStarter ||
+      game.isDaily ||
+      task.id.startsWith('starter-') ||
+      DailyTaskData.isDailyTaskId(task.id);
 }
