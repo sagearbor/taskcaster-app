@@ -145,7 +145,7 @@ void main() {
       findsOneWidget,
     );
     // The Arena row sits right under it, outlined.
-    expect(find.widgetWithText(OutlinedButton, 'Arena — grade the crowd'),
+    expect(find.widgetWithText(OutlinedButton, "Arena — grade everyone's attempts"),
         findsOneWidget);
     // Layout overflow is NOT asserted here: the test font (Ahem, square
     // glyphs) overflows the seeded GameCards' fixed rows at this width. The
@@ -170,7 +170,7 @@ void main() {
   testWidgets('the Arena button opens the Arena screen', (tester) async {
     await pumpHome(tester);
 
-    await tester.tap(find.text('Arena — grade the crowd'));
+    await tester.tap(find.text("Arena — grade everyone's attempts"));
     await tester.pumpAndSettle();
 
     expect(find.text('The Arena'), findsOneWidget);
