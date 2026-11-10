@@ -107,9 +107,15 @@ class UpNext {
           taskIndex: index,
         );
 
+    // Crowd-judged games (the Starter Pack, the daily task) are scored by
+    // strangers in the Arena. Their nominal judge is the creator, so the
+    // judge branches below would ask a solo player to grade their own entry.
+    // Never offer TIME TO JUDGE here.
+    final crowd = game.settings.crowdJudged;
+
     // Non-playing judge (House Hunt hider): driven by the task, never by a
     // (non-existent) personal status.
-    if (isJudge && !game.settings.judgePlays) {
+    if (isJudge && !game.settings.judgePlays && !crowd) {
       if (task.status == TaskStatus.ready_to_judge || unjudged > 0) {
         return make('TIME TO JUDGE', 'Grade ${_entries(unjudged < 1 ? 1 : unjudged)}',
             UpNextAction.judge,
@@ -173,6 +179,15 @@ class UpNext {
     }
 
     // The player has submitted (or skipped / been judged).
+    if (crowd) {
+      if (remaining > 0) {
+        return make('SUBMITTED ✓', 'Waiting for $remaining more',
+            UpNextAction.none,
+            detail: '$submitted of $expected entries are in.');
+      }
+      return make('ALL ENTRIES IN', 'Waiting for the crowd', UpNextAction.none,
+          detail: 'Strangers are grading in the Arena.');
+    }
     if (remaining > 0) {
       return make('SUBMITTED ✓', 'Waiting for $remaining more',
           UpNextAction.none,
@@ -182,10 +197,6 @@ class UpNext {
       return make('TIME TO JUDGE', 'Grade ${_entries(unjudged < 1 ? expected : unjudged)}',
           UpNextAction.judge,
           detail: 'Everyone is in. Pick a winner.');
-    }
-    if (game.settings.crowdJudged) {
-      return make('ALL ENTRIES IN', 'Waiting for the crowd', UpNextAction.none,
-          detail: 'Strangers are grading in the Arena.');
     }
     return make('JUDGE IS REVIEWING', 'Scores coming soon', UpNextAction.none,
         detail: 'Everyone is in.');

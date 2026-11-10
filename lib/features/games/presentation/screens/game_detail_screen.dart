@@ -12,15 +12,19 @@ import '../../../../core/widgets/skeleton_loaders.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../arena/domain/crowd_score_applier.dart';
 import '../../../arena/domain/repositories/feed_repository.dart';
+import '../../../arena/presentation/screens/arena_screen.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../friends/domain/repositories/friends_repository.dart';
 import '../../../house_hunt/domain/house_hunt_service.dart';
 import '../../../house_hunt/presentation/screens/house_hunt_start_screen.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../bloc/game_detail_bloc.dart';
+import '../bloc/games_bloc.dart';
 import '../widgets/game_lobby_view.dart';
 import '../widgets/game_in_progress_view.dart';
 import '../widgets/game_completed_view.dart';
+import '../widgets/starter_recap_view.dart';
 import '../widgets/up_next_card.dart';
 import 'task_execution_screen.dart';
 import 'ar_task_screen.dart';
@@ -81,6 +85,9 @@ class GameDetailView extends StatefulWidget {
 class _GameDetailViewState extends State<GameDetailView> {
   /// Ensures the auto-opened share dialog appears only once per visit.
   bool _sharePrompted = false;
+
+  /// A "Challenge friends" game is being created (ignores repeat taps).
+  bool _challenging = false;
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +232,24 @@ class _GameDetailViewState extends State<GameDetailView> {
             final currentUserId = authState is AuthAuthenticated ? authState.user.id : '';
             final isJudge = state.game.judgeId == currentUserId;
 
+            // Solo crowd-judged games (the Starter Pack, the daily task) have
+            // no crew and no judge: show the player's own entries instead.
+            // CrowdScoreApplier keeps running in the bloc exactly as before.
+            if (StarterRecapView.appliesTo(state.game) &&
+                state.game.status != GameStatus.lobby) {
+              return StarterRecapView(
+                key: ValueKey('recap-${state.game.id}'),
+                game: state.game,
+                currentUserId: currentUserId,
+                onPlayTask: (index) =>
+                    _openTask(context, state.game, index),
+                onOpenArena: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ArenaScreen()),
+                ),
+                onChallengeFriends: () => _challengeFriends(context),
+              );
+            }
+
             return switch (state.game.status) {
               GameStatus.lobby => GameLobbyView(
                   game: state.game,
@@ -268,6 +293,60 @@ class _GameDetailViewState extends State<GameDetailView> {
         },
       ),
     );
+  }
+
+  /// Open task [index] of [game] to play it.
+  void _openTask(BuildContext context, Game game, int index) {
+    if (index < 0 || index >= game.tasks.length) return;
+    final task = game.tasks[index];
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => task.isArTask
+            ? ARTaskScreen(
+                gameId: game.id,
+                taskIndex: index,
+                arGameId: task.arGameId,
+              )
+            : TaskExecutionScreen(
+                gameId: game.id,
+                taskIndex: index,
+                autoStart: true,
+              ),
+      ),
+    );
+  }
+
+  /// The recap's "Challenge friends": the same flow as Home's all-done hero
+  /// (GamesBloc's ChallengeFriends), run on a short-lived bloc because Home's
+  /// is not above this route. Lands in the new lobby with the invite open.
+  Future<void> _challengeFriends(BuildContext context) async {
+    if (_challenging) return;
+    _challenging = true;
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final bloc = GamesBloc(
+      gameRepository: sl<GameRepository>(),
+      authRepository: sl<AuthRepository>(),
+    );
+    try {
+      final done = bloc.stream.firstWhere(
+          (s) => s is ChallengeFriendsReady || s is GamesError);
+      bloc.add(const ChallengeFriends());
+      final result = await done;
+      if (result is ChallengeFriendsReady) {
+        await navigator.push(MaterialPageRoute(
+          builder: (_) => GameDetailScreen(
+            gameId: result.gameId,
+            promptShareOnLoad: true,
+          ),
+        ));
+      } else if (result is GamesError) {
+        messenger.showSnackBar(SnackBar(content: Text(result.message)));
+      }
+    } finally {
+      _challenging = false;
+      await bloc.close();
+    }
   }
 
   /// Open the House Hunt authoring screen pre-targeted at the other player —
