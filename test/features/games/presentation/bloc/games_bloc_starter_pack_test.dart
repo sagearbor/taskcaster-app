@@ -221,7 +221,8 @@ void main() {
       act: (bloc) => bloc.add(const StartStarterPack()),
       wait: const Duration(milliseconds: 20),
       verify: (_) {
-        expect(source.posts.length, StarterPackData.houseEntries.length);
+        expect(source.posts.length,
+            FeedRepositoryImpl.houseEntryPosts().length);
       },
     );
 

@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Seeds the Arena's "house" posts (one per Starter Pack task, posted as
- * userId 'house') with the Admin SDK, and optionally converts legacy
+ * Seeds the Arena's "house" posts (four per Starter Pack task, posted as
+ * userId 'house': `house-<taskId>` plus `house-<taskId>-1..3`) with the Admin SDK, and optionally converts legacy
  * ISO-string `createdAt` values on feed_posts to Firestore Timestamps.
  *
  * Why a script: firestore.rules deny every client write to a house post (they
@@ -20,9 +20,10 @@
  *   node scripts/seed_house_posts.js --fix-created-at     # dry run of the createdAt migration
  *   node scripts/seed_house_posts.js --fix-created-at --write
  *
- * Idempotent: a missing house post is created with zeroed counters; an
+ * Idempotent: a missing house post is created with its starting grade from
+ * the JSON (gradeCount/gradeSum, default 0) and every other counter zeroed; an
  * existing one has only its seed fields refreshed (set/merge), never its
- * counters, graderIds or createdAt.
+ * counters, graderIds or createdAt, so the grades it has collected survive.
  */
 
 const path = require('path');
@@ -51,6 +52,21 @@ function loadHousePosts(file = path.join(__dirname, 'house_posts.json')) {
 }
 
 /**
+ * A new house post's starting crowd grade, from the JSON. Grades are 1-5, so
+ * a sane pair has gradeSum between gradeCount and 5 * gradeCount; anything
+ * else (or nothing) starts at zero.
+ */
+function startingGrade(post) {
+  const count = post.gradeCount;
+  const sum = post.gradeSum;
+  if (Number.isInteger(count) && Number.isInteger(sum) && count > 0 &&
+      sum >= count && sum <= 5 * count) {
+    return {gradeCount: count, gradeSum: sum};
+  }
+  return {gradeCount: 0, gradeSum: 0};
+}
+
+/**
  * The writes to make, as plain data (no Firebase), so they are unit-testable.
  *
  * @param {Array<object>} posts house posts, each with an `id`
@@ -72,13 +88,14 @@ function houseWrites(posts, existingIds, toTimestamp = (d) => d) {
     if (existingIds.has(id)) {
       writes.push({id, data: seed, merge: true});
     } else {
+      const start = startingGrade(rest);
       writes.push({
         id,
         merge: false,
         data: {
           ...seed,
-          gradeCount: 0,
-          gradeSum: 0,
+          gradeCount: start.gradeCount,
+          gradeSum: start.gradeSum,
           graderIds: [],
           tapCount: 0,
           tapSeconds: {},
@@ -161,4 +178,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = {houseWrites, legacyCreatedAt, loadHousePosts, CROWD_FIELDS, HOUSE_CREATED_AT};
+module.exports = {
+  houseWrites, startingGrade, legacyCreatedAt, loadHousePosts, CROWD_FIELDS, HOUSE_CREATED_AT,
+};

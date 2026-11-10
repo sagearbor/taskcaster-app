@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskcaster_app/core/models/task.dart';
+import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
 import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 void main() {
@@ -151,6 +152,14 @@ void main() {
       }
     });
 
+    test('the autobiography trailer needs no hand-made props', () {
+      final trailer = tasks.firstWhere((t) => t.id == 'starter-10-v2');
+      expect(trailer.durationSeconds, 30);
+      expect(trailer.description, isNot(contains('cover')));
+      expect(trailer.twist, isNot(contains('cover')));
+      expect(trailer.twist, contains('out loud'));
+    });
+
     test('the copy is the product copy', () {
       final first = tasks.firstWhere((t) => t.id == 'starter-01-v2');
       expect(first.title, 'Egg on a spoon, to the far wall and back');
@@ -162,21 +171,80 @@ void main() {
   });
 
   group('StarterPackData.houseEntries', () {
-    test('there is one per task, keyed by task id', () {
+    test('there are four per task, keyed by task id', () {
       expect(StarterPackData.houseEntries.length, tasks.length);
       for (final task in tasks) {
-        expect(StarterPackData.houseEntries.containsKey(task.id), isTrue,
+        expect(StarterPackData.houseEntries[task.id], hasLength(4),
             reason: task.id);
       }
     });
 
+    test('entry 0 is the house; the personas follow in a fixed order', () {
+      for (final entries in StarterPackData.houseEntries.values) {
+        expect(entries.map((e) => e.posterName), [
+          StarterPackData.housePosterName,
+          StarterPackData.auntPam,
+          StarterPackData.theIntern,
+          StarterPackData.daveFromAccounts,
+        ]);
+      }
+    });
+
+    test('entry 0 keeps the copy it has always had (its prod doc keeps it)',
+        () {
+      expect(StarterPackData.houseEntries['starter-09-v2']!.first.text,
+          "Layer 4 was 'the cat is also in the oven'.");
+      expect(StarterPackData.houseEntries['starter-07']!.first.text,
+          startsWith('There are four yoghurts.'));
+    });
+
     test('every entry is short, real text — one to three lines', () {
-      for (final entry in StarterPackData.houseEntries.entries) {
-        final text = entry.value;
-        expect(text.trim(), isNotEmpty, reason: entry.key);
-        expect(text.length, lessThan(280), reason: entry.key);
-        expect('\n'.allMatches(text).length, lessThanOrEqualTo(2),
-            reason: entry.key);
+      for (final MapEntry(key: taskId, value: entries)
+          in StarterPackData.houseEntries.entries) {
+        for (final entry in entries) {
+          final text = entry.text;
+          expect(text.trim(), isNotEmpty, reason: taskId);
+          expect(text.length, lessThan(280), reason: taskId);
+          expect('\n'.allMatches(text).length, lessThanOrEqualTo(2),
+              reason: taskId);
+          // House copy follows the product voice: no exclamation marks.
+          expect(text, isNot(contains('!')), reason: '$taskId: $text');
+        }
+      }
+    });
+
+    test('no two entries share a text, and every take is different', () {
+      final texts = [
+        for (final entries in StarterPackData.houseEntries.values)
+          for (final e in entries) e.text,
+      ];
+      expect(texts.toSet().length, texts.length);
+    });
+
+    test('stamps are real, distinct within a task, and never ART on a video',
+        () {
+      for (final task in tasks) {
+        final entries = StarterPackData.houseEntries[task.id]!;
+        for (final e in entries) {
+          expect(Stamps.values, contains(e.stamp), reason: task.id);
+        }
+        expect(entries.map((e) => e.stamp).toSet().length, entries.length,
+            reason: task.id);
+        // Only entry 0 carries the clip on a video task.
+        if (task.submissionType == SubmissionType.video) {
+          expect(entries.first.stamp, isNot(Stamps.art), reason: task.id);
+        }
+      }
+    });
+
+    test('starting grades are believable: 4-30 grades, mean 2.1-4.6', () {
+      for (final MapEntry(key: taskId, value: entries)
+          in StarterPackData.houseEntries.entries) {
+        for (final e in entries) {
+          expect(e.gradeCount, inInclusiveRange(4, 30), reason: taskId);
+          expect(e.meanGrade, inInclusiveRange(2.1, 4.6),
+              reason: '$taskId ${e.posterName}');
+        }
       }
     });
 
