@@ -20,6 +20,12 @@ abstract class GameRemoteDataSource {
   Stream<List<Map<String, dynamic>>> getInvitedGamesStream(String email);
 
   Future<String> createGame(Map<String, dynamic> gameData);
+
+  /// Create `games/{gameId}` from [gameData] only if no document has that id
+  /// yet, atomically (the existence check reads the server, not a cache).
+  /// Returns true when it created the game, false when one already existed
+  /// (which is left untouched). For deterministic ids, e.g. daily games.
+  Future<bool> createGameIfAbsent(String gameId, Map<String, dynamic> gameData);
   Future<void> updateGame(String gameId, Map<String, dynamic> updates);
   Future<void> deleteGame(String gameId);
   Stream<Map<String, dynamic>?> getGameStream(String gameId);

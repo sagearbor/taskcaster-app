@@ -247,6 +247,16 @@ class MockGameDataSource implements GameRemoteDataSource {
   }
 
   @override
+  Future<bool> createGameIfAbsent(
+      String gameId, Map<String, dynamic> gameData) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (_games.any((game) => game['id'] == gameId)) return false;
+    _games.add({...gameData, 'id': gameId});
+    _gamesController.add(List.from(_games));
+    return true;
+  }
+
+  @override
   Future<void> updateGame(String gameId, Map<String, dynamic> updates) async {
     await Future.delayed(const Duration(milliseconds: 300));
     

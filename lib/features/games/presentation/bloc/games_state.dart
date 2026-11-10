@@ -52,6 +52,16 @@ class StarterPackReady extends GamesState {
   List<Object> get props => [gameId, taskIndex];
 }
 
+/// Today's Daily Task game is ready: open its only task (index 0).
+class DailyTaskReady extends GamesState {
+  final String gameId;
+
+  const DailyTaskReady({required this.gameId});
+
+  @override
+  List<Object> get props => [gameId];
+}
+
 /// A "Challenge friends" game was created and is waiting in its lobby; the
 /// listener opens it with the invite dialog up.
 class ChallengeFriendsReady extends GamesState {

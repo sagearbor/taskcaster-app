@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -17,6 +19,7 @@ import '../../../games/presentation/bloc/games_bloc.dart';
 import '../../../games/presentation/screens/game_detail_screen.dart';
 import '../../../games/presentation/screens/task_execution_screen.dart';
 import '../../../telephone/presentation/widgets/nearby_auto_cast_banner.dart';
+import '../../domain/home_hero_plan.dart';
 import '../widgets/arena_entry_button.dart';
 import '../widgets/game_card.dart';
 import '../widgets/home_app_bar.dart';
@@ -26,7 +29,11 @@ import '../widgets/next_task_hero_card.dart';
 import '../widgets/play_sheet.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  /// "Now", injectable so tests can pin the UTC day (today's task, the
+  /// streak, the countdown). Defaults to [DateTime.now].
+  final DateTime Function()? clock;
+
+  const HomeScreen({super.key, this.clock});
 
   @override
   Widget build(BuildContext context) {
@@ -39,14 +46,17 @@ class HomeScreen extends StatelessWidget {
       create: (context) => GamesBloc(
         gameRepository: sl<GameRepository>(),
         authRepository: sl<AuthRepository>(),
+        clock: clock,
       )..add(LoadGames()),
-      child: const HomeView(),
+      child: HomeView(clock: clock),
     );
   }
 }
 
 class HomeView extends StatelessWidget {
-  const HomeView({super.key});
+  final DateTime Function()? clock;
+
+  const HomeView({super.key, this.clock});
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +105,22 @@ class HomeView extends StatelessWidget {
                   builder: (context) => TaskExecutionScreen(
                     gameId: state.gameId,
                     taskIndex: state.taskIndex,
+                    autoStart: true,
+                  ),
+                ),
+              )
+              .then((_) => gamesBloc.add(LoadGames()));
+        }
+
+        if (state is DailyTaskReady) {
+          // WP-6: today's task, straight past the reveal like the starter.
+          final gamesBloc = context.read<GamesBloc>();
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (context) => TaskExecutionScreen(
+                    gameId: state.gameId,
+                    taskIndex: 0,
                     autoStart: true,
                   ),
                 ),
@@ -157,64 +183,33 @@ class HomeView extends StatelessWidget {
     BuildContext context,
     GamesLoaded state,
   ) {
-    Game? starterGame;
-    for (final g in state.games) {
-      if (g.isStarter) {
-        starterGame = g;
-        break;
-      }
-    }
-    if (starterGame == null) return (game: null, nextIndex: -1);
-
     final authState = context.read<AuthBloc>().state;
     final userId = authState is AuthAuthenticated ? authState.user.id : '';
-    for (var i = 0; i < starterGame.tasks.length; i++) {
-      if (!starterGame.tasks[i].hasUserSubmitted(userId)) {
-        return (game: starterGame, nextIndex: i);
-      }
-    }
-    return (game: starterGame, nextIndex: -1);
+    final plan = HomeHeroPlan.resolve(
+      games: state.games,
+      myPosts: const [],
+      userId: userId,
+      now: DateTime.now(),
+    );
+    return (game: plan.starterGame, nextIndex: plan.starterNextIndex);
   }
 
-  /// Zone 1 — the hero (see docs/PRODUCT_DIRECTION.md §4 step 5). Three
-  /// shapes, all driven by plain values through [NextTaskHeroCard]:
-  ///  - no starter game yet (an account from before this round) -> offer to
-  ///    start one;
-  ///  - a starter game with a task left -> that task, timer and Start;
-  ///  - all ten done -> "Waiting for the crowd: N" and Challenge friends.
+  /// Zone 1 — the hero (see docs/PRODUCT_DIRECTION.md §4 step 5, and WP-6):
+  /// the next starter task, today's task, or "Done for today". Which one is
+  /// decided by [HomeHeroPlan]; [HomeHero] renders it.
   Widget _buildNextTaskHero(BuildContext context, GamesState state) {
     if (state is! GamesLoaded) return const SizedBox.shrink();
 
-    final progress = _starterProgress(context, state);
-    final starterGame = progress.game;
-    if (starterGame == null) {
-      return NextTaskHeroCard(
-        mode: NextTaskHeroMode.noStarterGame,
-        onPrimary: () =>
-            context.read<GamesBloc>().add(const StartStarterPack()),
-      );
-    }
-
-    final nextIndex = progress.nextIndex;
-    if (nextIndex == -1) {
-      return CrowdWaitingHero(
-        onChallengeFriends: () =>
-            context.read<GamesBloc>().add(const ChallengeFriends()),
-      );
-    }
-
-    final gameId = starterGame.id;
-    final task = starterGame.tasks[nextIndex];
-    return NextTaskHeroCard(
-      mode: NextTaskHeroMode.hasTask,
-      taskTitle: task.title,
-      timerSeconds: task.durationSeconds,
-      onPrimary: () => Navigator.of(context)
+    return HomeHero(
+      games: state.games,
+      clock: clock ?? DateTime.now,
+      onOpenArena: () => _openArena(context),
+      onOpenTask: (gameId, taskIndex) => Navigator.of(context)
           .push(
             MaterialPageRoute(
               builder: (_) => TaskExecutionScreen(
                 gameId: gameId,
-                taskIndex: nextIndex,
+                taskIndex: taskIndex,
                 autoStart: true,
               ),
             ),
@@ -225,7 +220,9 @@ class HomeView extends StatelessWidget {
 
   /// Zone 3 — "Your games": a plain list, newest first. The starter game is
   /// left out while it still has a task to do (the hero already IS that
-  /// game); once all ten are done it joins the list like any other.
+  /// game); once all ten are done it joins the list like any other. Daily
+  /// Task games never show here (WP-6): one a day would bury the friend
+  /// games, and the hero already covers today's.
   List<Widget> _buildYourGames(BuildContext context, GamesState state) {
     if (state is GamesError) {
       return [
@@ -241,7 +238,9 @@ class HomeView extends StatelessWidget {
     if (state is GamesLoaded) {
       final progress = _starterProgress(context, state);
       final hideId = progress.nextIndex == -1 ? null : progress.game?.id;
-      final games = state.games.where((g) => g.id != hideId).toList()
+      final games = state.games
+          .where((g) => g.id != hideId && !g.isDaily)
+          .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       final theme = Theme.of(context);
@@ -304,35 +303,139 @@ class HomeView extends StatelessWidget {
   }
 }
 
-/// The all-ten-done hero: "Waiting for the crowd: N", where N is how many of
-/// the player's entries are still short of [ArenaBloc.boostThreshold] grades.
-class CrowdWaitingHero extends StatelessWidget {
-  final VoidCallback onChallengeFriends;
+/// Home's hero (WP-6). Watches the player's own posts (for the 🔥 streak and
+/// "posted today") and ticks once a minute (for "New task in 5 h 12 m" and
+/// the UTC-midnight switch to tomorrow's task), then renders whatever
+/// [HomeHeroPlan.resolve] decides through [NextTaskHeroCard].
+class HomeHero extends StatefulWidget {
+  final List<Game> games;
+  final DateTime Function() clock;
+  final VoidCallback onOpenArena;
+  final void Function(String gameId, int taskIndex) onOpenTask;
 
-  const CrowdWaitingHero({super.key, required this.onChallengeFriends});
+  const HomeHero({
+    super.key,
+    required this.games,
+    required this.clock,
+    required this.onOpenArena,
+    required this.onOpenTask,
+  });
+
+  @override
+  State<HomeHero> createState() => _HomeHeroState();
+}
+
+class _HomeHeroState extends State<HomeHero> {
+  StreamSubscription<List<FeedPost>>? _postsSub;
+  List<FeedPost> _posts = const [];
+  Timer? _ticker;
+  String _userId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// (Re)subscribe to [userId]'s posts when the signed-in user changes.
+  void _watchPostsOf(String userId) {
+    if (userId == _userId) return;
+    _userId = userId;
+    _postsSub?.cancel();
+    _postsSub = null;
+    _posts = const [];
+    if (userId.isEmpty || !sl.isRegistered<FeedRepository>()) return;
+    _postsSub = sl<FeedRepository>().watchPostsByUser(userId).listen(
+      (posts) {
+        if (mounted) setState(() => _posts = posts);
+      },
+      // The streak is a nicety: never an error on Home.
+      onError: (Object e) => debugPrint('HomeHero posts stream: $e'),
+    );
+  }
+
+  @override
+  void dispose() {
+    _postsSub?.cancel();
+    _ticker?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final authState = context.read<AuthBloc>().state;
-    final userId = authState is AuthAuthenticated ? authState.user.id : '';
-    final Stream<List<FeedPost>>? posts =
-        userId.isEmpty || !sl.isRegistered<FeedRepository>()
-            ? null
-            : sl<FeedRepository>().watchPostsByUser(userId);
-
-    return StreamBuilder<List<FeedPost>>(
-      stream: posts,
-      builder: (context, snapshot) {
-        final waiting = snapshot.data
-            ?.where((p) => p.gradeCount < ArenaBloc.boostThreshold)
-            .length;
-        return NextTaskHeroCard(
-          mode: NextTaskHeroMode.allDone,
-          waitingCount: waiting,
-          onPrimary: onChallengeFriends,
-        );
-      },
+    _watchPostsOf(context.select((AuthBloc b) {
+      final s = b.state;
+      return s is AuthAuthenticated ? s.user.id : '';
+    }));
+    final plan = HomeHeroPlan.resolve(
+      games: widget.games,
+      myPosts: _posts,
+      userId: _userId,
+      now: widget.clock(),
     );
+    final bloc = context.read<GamesBloc>();
+    final streak = plan.streak;
+    final atRiskLine = plan.streakAtRisk
+        ? 'Post something today or the 🔥 $streak goes out.'
+        : null;
+    final waiting =
+        _posts.where((p) => p.gradeCount < ArenaBloc.boostThreshold).length;
+    final waitingLine = waiting > 0 ? 'Waiting for the crowd: $waiting' : null;
+
+    switch (plan.kind) {
+      case HomeHeroKind.noStarter:
+        return NextTaskHeroCard(
+          mode: NextTaskHeroMode.noStarterGame,
+          streak: streak,
+          onPrimary: () => bloc.add(const StartStarterPack()),
+        );
+
+      case HomeHeroKind.starterTask:
+        final task = plan.starterTask!;
+        final game = plan.starterGame!;
+        return NextTaskHeroCard(
+          mode: NextTaskHeroMode.hasTask,
+          taskTitle: task.title,
+          timerSeconds: task.durationSeconds,
+          streak: streak,
+          subline: plan.dailyDone ? "Today's task: done." : atRiskLine,
+          onPrimary: () => widget.onOpenTask(game.id, plan.starterNextIndex),
+        );
+
+      case HomeHeroKind.dailyTask:
+        final starter = plan.starterGame;
+        final starterLeft = plan.starterHasTasksLeft;
+        return NextTaskHeroCard(
+          key: const Key('home-hero-daily'),
+          mode: NextTaskHeroMode.dailyTask,
+          taskTitle: plan.dailyTask.title,
+          timerSeconds: plan.dailyTask.durationSeconds,
+          streak: streak,
+          subline: atRiskLine ?? (starterLeft ? null : waitingLine),
+          onPrimary: () => bloc.add(const StartDailyTask()),
+          secondaryLabel: starterLeft
+              ? 'Or carry on with your first ten '
+                  '(${plan.starterNextIndex + 1} of ${starter!.tasks.length})'
+              : 'Challenge friends',
+          onSecondary: starterLeft
+              ? () => widget.onOpenTask(starter!.id, plan.starterNextIndex)
+              : () => bloc.add(const ChallengeFriends()),
+        );
+
+      case HomeHeroKind.dailyDone:
+        return NextTaskHeroCard(
+          key: const Key('home-hero-daily-done'),
+          mode: NextTaskHeroMode.dailyDone,
+          streak: streak,
+          nextTaskIn: plan.untilNextTask,
+          subline: waitingLine,
+          onPrimary: widget.onOpenArena,
+          secondaryLabel: 'Challenge friends',
+          onSecondary: () => bloc.add(const ChallengeFriends()),
+        );
+    }
   }
 }
 

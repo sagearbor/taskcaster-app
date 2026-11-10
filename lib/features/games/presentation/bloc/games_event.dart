@@ -65,6 +65,13 @@ class StartStarterPack extends GamesEvent {
   List<Object> get props => [taskId ?? ''];
 }
 
+/// Open (or create) the current user's Daily Task game for today's UTC day
+/// (WP-6). Idempotent: the game id is deterministic per user per day, so a
+/// second tap reuses it. Emits [DailyTaskReady].
+class StartDailyTask extends GamesEvent {
+  const StartDailyTask();
+}
+
 /// "Challenge friends": create a friend game (lobby, creator judges) seeded
 /// with a 5-task pack, then emit [ChallengeFriendsReady] so the home screen
 /// can land the creator on the share-invite step.
