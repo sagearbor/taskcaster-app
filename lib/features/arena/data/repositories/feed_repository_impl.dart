@@ -18,8 +18,11 @@ class FeedRepositoryImpl implements FeedRepository {
   static const String houseUserId = 'house';
 
   /// Deterministic document id for a task's house entry, so seeding twice
-  /// overwrites rather than duplicates.
-  static String houseIdFor(String taskId) => 'house-$taskId';
+  /// overwrites rather than duplicates. Entry 0 keeps the original
+  /// `house-<taskId>` id (it has prod grades to keep); the others are
+  /// `house-<taskId>-<n>`.
+  static String houseIdFor(String taskId, [int index = 0]) =>
+      index == 0 ? 'house-$taskId' : 'house-$taskId-$index';
 
   /// Posts with this many grades or more are already well fed, so boosting
   /// skips them.
@@ -204,37 +207,47 @@ class FeedRepositoryImpl implements FeedRepository {
   /// The seeded house entries as raw documents, with deterministic ids.
   /// Exposed so tests (and the Firestore source) can assert the exact shape.
   ///
-  /// A video task's house entry is a VIDEO post: a short generated clip in the
-  /// bucket at `house/<taskId>.mp4`, public-read, with the task countdown
-  /// already burned into its pixels (which is why playback skips the overlay
-  /// for house entries). Its [FeedPost.text] is kept as the fallback the card
-  /// shows if the clip cannot be played. Photo and text tasks keep the text
-  /// house entry they have always had.
+  /// Every starter task gets all of its [StarterPackData.houseEntries]. Entry 0
+  /// ([StarterPackData.housePosterName]) on a video task is a VIDEO post: a
+  /// short generated clip in the bucket at `house/<taskId>.mp4`, public-read,
+  /// with the task countdown already burned into its pixels (which is why
+  /// playback skips the overlay for house entries). Its [FeedPost.text] is
+  /// kept as the fallback the card shows if the clip cannot be played. Every
+  /// other entry is a text post.
+  ///
+  /// [FeedPost.gradeCount]/[FeedPost.gradeSum] carry the entry's starting
+  /// crowd grade. A store that already holds the post keeps its own counters
+  /// (the mock source here, and seed_house_posts.js on Firestore).
   static List<Map<String, dynamic>> houseEntryPosts() {
     final tasks = StarterPackData.tasks();
     return [
       for (final task in tasks)
-        if (StarterPackData.houseEntries[task.id] != null)
+        for (final (index, entry)
+            in (StarterPackData.houseEntries[task.id] ?? const <HouseEntry>[])
+                .indexed)
           () {
-            final isVideo = task.submissionType == SubmissionType.video;
+            final isVideo =
+                index == 0 && task.submissionType == SubmissionType.video;
             return FeedPost(
-              id: houseIdFor(task.id),
+              id: houseIdFor(task.id, index),
               gameId: '',
               taskId: task.id,
               taskTitle: task.title,
               rubric: task.rubric,
               userId: houseUserId,
-              displayName: StarterPackData.housePosterName,
+              displayName: entry.posterName,
               mediaType: isVideo
                   ? SubmissionMediaType.video
                   : SubmissionMediaType.text,
-              text: StarterPackData.houseEntries[task.id],
+              text: entry.text,
               videoUrl: isVideo ? StarterPackData.houseVideoUrl(task.id) : null,
               videoStoragePath:
                   isVideo ? StarterPackData.houseVideoPath(task.id) : null,
               caption: task.twist,
-              stamp: Stamps.art,
+              stamp: entry.stamp,
               isHouse: true,
+              gradeCount: entry.gradeCount,
+              gradeSum: entry.gradeSum,
               // Fixed epoch so the seeds sort last by recency and seeding is
               // byte-for-byte identical every time.
               createdAt: DateTime.utc(2026, 1, 1),

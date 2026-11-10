@@ -432,47 +432,101 @@ void main() {
   });
 
   group('ensureHouseEntries', () {
-    test('seeds one entry per starter task, posted by the house', () async {
+    test('seeds four entries per starter task, posted by the house', () async {
       await repo.ensureHouseEntries();
 
       final seeded = source.posts;
-      expect(seeded.length, StarterPackData.houseEntries.length);
+      expect(seeded.length, StarterPackData.houseEntries.length * 4);
       for (final row in seeded) {
         expect(row['isHouse'], isTrue);
         expect(row['userId'], FeedRepositoryImpl.houseUserId);
-        expect(row['displayName'], StarterPackData.housePosterName);
         expect(row['photoData'], isNull);
         // Text is kept on every entry: it is the caption/fallback a video
         // house entry shows if its clip cannot be played.
         expect(row['text'], isNotEmpty);
-        expect(row['id'], 'house-${row['taskId']}');
       }
+      for (final task in StarterPackData.tasks()) {
+        final rows = seeded.where((r) => r['taskId'] == task.id).toList();
+        expect(rows.map((r) => r['id']), [
+          'house-${task.id}',
+          'house-${task.id}-1',
+          'house-${task.id}-2',
+          'house-${task.id}-3',
+        ]);
+        expect(rows.map((r) => r['displayName']), [
+          StarterPackData.housePosterName,
+          StarterPackData.auntPam,
+          StarterPackData.theIntern,
+          StarterPackData.daveFromAccounts,
+        ]);
+        expect(rows.map((r) => r['stamp']).toSet().length, 4, reason: task.id);
+      }
+    });
+
+    test('houseIdFor keeps the legacy id for entry 0', () {
+      expect(FeedRepositoryImpl.houseIdFor('starter-07'), 'house-starter-07');
+      expect(FeedRepositoryImpl.houseIdFor('starter-07', 0), 'house-starter-07');
+      expect(
+          FeedRepositoryImpl.houseIdFor('starter-07', 2), 'house-starter-07-2');
+    });
+
+    test('each entry wears its own stamp, and no video is stamped ART',
+        () async {
+      await repo.ensureHouseEntries();
+      for (final row in source.posts) {
+        final post = FeedPost.fromMap(row);
+        final entry = StarterPackData.houseEntries[post.taskId]!
+            .firstWhere((e) => e.text == post.text);
+        expect(post.stamp, entry.stamp, reason: post.id);
+        if (post.mediaType == SubmissionMediaType.video) {
+          expect(post.stamp, isNot(Stamps.art), reason: post.id);
+        }
+      }
+    });
+
+    test('entries start with their seeded crowd grade', () async {
+      await repo.ensureHouseEntries();
+      final post = await repo.watchPost('house-starter-07-3').first;
+      final dave = StarterPackData.houseEntries['starter-07']![3];
+      expect(post!.displayName, StarterPackData.daveFromAccounts);
+      expect(post.gradeCount, dave.gradeCount);
+      expect(post.gradeSum, dave.gradeSum);
+      expect(post.meanGrade, closeTo(dave.meanGrade, 1e-9));
     });
 
     test('video starter tasks get VIDEO house entries at house/<taskId>.mp4',
         () async {
       await repo.ensureHouseEntries();
 
-      final byTask = {for (final row in source.posts) row['taskId']: row};
+      final byId = {for (final row in source.posts) row['id']: row};
       final videoTasks = StarterPackData.tasks()
           .where((t) => t.submissionType == SubmissionType.video);
       expect(videoTasks, isNotEmpty);
 
       for (final task in videoTasks) {
-        final row = byTask[task.id]!;
+        final row = byId['house-${task.id}']!;
         expect(row['mediaType'], SubmissionMediaType.video.name, reason: task.id);
+        expect(row['displayName'], StarterPackData.housePosterName);
         expect(row['videoStoragePath'], 'house/${task.id}.mp4');
         expect(row['videoUrl'], StarterPackData.houseVideoUrl(task.id));
+        // The personas' takes on a video task are text posts: only entry 0
+        // has a clip.
+        for (var n = 1; n <= 3; n++) {
+          final persona = byId['house-${task.id}-$n']!;
+          expect(persona['mediaType'], SubmissionMediaType.text.name);
+          expect(persona['videoUrl'], isNull);
+          expect(persona['videoStoragePath'], isNull);
+        }
       }
     });
 
     test('photo and text starter tasks keep TEXT house entries', () async {
       await repo.ensureHouseEntries();
 
-      final byTask = {for (final row in source.posts) row['taskId']: row};
-      for (final task in StarterPackData.tasks()) {
+      for (final row in source.posts) {
+        final task =
+            StarterPackData.tasks().firstWhere((t) => t.id == row['taskId']);
         if (task.submissionType == SubmissionType.video) continue;
-        final row = byTask[task.id]!;
         expect(row['mediaType'], SubmissionMediaType.text.name, reason: task.id);
         expect(row['videoUrl'], isNull, reason: task.id);
         expect(row['videoStoragePath'], isNull, reason: task.id);
@@ -512,13 +566,14 @@ void main() {
     test('re-seeding keeps the grades the crowd has already given', () async {
       await repo.ensureHouseEntries();
       const id = 'house-starter-01-v2';
+      final seed = StarterPackData.houseEntries['starter-01-v2']!.first;
       await repo.gradePost(postId: id, graderId: 'me', score: 5);
 
       await repo.ensureHouseEntries();
 
       final post = await repo.watchPost(id).first;
-      expect(post!.gradeCount, 1);
-      expect(post.gradeSum, 5);
+      expect(post!.gradeCount, seed.gradeCount + 1);
+      expect(post.gradeSum, seed.gradeSum + 5);
       expect(post.graderIds, ['me']);
     });
 
@@ -528,8 +583,13 @@ void main() {
       final queue = await repo
           .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-07'})
           .first;
-      expect(queue.single.taskId, 'starter-07');
-      expect(queue.single.displayName, StarterPackData.housePosterName);
+      expect(queue.map((p) => p.taskId).toSet(), {'starter-07'});
+      expect(queue.map((p) => p.displayName).toSet(), {
+        StarterPackData.housePosterName,
+        StarterPackData.auntPam,
+        StarterPackData.theIntern,
+        StarterPackData.daveFromAccounts,
+      });
     });
   });
 }

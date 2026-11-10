@@ -14,13 +14,13 @@ import 'package:taskcaster_app/features/arena/data/repositories/feed_repository_
 void main() {
   const path = 'functions/scripts/house_posts.json';
 
-  /// The seed fields only: the script owns counters and createdAt.
+  /// The seed fields plus the starting grade (gradeCount/gradeSum), which the
+  /// script writes only when it CREATES a post; an existing post keeps its
+  /// own counters. The script owns every other counter and createdAt.
   List<Map<String, dynamic>> expected() => [
         for (final post in FeedRepositoryImpl.houseEntryPosts())
           Map<String, dynamic>.fromEntries(post.entries.where((e) =>
               !const {
-                'gradeCount',
-                'gradeSum',
                 'graderIds',
                 'tapCount',
                 'tapSeconds',
