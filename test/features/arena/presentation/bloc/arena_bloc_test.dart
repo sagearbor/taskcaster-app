@@ -1,5 +1,6 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/config/e2e_mode.dart';
 import 'package:taskcaster_app/core/models/submission.dart';
 import 'package:taskcaster_app/features/arena/data/datasources/mock_feed_data_source.dart';
 import 'package:taskcaster_app/features/arena/data/repositories/feed_repository_impl.dart';
@@ -325,6 +326,42 @@ void main() {
         final state = bloc.state as ArenaLoaded;
         expect(state.index, 1);
         expect(state.gradedThisSession, 1);
+      },
+    );
+  });
+
+  group('E2E mode', () {
+    setUp(() => E2eMode.debugOverride(true));
+    tearDown(() => E2eMode.debugOverride(null));
+
+    blocTest<ArenaBloc, ArenaState>(
+      'advances like a real grade but writes no grade, boost or tap',
+      setUp: () => seedUnlockedWith(4),
+      build: () => ArenaBloc(feedRepository: repo),
+      act: (bloc) async {
+        bloc.add(const LoadArena(viewerId: me));
+        await Future<void>.delayed(Duration.zero);
+        bloc.add(const TapCurrent());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        for (var i = 0; i < 3; i++) {
+          bloc.add(const GradeCurrent(score: 5));
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      },
+      wait: const Duration(milliseconds: 80),
+      verify: (bloc) async {
+        final state = bloc.state as ArenaLoaded;
+        expect(state.index, 3);
+        expect(state.gradedThisSession, 3);
+        expect(state.current!.id, 'p3');
+        for (final id in ['p0', 'p1', 'p2']) {
+          final p = (await repo.watchPost(id).first)!;
+          expect(p.gradeCount, 0, reason: '$id must stay ungraded');
+          expect(p.gradeSum, 0);
+        }
+        expect((await repo.watchPost('p0').first)!.tapCount, 0);
+        expect((await repo.watchPost('mine').first)!.boosted, isFalse);
+        expect(await repo.gradedCountBy(me), 0);
       },
     );
   });

@@ -9,7 +9,7 @@ void main() {
   testWidgets('shows the unread count as a badge', (tester) async {
     await tester.pumpWidget(wrap(ArenaEntryButton(onTap: () {}, unreadCount: 4)));
 
-    expect(find.text('Arena — grade the crowd'), findsOneWidget);
+    expect(find.text("Arena — grade everyone's attempts"), findsOneWidget);
     expect(find.text('4 new'), findsOneWidget);
     // Never a filled button: Home has exactly one primary action.
     expect(find.byType(FilledButton), findsNothing);

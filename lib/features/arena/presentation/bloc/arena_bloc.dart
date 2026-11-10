@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/config/e2e_mode.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/models/feed_post.dart';
 import '../../domain/repositories/feed_repository.dart';
@@ -216,6 +217,14 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
     _totalGradedByMe++;
     emit(_loaded());
 
+    // An automated walk (E2eMode) grades like a player — the reveal is worked
+    // out locally on the screen — but never writes the grade or the boost:
+    // its grades would land on real people's posts (fun audit follow-up).
+    if (E2eMode.isOn) {
+      debugPrint('ArenaBloc: E2E mode — grade for ${post.id} not written');
+      return;
+    }
+
     try {
       await feedRepository.gradePost(
         postId: post.id,
@@ -254,6 +263,8 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
   ) async {
     final post = _current();
     if (post == null) return;
+    // E2E walks leave no taps on real posts either.
+    if (E2eMode.isOn) return;
     // Fire-and-forget: a tap must never block or fail visibly.
     try {
       await feedRepository.tapPost(post.id, atSecond: event.atSecond);
