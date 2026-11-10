@@ -9,6 +9,16 @@ import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
 import 'package:taskcaster_app/features/home/presentation/screens/home_screen.dart';
 import 'package:taskcaster_app/features/home/presentation/widgets/home_invites_section.dart';
 import 'package:taskcaster_app/features/home/presentation/widgets/next_task_hero_card.dart';
+import 'package:taskcaster_app/core/models/player_task_status.dart';
+import 'package:taskcaster_app/core/models/submission.dart';
+import 'package:taskcaster_app/core/models/user.dart';
+import 'package:taskcaster_app/core/theme/app_theme.dart';
+import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
+import 'package:taskcaster_app/features/arena/domain/repositories/feed_repository.dart';
+import 'package:taskcaster_app/features/games/domain/repositories/game_repository.dart';
+import 'package:taskcaster_app/features/games/presentation/screens/task_execution_screen.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/daily_task_data.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 void main() {
   setUp(() async {
@@ -170,5 +180,206 @@ void main() {
     await pumpHome(tester);
     // Code entry moved into the invites empty state + Play sheet.
     expect(find.widgetWithText(TextButton, 'Join'), findsNothing);
+  });
+
+  group('WP-6 hero: starter, today\'s task, done for today', () {
+    // 18:48 UTC: the next task is 5 h 12 m away.
+    final now = DateTime.utc(2026, 11, 9, 18, 48);
+    final yesterday = now.subtract(const Duration(days: 1));
+    final dailyTask = DailyTaskData.taskFor(now);
+
+    late User user;
+
+    /// Sign in, create the starter game with [starterPosted] tasks posted,
+    /// optionally today's daily game (posted or not), and [posts] (task id ->
+    /// time) as the player's own Arena posts.
+    Future<void> seed(
+      WidgetTester tester, {
+      required int starterPosted,
+      bool? dailyPosted,
+      Map<String, DateTime> posts = const {},
+    }) async {
+      await tester.runAsync(() async {
+        user = await sl<AuthRepository>().signInAnonymously();
+        final games = sl<GameRepository>();
+        final starterId = await games.createStarterGame(user);
+        final starter = (await games.getGameStream(starterId).first)!;
+        await games.updateGame(
+          starterId,
+          starter.copyWith(tasks: [
+            for (var i = 0; i < starter.tasks.length; i++)
+              starter.tasks[i].copyWith(playerStatuses: {
+                user.id: PlayerTaskStatus(
+                  playerId: user.id,
+                  state: i < starterPosted
+                      ? TaskPlayerState.submitted
+                      : TaskPlayerState.not_started,
+                ),
+              }),
+          ]),
+        );
+        if (dailyPosted != null) {
+          final dailyId = await games.createOrGetDailyGame(
+              user, DailyTaskData.dayKey(now));
+          if (dailyPosted) {
+            await games.updateTaskAtomically(
+              dailyId,
+              0,
+              (t) => t.copyWith(playerStatuses: {
+                user.id: PlayerTaskStatus(
+                  playerId: user.id,
+                  state: TaskPlayerState.submitted,
+                ),
+              }),
+            );
+          }
+        }
+        final feed = sl<FeedRepository>();
+        for (final e in posts.entries) {
+          await feed.createPost(FeedPost(
+            id: '',
+            gameId: 'g',
+            taskId: e.key,
+            taskTitle: 't',
+            userId: user.id,
+            displayName: user.displayName,
+            mediaType: SubmissionMediaType.text,
+            text: 'x',
+            createdAt: e.value,
+          ));
+        }
+      });
+    }
+
+    Future<void> pumpAt(WidgetTester tester, Size size, double dpr,
+        {bool dark = false}) async {
+      tester.view.physicalSize = size * dpr;
+      tester.view.devicePixelRatio = dpr;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        await tester.pumpWidget(
+          BlocProvider<AuthBloc>(
+            create: (_) => AuthBloc(authRepository: sl<AuthRepository>())
+              ..add(AuthCheckRequested()),
+            child: MaterialApp(
+              theme: AppTheme.lightTheme,
+              darkTheme: AppTheme.darkTheme,
+              themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+              home: HomeScreen(clock: () => now),
+            ),
+          ),
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    Finder inHero(Finder f) =>
+        find.descendant(of: find.byType(NextTaskHeroCard), matching: f);
+
+    testWidgets('starter in progress, nothing today: the starter task with '
+        'its streak at risk', (tester) async {
+      await seed(tester, starterPosted: 2, posts: {'starter-03': yesterday});
+      await pumpAt(tester, const Size(800, 2200), 1);
+
+      expect(find.text('YOUR NEXT TASK'), findsOneWidget);
+      expect(find.text(StarterPackData.tasks()[2].title), findsOneWidget);
+      expect(inHero(find.text('🔥 1')), findsOneWidget);
+      expect(find.textContaining('or the 🔥 1 goes out'), findsOneWidget);
+    });
+
+    testWidgets("a starter task posted today brings today's task forward, "
+        'with a way back to the starter', (tester) async {
+      await seed(tester, starterPosted: 1, posts: {'starter-09-v2': now});
+      await pumpAt(tester, const Size(800, 2200), 1);
+
+      expect(find.text("TODAY'S TASK"), findsOneWidget);
+      expect(find.text(dailyTask.title), findsOneWidget);
+      expect(inHero(find.text('🔥 1')), findsOneWidget);
+      expect(find.text('Or carry on with your first ten (2 of 10)'),
+          findsOneWidget);
+    });
+
+    testWidgets("starter finished: today's task; Start opens it",
+        (tester) async {
+      await seed(tester, starterPosted: 10, posts: {'starter-08-v2': yesterday});
+      await pumpAt(tester, const Size(800, 2200), 1);
+
+      expect(find.byKey(const Key('home-hero-daily')), findsOneWidget);
+      expect(find.text(dailyTask.title), findsOneWidget);
+      expect(find.text('Challenge friends'), findsOneWidget);
+
+      await tester.tap(inHero(find.text('Start')));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      // The task screen for today's game is on top.
+      expect(find.byType(TaskExecutionScreen), findsOneWidget);
+      final games = await tester.runAsync(
+          () => sl<GameRepository>().getGamesStream().first);
+      expect(
+        games!.where((g) =>
+            g.id == DailyTaskData.gameIdFor(user.id, DailyTaskData.dayKey(now))),
+        hasLength(1),
+      );
+      // Unmount before the mock repos' timers outlive the test.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('posted today: done for today, streak, countdown; the daily '
+        'game stays out of "Your games"', (tester) async {
+      await seed(
+        tester,
+        starterPosted: 10,
+        dailyPosted: true,
+        posts: {'starter-08-v2': yesterday, dailyTask.id: now},
+      );
+      await pumpAt(tester, const Size(800, 2200), 1);
+
+      expect(find.byKey(const Key('home-hero-daily-done')), findsOneWidget);
+      expect(find.text('Done for today.'), findsOneWidget);
+      expect(find.text('🔥 2 days running. New task in 5 h 12 m.'),
+          findsOneWidget);
+      expect(find.text("See today's entries"), findsOneWidget);
+      expect(find.text(DailyTaskData.gameNameFor(DailyTaskData.dayKey(now))),
+          findsNothing);
+      // The finished starter joins "Your games" as before.
+      expect(find.text(StarterPackData.gameName), findsOneWidget);
+    });
+
+    for (final dark in [false, true]) {
+      testWidgets(
+          'no overflow in the hero at 360x640 (${dark ? 'dark' : 'light'})',
+          (tester) async {
+        await seed(
+          tester,
+          starterPosted: 1,
+          posts: {'starter-09-v2': now, 'starter-03': yesterday},
+        );
+        // Only the hero is checked: the seeded GameCards overflow under the
+        // Ahem test font (see the 390x844 test above).
+        final errors = <String>[];
+        final previous = FlutterError.onError;
+        FlutterError.onError = (details) => errors.add(details.toString());
+        try {
+          await pumpAt(tester, const Size(360, 640), 2, dark: dark);
+        } finally {
+          FlutterError.onError = previous;
+        }
+        expect(find.byKey(const Key('home-hero-daily')), findsOneWidget);
+        expect(
+          errors.where((s) => s.contains('next_task_hero_card.dart')),
+          isEmpty,
+        );
+        final hero = tester.getRect(find.byType(NextTaskHeroCard));
+        expect(hero.width, lessThanOrEqualTo(360));
+      });
+    }
   });
 }

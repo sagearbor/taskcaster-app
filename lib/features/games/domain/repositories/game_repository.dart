@@ -63,6 +63,13 @@ abstract class GameRepository {
   /// Not idempotent on its own — `GamesBloc.StartStarterPack` is what reuses
   /// an existing `gameKind == 'starter'` game rather than making a second one.
   Future<String> createStarterGame(User user);
+
+  /// [user]'s Daily Task game for the UTC day [dayKey] (`yyyyMMdd`): one
+  /// task (`DailyTaskData.taskForDayKey`), already in progress, crowd-judged,
+  /// shared to the Arena, with [user] as the only player. The doc id is
+  /// deterministic (`daily_<uid>_<yyyyMMdd>`), so this is idempotent: a second
+  /// call on the same day returns the same id and leaves the game untouched.
+  Future<String> createOrGetDailyGame(User user, String dayKey);
   Future<void> updateGame(String gameId, Game game);
   Future<void> deleteGame(String gameId);
   Stream<Game?> getGameStream(String gameId);

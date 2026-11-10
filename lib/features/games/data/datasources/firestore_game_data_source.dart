@@ -128,6 +128,23 @@ class FirestoreGameDataSource implements GameRemoteDataSource {
   }
 
   @override
+  Future<bool> createGameIfAbsent(
+      String gameId, Map<String, dynamic> gameData) {
+    final ref = _firestore.collection(_gamesCollection).doc(gameId);
+    final data = Map<String, dynamic>.from(gameData)..remove('id');
+    // A transaction, not get-then-set: a cached "does not exist" must never
+    // let a second device overwrite a game that already has an entry in it.
+    // The rules allow reading a missing game (any signed-in user) and
+    // creating one you own, so this needs no rules change.
+    return _firestore.runTransaction<bool>((tx) async {
+      final snapshot = await tx.get(ref);
+      if (snapshot.exists) return false;
+      tx.set(ref, data);
+      return true;
+    });
+  }
+
+  @override
   Future<void> updateGame(String gameId, Map<String, dynamic> updates) async {
     // Use set with merge to handle both create and update cases
     // This is needed for Quick Play which creates then immediately updates

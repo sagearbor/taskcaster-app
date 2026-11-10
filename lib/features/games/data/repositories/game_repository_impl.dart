@@ -9,6 +9,7 @@ import '../../../../core/models/submission.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/models/game_settings.dart';
 import '../../../../core/models/user.dart';
+import '../../../tasks/data/datasources/daily_task_data.dart';
 import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
 import '../../domain/peer_grading.dart';
@@ -317,6 +318,54 @@ class GameRepositoryImpl implements GameRepository {
     );
 
     return await remoteDataSource.createGame(game.toMap());
+  }
+
+  @override
+  Future<String> createOrGetDailyGame(User user, String dayKey) async {
+    final gameId = DailyTaskData.gameIdFor(user.id, dayKey);
+    final task = DailyTaskData.taskForDayKey(dayKey).copyWith(
+      status: TaskStatus.waiting_for_submissions,
+      playerStatuses: {
+        user.id: PlayerTaskStatus(
+          playerId: user.id,
+          state: TaskPlayerState.not_started,
+        ),
+      },
+    );
+
+    final game = Game(
+      id: gameId,
+      gameName: DailyTaskData.gameNameFor(dayKey),
+      creatorId: user.id,
+      // As in the Starter Pack: nominally the creator, really the crowd.
+      judgeId: user.id,
+      status: GameStatus.inProgress,
+      // Every game carries a unique code; nobody can join a daily game with
+      // it (only lobby, Quick Play and Starter games take joins).
+      inviteCode: await _uniqueInviteCode(),
+      createdAt: DateTime.now(),
+      players: [
+        Player(
+          userId: user.id,
+          displayName: user.displayName,
+          totalScore: 0,
+        ),
+      ],
+      tasks: [task],
+      currentTaskIndex: 0,
+      mode: GameMode.async,
+      settings: const GameSettings(
+        taskDeadline: null,
+        autoAdvanceTasks: true,
+        allowSkips: true,
+        crowdJudged: true,
+        shareToArena: true,
+      ),
+      gameKind: Game.kindDaily,
+    );
+
+    await remoteDataSource.createGameIfAbsent(gameId, game.toMap());
+    return gameId;
   }
 
   @override

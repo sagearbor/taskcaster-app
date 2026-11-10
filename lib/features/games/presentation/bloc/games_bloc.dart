@@ -11,6 +11,7 @@ import '../../../../core/models/game_settings.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/models/player_task_status.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../tasks/data/datasources/daily_task_data.dart';
 import '../../../tasks/data/datasources/prebuilt_tasks_data.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
 import '../../domain/repositories/game_repository.dart';
@@ -31,11 +32,16 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
   /// construct unchanged.
   final FeedRepository? feedRepository;
 
+  /// "Now", injectable so tests can pin the UTC day the daily task is for.
+  final DateTime Function() clock;
+
   GamesBloc({
     required this.gameRepository,
     required this.authRepository,
     this.feedRepository,
-  }) : super(GamesInitial()) {
+    DateTime Function()? clock,
+  })  : clock = clock ?? DateTime.now,
+        super(GamesInitial()) {
     // restartable(): each LoadGames cancels the previous subscription, so the
     // create/join/delete handlers re-adding it never stack listeners.
     on<LoadGames>(_onLoadGames, transformer: restartable());
@@ -45,6 +51,7 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     on<QuickPlayGame>(_onQuickPlayGame);
     on<StartStarterPack>(_onStartStarterPack);
     on<ChallengeFriends>(_onChallengeFriends);
+    on<StartDailyTask>(_onStartDailyTask);
   }
 
   Future<void> _onLoadGames(LoadGames event, Emitter<GamesState> emit) async {
@@ -279,6 +286,26 @@ class GamesBloc extends Bloc<GamesEvent, GamesState> {
     } catch (e) {
       emit(_gamesError(
           'start starter pack', e, 'Could not start your first game.'));
+    }
+  }
+
+  /// Open today's Daily Task game, creating it the first time today.
+  Future<void> _onStartDailyTask(
+    StartDailyTask event,
+    Emitter<GamesState> emit,
+  ) async {
+    emit(GamesLoading());
+    try {
+      final user = await authRepository.getCurrentUser();
+      if (user == null) {
+        throw Exception('Not authenticated');
+      }
+      final dayKey = DailyTaskData.dayKey(clock());
+      final gameId = await gameRepository.createOrGetDailyGame(user, dayKey);
+      emit(DailyTaskReady(gameId: gameId));
+    } catch (e) {
+      emit(_gamesError(
+          'start daily task', e, "Could not open today's task."));
     }
   }
 

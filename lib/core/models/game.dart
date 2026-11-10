@@ -54,6 +54,11 @@ class Game extends Equatable {
   /// lobby. firestore.rules mirrors this exception.
   static const String kindQuick = 'quick';
 
+  /// [gameKind] of a Daily Task game (WP-6): one task, the same for everyone
+  /// that UTC day, crowd-judged and shared to the Arena. Doc id
+  /// `daily_<uid>_<yyyyMMdd>`, one per player per day. Not joinable.
+  static const String kindDaily = 'daily';
+
   const Game({
     required this.id,
     required this.gameName,
@@ -184,6 +189,9 @@ class Game extends Equatable {
 
   /// True for the Starter Pack game (crowd-judged, solo, ten fixed tasks).
   bool get isStarter => gameKind == kindStarter;
+
+  /// True for a one-task Daily Task game (see [kindDaily]).
+  bool get isDaily => gameKind == kindDaily;
 
   /// Everyone grades everyone; there is no judge (WP-13).
   bool get isGroupJudged => settings.isGroupJudged;
