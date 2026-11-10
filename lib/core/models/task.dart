@@ -74,6 +74,19 @@ class Task extends Equatable {
   /// still expires. Null on tasks that never opened (and on legacy docs).
   final DateTime? openedAt;
 
+  /// The gather -> reveal misdirect (the classic two-stage task). When
+  /// [gatherPrompt] and [gatherSeconds] are set, the task screen first shows
+  /// ONLY the gather stage ("You have 60 s. Gather as many soft things as you
+  /// can. Go.") with its own countdown; at zero (or on "I'm back") it reveals
+  /// the real task ([title] / [description]) with the normal clock. [title],
+  /// [rubric] and everything in the Arena are always the real task. Anything
+  /// shown BEFORE the player starts (cold open, Home hero, Up next) must use
+  /// [teaserTitle] / [teaserDescription] / [teaserSeconds] so it never spoils
+  /// the reveal. All three are null on ordinary tasks and on legacy docs.
+  final String? gatherTitle;
+  final String? gatherPrompt;
+  final int? gatherSeconds;
+
   const Task({
     required this.id,
     required this.title,
@@ -94,6 +107,9 @@ class Task extends Equatable {
     this.twist,
     this.peerGraders = const {},
     this.openedAt,
+    this.gatherTitle,
+    this.gatherPrompt,
+    this.gatherSeconds,
   });
 
   factory Task.fromMap(Map<String, dynamic> map) {
@@ -150,6 +166,9 @@ class Task extends Equatable {
       openedAt: map['openedAt'] is String
           ? DateTime.tryParse(map['openedAt'] as String)
           : null,
+      gatherTitle: map['gatherTitle'] as String?,
+      gatherPrompt: map['gatherPrompt'] as String?,
+      gatherSeconds: (map['gatherSeconds'] as num?)?.toInt(),
     );
   }
 
@@ -177,6 +196,10 @@ class Task extends Equatable {
       // Round-trip it: clients rewrite the whole tasks array.
       'peerGraders': peerGraders,
       if (openedAt != null) 'openedAt': openedAt!.toUtc().toIso8601String(),
+      // Only on gather -> reveal tasks, so ordinary task docs are unchanged.
+      if (gatherTitle != null) 'gatherTitle': gatherTitle,
+      if (gatherPrompt != null) 'gatherPrompt': gatherPrompt,
+      if (gatherSeconds != null) 'gatherSeconds': gatherSeconds,
     };
   }
 
@@ -200,6 +223,9 @@ class Task extends Equatable {
     String? twist,
     Map<String, List<String>>? peerGraders,
     DateTime? openedAt,
+    String? gatherTitle,
+    String? gatherPrompt,
+    int? gatherSeconds,
   }) {
     return Task(
       id: id ?? this.id,
@@ -221,10 +247,25 @@ class Task extends Equatable {
       twist: twist ?? this.twist,
       peerGraders: peerGraders ?? this.peerGraders,
       openedAt: openedAt ?? this.openedAt,
+      gatherTitle: gatherTitle ?? this.gatherTitle,
+      gatherPrompt: gatherPrompt ?? this.gatherPrompt,
+      gatherSeconds: gatherSeconds ?? this.gatherSeconds,
     );
   }
 
   bool get isVideoTask => taskType == TaskType.video;
+
+  /// True for a gather -> reveal task (see [gatherPrompt]).
+  bool get hasGatherPhase =>
+      (gatherPrompt?.trim().isNotEmpty ?? false) && (gatherSeconds ?? 0) > 0;
+
+  /// What may be shown before the player starts: the gather stage on a
+  /// gather -> reveal task (never the real task), else the task itself.
+  String get teaserTitle =>
+      hasGatherPhase ? (gatherTitle ?? 'Gather') : title;
+  String get teaserDescription =>
+      hasGatherPhase ? gatherPrompt! : description;
+  int? get teaserSeconds => hasGatherPhase ? gatherSeconds : durationSeconds;
   bool get isPuzzleTask => taskType == TaskType.puzzle;
   bool get isArTask => taskType == TaskType.ar;
 
@@ -324,5 +365,8 @@ class Task extends Equatable {
         twist,
         peerGraders,
         openedAt,
+        gatherTitle,
+        gatherPrompt,
+        gatherSeconds,
       ];
 }

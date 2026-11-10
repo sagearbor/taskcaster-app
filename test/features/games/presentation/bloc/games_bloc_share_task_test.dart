@@ -77,16 +77,16 @@ void main() {
         feedRepository: FeedRepositoryImpl(source),
       );
 
-  final eggIndex =
-      StarterPackData.tasks().indexWhere((t) => t.id == 'starter-01-v2');
+  final doorIndex =
+      StarterPackData.tasks().indexWhere((t) => t.id == 'starter-12');
 
   blocTest<GamesBloc, GamesState>(
     'a brand-new player lands on the shared task, not task 1',
     build: build,
-    act: (bloc) => bloc.add(const StartStarterPack(taskId: 'starter-01-v2')),
+    act: (bloc) => bloc.add(const StartStarterPack(taskId: 'starter-12')),
     expect: () => [
       isA<GamesLoading>(),
-      StarterPackReady(gameId: 'new-starter-game', taskIndex: eggIndex),
+      StarterPackReady(gameId: 'new-starter-game', taskIndex: doorIndex),
     ],
   );
 
@@ -95,10 +95,10 @@ void main() {
     setUp: () => when(() => gameRepository.getGamesStream())
         .thenAnswer((_) => Stream.value([existingStarter()])),
     build: build,
-    act: (bloc) => bloc.add(const StartStarterPack(taskId: 'starter-01-v2')),
+    act: (bloc) => bloc.add(const StartStarterPack(taskId: 'starter-12')),
     expect: () => [
       isA<GamesLoading>(),
-      StarterPackReady(gameId: 'starter-game', taskIndex: eggIndex),
+      StarterPackReady(gameId: 'starter-game', taskIndex: doorIndex),
     ],
   );
 

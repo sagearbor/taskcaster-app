@@ -209,9 +209,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
         final firstTask = StarterPackData.tasks().first;
         return ColdOpenScreen(
-          taskTitle: firstTask.title,
-          taskDescription: firstTask.description,
-          timerSeconds: firstTask.durationSeconds ?? 90,
+          // The teaser: a gather -> reveal task shows only its gather stage.
+          taskTitle: firstTask.teaserTitle,
+          taskDescription: firstTask.teaserDescription,
+          timerSeconds: firstTask.teaserSeconds ?? 90,
           onStart: () {
             _launchStarterPackOnAuth = true;
             context.read<AuthBloc>().add(AnonymousSignInRequested());

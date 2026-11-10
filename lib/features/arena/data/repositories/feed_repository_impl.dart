@@ -210,7 +210,8 @@ class FeedRepositoryImpl implements FeedRepository {
   ///
   /// Every starter task gets all of its [StarterPackData.houseEntries], and
   /// every daily task its two [DailyTaskData.houseEntries]. Starter entry 0
-  /// ([StarterPackData.housePosterName]) on a video task is a VIDEO post: a
+  /// ([StarterPackData.housePosterName]) on a video task that has a clip
+  /// ([StarterPackData.houseClipTaskIds]) is a VIDEO post: a
   /// short generated clip in the bucket at `house/<taskId>.mp4`, public-read,
   /// with the task countdown already burned into its pixels (which is why
   /// playback skips the overlay for house entries). Its [FeedPost.text] is
@@ -228,8 +229,12 @@ class FeedRepositoryImpl implements FeedRepository {
             in (StarterPackData.houseEntries[task.id] ?? const <HouseEntry>[])
                 .indexed)
           () {
-            final isVideo =
-                index == 0 && task.submissionType == SubmissionType.video;
+            // Only a task with a seeded clip in the bucket gets a video
+            // entry 0; a new video task with no clip yet stays a text post.
+            final clipTaskId = StarterPackData.houseClipTaskIds[task.id];
+            final isVideo = index == 0 &&
+                task.submissionType == SubmissionType.video &&
+                clipTaskId != null;
             return FeedPost(
               id: houseIdFor(task.id, index),
               gameId: '',
@@ -242,9 +247,10 @@ class FeedRepositoryImpl implements FeedRepository {
                   ? SubmissionMediaType.video
                   : SubmissionMediaType.text,
               text: entry.text,
-              videoUrl: isVideo ? StarterPackData.houseVideoUrl(task.id) : null,
+              videoUrl:
+                  isVideo ? StarterPackData.houseVideoUrl(clipTaskId) : null,
               videoStoragePath:
-                  isVideo ? StarterPackData.houseVideoPath(task.id) : null,
+                  isVideo ? StarterPackData.houseVideoPath(clipTaskId) : null,
               caption: task.twist,
               stamp: entry.stamp,
               isHouse: true,

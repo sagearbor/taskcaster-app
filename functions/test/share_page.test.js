@@ -19,7 +19,7 @@ const {
   httpHandler,
   CACHE_OK,
 } = require('../src/share_page');
-const {STARTER_TASKS, starterTask} = require('../src/starter_tasks');
+const {STARTER_TASKS, RETIRED_STARTER_TASKS, starterTask} = require('../src/starter_tasks');
 const {STARTER_TASK_IDS} = require('../src/contract');
 const {watermarkFor, WATERMARK_TEXT} = require('../src/watermark');
 const {watermarkFilter} = require('../src/montage');
@@ -238,9 +238,9 @@ test('/t/ starter task: tags for crawlers, straight into the web cold open for p
   const store = storeOf({});
   const res = await get('/t/starter-09', store, {from: 'post1'});
   assert.equal(res.status, 200);
-  assert.equal(meta(res.body, 'og:title'), starterTask('starter-09-v2').title);
-  assert.equal(meta(res.body, 'og:url'), 'https://taskmaster-app-3d480.web.app/t/starter-09-v2');
-  assert.ok(res.body.includes('location.replace("https://taskmaster-app-3d480.web.app/?task=starter-09-v2&from=post1")'));
+  assert.equal(meta(res.body, 'og:title'), starterTask('starter-09-v3').title);
+  assert.equal(meta(res.body, 'og:url'), 'https://taskmaster-app-3d480.web.app/t/starter-09-v3');
+  assert.ok(res.body.includes('location.replace("https://taskmaster-app-3d480.web.app/?task=starter-09-v3&from=post1")'));
   assert.deepEqual(store.reads, [], 'a task page needs no database read');
 });
 
@@ -342,12 +342,38 @@ test('page stays small (~10 KB budget)', async () => {
 test('starter_tasks.js mirrors starter_pack_data.dart (ids, order, durations) and contract.js', () => {
   const dart = fs.readFileSync(
     path.join(__dirname, '../../lib/features/tasks/data/datasources/starter_pack_data.dart'), 'utf8');
-  const tasksBody = dart.slice(dart.indexOf('static List<Task> tasks()'), dart.indexOf('houseEntries'));
-  const ids = [...tasksBody.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
-  const durations = [...tasksBody.matchAll(/durationSeconds: (\d+)/g)].map((m) => Number(m[1]));
+  const section = (from, to) => dart.slice(dart.indexOf(from), dart.indexOf(to));
+  const idsIn = (body) => [...body.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
+  const durationsIn = (body) => [...body.matchAll(/durationSeconds: (\d+)/g)].map((m) => Number(m[1]));
+  const gatherIn = (body) => [...body.matchAll(/gatherSeconds: (\d+)/g)].map((m) => Number(m[1]));
+  const tasksBody = section('static List<Task> tasks()', 'static List<Task> retiredTasks()');
+  const retiredBody = section('static List<Task> retiredTasks()', 'static List<Task> allTasks()');
+  const ids = idsIn(tasksBody);
+  const retiredIds = idsIn(retiredBody);
+  assert.equal(ids.length, 10);
   assert.deepEqual(STARTER_TASKS.map((t) => t.id), ids);
-  assert.deepEqual(STARTER_TASKS.map((t) => t.durationSeconds), durations);
-  assert.deepEqual(new Set(ids), STARTER_TASK_IDS);
+  assert.deepEqual(STARTER_TASKS.map((t) => t.durationSeconds), durationsIn(tasksBody));
+  assert.deepEqual(STARTER_TASKS.filter((t) => t.gatherSeconds).map((t) => t.gatherSeconds), gatherIn(tasksBody));
+  assert.deepEqual(RETIRED_STARTER_TASKS.map((t) => t.id), retiredIds);
+  assert.deepEqual(RETIRED_STARTER_TASKS.map((t) => t.durationSeconds), durationsIn(retiredBody));
+  assert.deepEqual(new Set([...ids, ...retiredIds]), STARTER_TASK_IDS);
+});
+
+test('old and short starter ids still resolve', () => {
+  for (const t of RETIRED_STARTER_TASKS) assert.equal(starterTask(t.id).id, t.id);
+  assert.equal(starterTask('starter-09').id, 'starter-09-v3');
+  assert.equal(starterTask('starter-01').id, 'starter-01-v2');
+  assert.equal(starterTask('starter-99'), null);
+});
+
+test('a gather -> reveal task page shows only the gather stage (no spoiler)', async () => {
+  const gather = STARTER_TASKS.find((t) => t.gatherPrompt);
+  assert.ok(gather, 'expected a gather task in the starter ten');
+  const res = await get(`/t/${gather.id}`, storeOf({}));
+  assert.equal(res.status, 200);
+  assert.ok(res.body.includes(gather.gatherTitle));
+  assert.ok(!res.body.includes(gather.title), 'the real task title must not be on the page');
+  assert.ok(!res.body.includes(gather.description));
 });
 
 // ---- watermark hook ----

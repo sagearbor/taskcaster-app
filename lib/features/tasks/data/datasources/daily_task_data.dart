@@ -14,9 +14,13 @@ import 'starter_pack_data.dart' show HouseEntry, StarterPackData;
 /// entry on one task id, so the Arena for that id fills up. Posting unlocks
 /// the other entries exactly as it does for the Starter Pack (by task id).
 ///
-/// Ids are `daily-01` .. `daily-30` and are never renumbered: posts key on
-/// them. To retire a task, replace it under a NEW id (as the starter pack did
-/// with its `-v2` ids) so old posts stay attached to the old wording.
+/// Ids started as `daily-01` .. `daily-30` and are never renumbered: posts
+/// key on them. To retire a task, replace it IN ITS POOL SLOT under a NEW id
+/// (`daily-31` onwards) so old posts stay attached to the old wording and
+/// the day -> slot rotation does not move. Round 9 replaced nine weak or
+/// hard-to-judge tasks this way (three of them moved into the starter pack),
+/// seven of the nine with gather -> reveal misdirects ([Task.gatherPrompt]):
+/// the player gathers something for 30-60 s, then learns what it was for.
 class DailyTaskData {
   const DailyTaskData._();
 
@@ -40,6 +44,9 @@ class DailyTaskData {
     required String rubric,
     required SubmissionType submissionType,
     required int durationSeconds,
+    String? gatherTitle,
+    String? gatherPrompt,
+    int? gatherSeconds,
   }) {
     return Task(
       id: id,
@@ -53,6 +60,9 @@ class DailyTaskData {
       rubric: rubric,
       twist: twist,
       durationSeconds: durationSeconds,
+      gatherTitle: gatherTitle,
+      gatherPrompt: gatherPrompt,
+      gatherSeconds: gatherSeconds,
     );
   }
 
@@ -71,29 +81,37 @@ class DailyTaskData {
           durationSeconds: 90,
         ),
         _t(
-          id: 'daily-02',
-          title: 'The one-star review your sofa would leave you',
+          id: 'daily-31',
+          title: 'A statue of your boss, made from what you gathered',
           description:
-              'Your sofa has been given a voice and an account on a review '
-              'site. Write its review of you as an owner. Three sentences at '
-              'most.',
-          twist: 'It must grudgingly praise exactly one thing about you.',
-          rubric: 'How personally attacked you felt reading it.',
-          submissionType: SubmissionType.text,
-          durationSeconds: 90,
+              'Using only the soft things you just gathered, build a statue '
+              'of your boss (or your teacher, or whoever is in charge of '
+              'you). Photograph it at eye level.',
+          twist: 'It must be pointing at something, sternly.',
+          rubric: 'How badly you would want to avoid its meetings.',
+          submissionType: SubmissionType.photo,
+          durationSeconds: 120,
+          gatherTitle: 'Gather soft things',
+          gatherPrompt:
+              'You have 60 s. Gather as many soft things as you can carry. Go.',
+          gatherSeconds: 60,
         ),
         _t(
-          id: 'daily-03',
-          title: 'Introduce your left hand to your right hand',
+          id: 'daily-32',
+          title: 'A bedtime story starring everything you gathered',
           description:
-              'Your hands have never formally met. Film the introduction. '
-              'They should be polite, but wary.',
-          twist:
-              'One of them is hiding something and reveals it in the last '
-              'two seconds.',
-          rubric: 'Chemistry, then the secret.',
+              'Tell a bedtime story that uses every single thing you just '
+              'gathered. Hold each one up as it enters the story. Film the '
+              'whole thing.',
+          twist: 'The story ends with everything asleep. The last two seconds '
+              'are you, also asleep.',
+          rubric: 'Things used, then how sleepy you felt.',
           submissionType: SubmissionType.video,
-          durationSeconds: 60,
+          durationSeconds: 120,
+          gatherTitle: 'Gather things that start with B',
+          gatherPrompt: 'You have 60 s. Gather as many things as you can whose '
+              'names start with the letter B. Go.',
+          gatherSeconds: 60,
         ),
         _t(
           id: 'daily-04',
@@ -108,14 +126,13 @@ class DailyTaskData {
           durationSeconds: 120,
         ),
         _t(
-          id: 'daily-05',
-          title: 'Explain your job to a medieval peasant',
+          id: 'daily-33',
+          title: 'The dating profile of the oldest thing in your fridge',
           description:
-              'Describe what you do all day (job, school or neither) to '
-              'someone from the year 1300. Two sentences.',
-          twist:
-              'No word invented after 1300. The crowd will check, badly.',
-          rubric: 'Would the peasant have you burned.',
+              'Find the oldest thing in your fridge. Write its dating-app '
+              'bio. Three lines at most.',
+          twist: 'It must list one dealbreaker.',
+          rubric: 'Would you swipe right.',
           submissionType: SubmissionType.text,
           durationSeconds: 90,
         ),
@@ -132,17 +149,21 @@ class DailyTaskData {
           durationSeconds: 120,
         ),
         _t(
-          id: 'daily-07',
-          title: 'Win an argument with a door',
+          id: 'daily-34',
+          title: 'A eulogy for the heavy thing you fetched',
           description:
-              'A door in your home has had the last word for years. Film the '
-              'argument in which you finally win.',
-          twist:
-              "The door may only use its own noises, and it must get the "
-              'final creak.',
-          rubric: 'Who actually won.',
+              'The thing you just fetched has died. Deliver its eulogy to '
+              'camera, with it beside you. Tell us what it meant to the '
+              'family.',
+          twist: 'Reveal one secret it kept from the family. The last two '
+              'seconds are the secret.',
+          rubric: 'Grief, then the secret.',
           submissionType: SubmissionType.video,
           durationSeconds: 90,
+          gatherTitle: 'Fetch something heavy',
+          gatherPrompt: 'You have 30 s. Fetch the heaviest thing you can '
+              'safely lift and bring it back here. Go.',
+          gatherSeconds: 30,
         ),
         _t(
           id: 'daily-08',
@@ -192,16 +213,21 @@ class DailyTaskData {
           durationSeconds: 90,
         ),
         _t(
-          id: 'daily-12',
-          title: 'An audience of objects hears something shocking',
+          id: 'daily-35',
+          title: 'Police line-up: one of the things you gathered did it',
           description:
-              'Line up at least six objects, all facing one thing that has '
-              'just said something unforgivable. Photograph the moment it '
-              'lands.',
-          twist: 'One member of the audience has clearly already left.',
-          rubric: 'How bad was the thing they heard.',
+              'Stand everything you just gathered in a row against a wall, '
+              'like a police line-up. One of them did it. Photograph the '
+              'line-up.',
+          twist: 'Every one of them must look guilty except the one who did '
+              'it.',
+          rubric: 'Could you tell who did it.',
           submissionType: SubmissionType.photo,
-          durationSeconds: 120,
+          durationSeconds: 90,
+          gatherTitle: 'Gather ten small things',
+          gatherPrompt: 'You have 45 s. Gather exactly ten small objects, each '
+              'one smaller than your hand. Go.',
+          gatherSeconds: 45,
         ),
         _t(
           id: 'daily-13',
@@ -263,15 +289,21 @@ class DailyTaskData {
           durationSeconds: 90,
         ),
         _t(
-          id: 'daily-18',
-          title: 'Sell us a glass of tap water',
+          id: 'daily-36',
+          title: 'The national anthem of a made-up country, on what you '
+              'gathered',
           description:
-              'You are on a shopping channel. You have one product: a glass of '
-              'tap water. Sell it.',
-          twist: 'End on the price. It must be alarming.',
-          rubric: 'Would you pay it.',
+              'Name a country that does not exist. Then perform its national '
+              'anthem using only the things you just gathered as '
+              'instruments.',
+          twist: 'End standing, hand on heart, for the last two seconds.',
+          rubric: 'How patriotic you felt, then the name.',
           submissionType: SubmissionType.video,
-          durationSeconds: 90,
+          durationSeconds: 120,
+          gatherTitle: 'Gather noisy things',
+          gatherPrompt: 'You have 60 s. Gather the noisiest things you can '
+              'find: things that rattle, squeak, clang or crinkle. Go.',
+          gatherSeconds: 60,
         ),
         _t(
           id: 'daily-19',
@@ -286,15 +318,21 @@ class DailyTaskData {
           durationSeconds: 90,
         ),
         _t(
-          id: 'daily-20',
-          title: 'Adopt a pet from one kitchen drawer',
+          id: 'daily-37',
+          title: 'A hostage situation, starring the socks you gathered',
           description:
-              'Build a pet from the contents of a single drawer. Photograph '
-              'the two of you at your closest.',
-          twist: 'It must be doing something it has clearly been told not to.',
-          rubric: 'Would you take it to the vet.',
+              'One of the socks you just gathered has taken the others '
+              'hostage. Stage the moment negotiations break down and '
+              'photograph it.',
+          twist: 'The ransom note must be in the shot, and its demand must be '
+              'small.',
+          rubric: 'Tension, then the demand.',
           submissionType: SubmissionType.photo,
           durationSeconds: 120,
+          gatherTitle: 'Gather socks',
+          gatherPrompt: 'You have 45 s. Gather as many socks as you can find. '
+              'Pairs not required. Go.',
+          gatherSeconds: 45,
         ),
         _t(
           id: 'daily-21',
@@ -321,17 +359,19 @@ class DailyTaskData {
           durationSeconds: 90,
         ),
         _t(
-          id: 'daily-23',
-          title: 'Prove you are on a beach',
+          id: 'daily-38',
+          title: 'A beauty pageant for the ugly things you gathered',
           description:
-              'Without leaving home, take a photo that would convince your '
-              'boss you are on holiday somewhere hot.',
-          twist:
-              'One detail must give the game away to anyone who looks '
-              'closely.',
-          rubric: 'How convinced, then how quickly you spotted it.',
+              'The three things you just gathered are the finalists. Crown '
+              'the winner and photograph the moment it is announced.',
+          twist: 'The runner-up must be visibly furious.',
+          rubric: 'Ugliness of the winner, then the fury.',
           submissionType: SubmissionType.photo,
           durationSeconds: 120,
+          gatherTitle: 'Gather ugly things',
+          gatherPrompt:
+              'You have 60 s. Gather the three ugliest things in your home. Go.',
+          gatherSeconds: 60,
         ),
         _t(
           id: 'daily-24',
@@ -390,13 +430,13 @@ class DailyTaskData {
           durationSeconds: 120,
         ),
         _t(
-          id: 'daily-29',
-          title: 'An object having the worst day of its life',
+          id: 'daily-39',
+          title: 'Your shoes have just broken up',
           description:
-              'Find an object that is clearly having a terrible day. Help it '
-              'look the part, then take its photo.',
-          twist: 'It must still be bravely trying.',
-          rubric: 'Sympathy felt.',
+              'Two of your shoes were a couple. They have just broken up. '
+              'Photograph the moment.',
+          twist: 'One of them has already moved on with a slipper.',
+          rubric: 'Whose side you are on.',
           submissionType: SubmissionType.photo,
           durationSeconds: 90,
         ),
@@ -448,44 +488,40 @@ class DailyTaskData {
         gradeSum: 29,
       ),
     ],
-    'daily-02': [
+    'daily-31': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: '★☆☆☆☆ Sits on me for nine hours, then goes to bed. Eats '
-            'over me. Loses coins in me as if I were a bank. I will '
-            'admit the posture is excellent, because I am doing all '
-            'of it.',
-        stamp: Stamps.nailedIt,
-        gradeCount: 24,
-        gradeSum: 97,
+        text: 'A duvet in a dressing gown, two oven-glove arms, pointing at '
+            'the bin. It has called a quick sync. It is not quick.',
+        stamp: Stamps.art,
+        gradeCount: 22,
+        gradeSum: 90,
       ),
       HouseEntry(
         posterName: StarterPackData.theIntern,
-        text: '★☆☆☆☆ Sorted my cushions by colour, then by firmness, '
-            'then by colour again. Grudgingly: hoovers under me '
-            'weekly, with a spreadsheet.',
-        stamp: Stamps.technically,
-        gradeCount: 13,
-        gradeSum: 48,
+        text: 'Pillow torso, scarf tie, slipper eyebrows, laminated name '
+            'badge. It pointed at my timesheet. I have resigned to a '
+            'cushion.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 14,
+        gradeSum: 55,
       ),
     ],
-    'daily-03': [
+    'daily-32': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: 'Left: \'Charmed.\' Right: \'Likewise.\' Two seconds from the '
-            'end the right hand opens. It has been holding the remote '
-            'this whole time.',
-        stamp: Stamps.sendHelp,
-        gradeCount: 19,
-        gradeSum: 74,
+        text: 'Once upon a time a banana married a battery. The bin objected. '
+            'The book read itself to sleep. Then so did I.',
+        stamp: Stamps.noRegrets,
+        gradeCount: 20,
+        gradeSum: 79,
       ),
       HouseEntry(
         posterName: StarterPackData.daveFromAccounts,
-        text: 'They shook. The secret was that they are the same '
-            'person.',
-        stamp: Stamps.noRegrets,
-        gradeCount: 7,
-        gradeSum: 19,
+        text: 'Bread. Bed. The end.',
+        stamp: Stamps.technically,
+        gradeCount: 11,
+        gradeSum: 38,
       ),
     ],
     'daily-04': [
@@ -509,25 +545,23 @@ class DailyTaskData {
         gradeSum: 31,
       ),
     ],
-    'daily-05': [
+    'daily-33': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: 'I sit before a glowing slate and move small words from '
-            'one box into another box. The lord pays me in coin and '
-            'in meetings.',
-        stamp: Stamps.technically,
-        gradeCount: 18,
-        gradeSum: 69,
+        text: 'Mustard, 2019. Mature, well-travelled, still sharp. Looking '
+            'for something long-term. Dealbreaker: ketchup.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 25,
+        gradeSum: 101,
       ),
       HouseEntry(
         posterName: StarterPackData.theIntern,
-        text: 'I am a scribe of the counting house, keeper of the great '
-            'ledger. I have written the same letter four times '
-            'because the abbot changed his mind. I also make the '
-            'abbot\'s ale.',
-        stamp: Stamps.nailedIt,
-        gradeCount: 15,
-        gradeSum: 58,
+        text: 'Half a lime, est. March. Dated, labelled, cross-referenced '
+            'with its own photo. Dealbreaker: anyone who uses the whole '
+            'lime.',
+        stamp: Stamps.technically,
+        gradeCount: 12,
+        gradeSum: 44,
       ),
     ],
     'daily-06': [
@@ -548,24 +582,22 @@ class DailyTaskData {
         gradeSum: 40,
       ),
     ],
-    'daily-07': [
+    'daily-34': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: 'Forty seconds of excellent points, made with real '
-            'passion. The door waited, then closed itself very '
-            'slowly. Creak. The door won.',
+        text: 'The dictionary. It knew every word and never used one. Its '
+            "secret: it was missing the page with 'dictionary' on it.",
         stamp: Stamps.sendHelp,
         gradeCount: 21,
-        gradeSum: 80,
+        gradeSum: 84,
       ),
       HouseEntry(
         posterName: StarterPackData.auntPam,
-        text: 'I apologised to the door halfway through, which I think '
-            'was a mistake. It creaked in a way I took as '
-            'forgiveness. My husband says it was the wind.',
-        stamp: Stamps.technically,
-        gradeCount: 9,
-        gradeSum: 27,
+        text: 'I fetched the cat. He is not dead, he is asleep. I did the '
+            'eulogy anyway and he left halfway through.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 13,
+        gradeSum: 45,
       ),
     ],
     'daily-08': [
@@ -647,19 +679,18 @@ class DailyTaskData {
         gradeSum: 55,
       ),
     ],
-    'daily-12': [
+    'daily-35': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: 'Six mugs turned towards the kettle, which has just '
-            'admitted it never liked tea. A gap in the second row '
-            'where a seventh mug walked out.',
+        text: 'Ten suspects. Nine look shifty. The rubber duck looks serene, '
+            'and there are crumbs on its beak. It was the duck.',
         stamp: Stamps.art,
         gradeCount: 19,
         gradeSum: 77,
       ),
       HouseEntry(
         posterName: StarterPackData.daveFromAccounts,
-        text: 'Six forks facing the calculator. One fork has gone home.',
+        text: 'Ten coins. One did it.',
         stamp: Stamps.dontAsk,
         gradeCount: 9,
         gradeSum: 30,
@@ -764,22 +795,21 @@ class DailyTaskData {
         gradeSum: 39,
       ),
     ],
-    'daily-18': [
+    'daily-36': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: '\'Locally sourced. Hand-poured. Clear as the day it left '
-            'the pipe.\' Ninety seconds of charm, then the price: '
-            '£2,400, or four easy payments of £900.',
+        text: 'The Republic of Lower Cupboard. Colander drum, crisp-packet '
+            'chorus, whisk solo. I stood. The neighbours stood.',
         stamp: Stamps.nailedIt,
-        gradeCount: 25,
-        gradeSum: 101,
+        gradeCount: 24,
+        gradeSum: 98,
       ),
       HouseEntry(
         posterName: StarterPackData.daveFromAccounts,
-        text: '\'Water.\' Holds up glass. \'Eleven thousand pounds.\'',
-        stamp: Stamps.noRegrets,
-        gradeCount: 9,
-        gradeSum: 31,
+        text: 'Kettle. Kettle. Kettle. Long live Kettlestan.',
+        stamp: Stamps.technically,
+        gradeCount: 10,
+        gradeSum: 36,
       ),
     ],
     'daily-19': [
@@ -800,24 +830,22 @@ class DailyTaskData {
         gradeSum: 30,
       ),
     ],
-    'daily-20': [
+    'daily-37': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: 'Meet Bolt: a whisk for a body, four corkscrew legs, an '
-            'egg-timer heart. Photographed chewing the oven manual. '
-            'He has been told.',
-        stamp: Stamps.art,
-        gradeCount: 22,
-        gradeSum: 87,
+        text: "A football sock holds six ankle socks behind the laundry "
+            "basket. The note: 'ONE (1) BISCUIT. NO TRICKS.'",
+        stamp: Stamps.sendHelp,
+        gradeCount: 23,
+        gradeSum: 92,
       ),
       HouseEntry(
         posterName: StarterPackData.theIntern,
-        text: 'Built a fully poseable dog from the cutlery drawer, with '
-            'a tea-towel blanket and a microchip (a SIM card). Caught '
-            'on the sofa. Vet booked for Tuesday.',
+        text: "Negotiator sock in a tiny lanyard, tights on armed response, "
+            "a floor plan. Demand: 'Stop pairing us.' Talks resume Monday.",
         stamp: Stamps.nailedIt,
-        gradeCount: 12,
-        gradeSum: 46,
+        gradeCount: 15,
+        gradeSum: 58,
       ),
     ],
     'daily-21': [
@@ -858,24 +886,22 @@ class DailyTaskData {
         gradeSum: 38,
       ),
     ],
-    'daily-23': [
+    'daily-38': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: 'Feet in a washing-up bowl of sand, a beach towel, '
-            'sunglasses on the cat. In the corner, quite clearly, a '
-            'radiator.',
+        text: 'Winner: a lamp shaped like a fish. Runner-up: a mug shaped '
+            'like a face. The mug has turned to face the wall.',
         stamp: Stamps.technically,
-        gradeCount: 21,
-        gradeSum: 80,
+        gradeCount: 20,
+        gradeSum: 76,
       ),
       HouseEntry(
         posterName: StarterPackData.theIntern,
-        text: 'Ring light at 5600K, a sand-coloured duvet, wave sounds '
-            'on the laptop and a cocktail umbrella I folded myself. '
-            'Left my lanyard on. It says Swindon.',
+        text: "Sash, crown, judges' scorecards and a talent round. The "
+            'runner-up, a novelty toast rack, has lodged an appeal.',
         stamp: Stamps.dontAsk,
         gradeCount: 13,
-        gradeSum: 49,
+        gradeSum: 47,
       ),
     ],
     'daily-24': [
@@ -975,24 +1001,22 @@ class DailyTaskData {
         gradeSum: 32,
       ),
     ],
-    'daily-29': [
+    'daily-39': [
       HouseEntry(
         posterName: StarterPackData.housePosterName,
-        text: 'A banana with one bruise for every bad decision, propped '
-            'up beside the fruit bowl it was not invited into. Still '
-            'smiling (felt tip).',
+        text: 'Left boot alone by the door, laces undone. Right boot in the '
+            'hall with a fluffy slipper, not making eye contact.',
         stamp: Stamps.noRegrets,
-        gradeCount: 21,
-        gradeSum: 84,
+        gradeCount: 22,
+        gradeSum: 85,
       ),
       HouseEntry(
         posterName: StarterPackData.theIntern,
-        text: 'Brought a stapler out of retirement and gave it a tiny '
-            'cup of coffee and a badge that says \'Here to help\'. It '
-            'is out of staples. It is still here to help.',
-        stamp: Stamps.sendHelp,
-        gradeCount: 15,
-        gradeSum: 57,
+        text: 'Sad trainer, tiny tissue, a calendar with their anniversary '
+            'circled. In the background, the slipper wears its lace.',
+        stamp: Stamps.art,
+        gradeCount: 14,
+        gradeSum: 53,
       ),
     ],
     'daily-30': [

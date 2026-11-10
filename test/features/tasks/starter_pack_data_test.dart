@@ -11,30 +11,48 @@ void main() {
       expect(tasks.length, 10);
     });
 
-    test('ids keep their numbers; only the play order changed (WP-05)', () {
+    test('the round 9 ten, in play order', () {
       expect(tasks.map((t) => t.id), [
-        'starter-09-v2', // oven face: a selfie, no props, 30 s
+        'starter-09-v3', // oven selfie: no props, 30 s (clearer copy)
         'starter-03', // rename an object: sit still and type
         'starter-04', // hide in plain sight: one photo
-        'starter-10-v2',
-        'starter-06',
-        'starter-01-v2', // egg on a spoon: needs props and a walk, so 6+
-        'starter-07',
-        'starter-02-v2',
-        'starter-05-v2',
-        'starter-08-v2',
+        'starter-02-v3', // GATHER shapes -> REVEAL the tower
+        'starter-11', // the sofa's one-star review (from the daily pool)
+        'starter-06', // famous painting from arm's reach
+        'starter-07', // three-line fridge horror
+        'starter-12', // win an argument with a door (from the daily pool)
+        'starter-13', // sell us a glass of tap water (from the daily pool)
+        'starter-08-v2', // most things on your head
       ]);
     });
 
-    test('the same ten ids as always, so posts and montages still attach', () {
-      expect(
-        tasks.map((t) => t.id).toSet(),
-        {
-          for (var i = 1; i <= 10; i++)
-            'starter-${i.toString().padLeft(2, '0')}'
-                '${const {1, 2, 5, 8, 9, 10}.contains(i) ? '-v2' : ''}',
-        },
-      );
+    test('cut and rewritten tasks keep resolving for older games', () {
+      final retired = StarterPackData.retiredTasks().map((t) => t.id).toSet();
+      expect(retired, {
+        'starter-09-v2', // old oven copy
+        'starter-02-v2', // old tower (no gather)
+        'starter-01-v2', // egg on a spoon (cut)
+        'starter-05-v2', // worst sandwich (cut)
+        'starter-10-v2', // autobiography trailer (cut)
+      });
+      // No id is both live and retired, and every id ever dealt resolves.
+      expect(retired.intersection(tasks.map((t) => t.id).toSet()), isEmpty);
+      final all = StarterPackData.allTasks();
+      expect(all.map((t) => t.id).toSet().length, all.length);
+      for (final t in all) {
+        expect(StarterPackData.byId(t.id), t, reason: t.id);
+      }
+      expect(StarterPackData.byId('starter-99'), isNull);
+      // A retired task's data is untouched (older games hold it inline).
+      expect(StarterPackData.byId('starter-01-v2')!.title,
+          'Egg on a spoon, to the far wall and back');
+    });
+
+    test('the cut tasks are not in the ten', () {
+      final titles = tasks.map((t) => t.title.toLowerCase()).join(' | ');
+      expect(titles, isNot(contains('egg')));
+      expect(titles, isNot(contains('sandwich')));
+      expect(titles, isNot(contains('autobiography')));
     });
 
     test('task 1 needs no props: a 30 s selfie clip', () {
@@ -62,15 +80,15 @@ void main() {
       }
     });
 
-    test('video is the default medium: six of the ten are clips', () {
+    test('video is still the main medium: five of the ten are clips', () {
       final videoIds = tasks
           .where((t) => t.submissionType == SubmissionType.video)
           .map((t) => t.id)
           .toSet();
       expect(
         videoIds,
-        {'starter-01-v2', 'starter-02-v2', 'starter-05-v2', 'starter-08-v2',
-         'starter-09-v2', 'starter-10-v2'},
+        {'starter-09-v3', 'starter-02-v3', 'starter-12', 'starter-13',
+         'starter-08-v2'},
       );
     });
 
@@ -90,15 +108,15 @@ void main() {
       // the joke); everything else is a clip.
       expect(byId['starter-03'], SubmissionType.text);
       expect(byId['starter-07'], SubmissionType.text);
+      expect(byId['starter-11'], SubmissionType.text);
       expect(byId['starter-04'], SubmissionType.photo);
       expect(byId['starter-06'], SubmissionType.photo);
       for (final id in const [
-        'starter-01-v2',
-        'starter-02-v2',
-        'starter-05-v2',
+        'starter-09-v3',
+        'starter-02-v3',
+        'starter-12',
+        'starter-13',
         'starter-08-v2',
-        'starter-09-v2',
-        'starter-10-v2',
       ]) {
         expect(byId[id], SubmissionType.video, reason: id);
       }
@@ -108,16 +126,16 @@ void main() {
       expect(
         {for (final t in tasks) t.id: t.durationSeconds},
         {
-          'starter-01-v2': 30,
-          'starter-02-v2': 60,
+          'starter-09-v3': 30,
           'starter-03': 60,
           'starter-04': 120,
-          'starter-05-v2': 90,
+          'starter-02-v3': 90,
+          'starter-11': 90,
           'starter-06': 180,
           'starter-07': 90,
+          'starter-12': 90,
+          'starter-13': 90,
           'starter-08-v2': 60,
-          'starter-09-v2': 30,
-          'starter-10-v2': 30,
         },
       );
     });
@@ -152,21 +170,47 @@ void main() {
       }
     });
 
-    test('the autobiography trailer needs no hand-made props', () {
-      final trailer = tasks.firstWhere((t) => t.id == 'starter-10-v2');
-      expect(trailer.durationSeconds, 30);
-      expect(trailer.description, isNot(contains('cover')));
-      expect(trailer.twist, isNot(contains('cover')));
-      expect(trailer.twist, contains('out loud'));
+    test('task 1 says what it means: you, the oven, a selfie', () {
+      final oven = tasks.first;
+      expect(oven.title, 'Selfie: you just remembered the oven is on');
+      expect(oven.description, contains('the oven is on'));
+      expect(oven.description, isNot(contains('3 a.m.')));
+      expect(oven.twist, contains('exactly one word'));
     });
 
-    test('the copy is the product copy', () {
-      final first = tasks.firstWhere((t) => t.id == 'starter-01-v2');
-      expect(first.title, 'Egg on a spoon, to the far wall and back');
-      expect(first.description, startsWith('Put an egg'));
-      expect(first.description, contains('Film the whole trip'));
-      expect(first.rubric, 'Distance covered before disaster, then narration.');
-      expect(first.twist, contains('nature documentary'));
+    group('gather -> reveal', () {
+      final gatherTasks = tasks.where((t) => t.hasGatherPhase).toList();
+
+      test('task 4 is the one starter misdirect: gather shapes, then a tower',
+          () {
+        expect(gatherTasks.map((t) => t.id), ['starter-02-v3']);
+        final tower = tasks[3];
+        expect(tower.id, 'starter-02-v3');
+        expect(tower.gatherSeconds, 60);
+        expect(tower.gatherPrompt, startsWith('You have 60 s.'));
+        expect(tower.gatherPrompt, contains('different shapes'));
+        expect(tower.title, contains('tallest tower'));
+        expect(tower.description, contains('only the things you just gathered'));
+      });
+
+      test('the teaser never spoils the real task', () {
+        for (final t in gatherTasks) {
+          expect(t.teaserTitle, t.gatherTitle, reason: t.id);
+          expect(t.teaserDescription, t.gatherPrompt, reason: t.id);
+          expect(t.teaserSeconds, t.gatherSeconds, reason: t.id);
+          final teaser = '${t.teaserTitle} ${t.teaserDescription}'.toLowerCase();
+          expect(teaser, isNot(contains('tower')), reason: t.id);
+          expect(teaser, isNot(contains(t.title.toLowerCase())), reason: t.id);
+        }
+      });
+
+      test('an ordinary task teases itself', () {
+        final rename = tasks[1];
+        expect(rename.hasGatherPhase, isFalse);
+        expect(rename.teaserTitle, rename.title);
+        expect(rename.teaserDescription, rename.description);
+        expect(rename.teaserSeconds, rename.durationSeconds);
+      });
     });
   });
 
@@ -192,7 +236,8 @@ void main() {
 
     test('entry 0 keeps the copy it has always had (its prod doc keeps it)',
         () {
-      expect(StarterPackData.houseEntries['starter-09-v2']!.first.text,
+      // The v3 oven reuses the v2 clip, so its entry 0 keeps the clip's line.
+      expect(StarterPackData.houseEntries['starter-09-v3']!.first.text,
           "Layer 4 was 'the cat is also in the oven'.");
       expect(StarterPackData.houseEntries['starter-07']!.first.text,
           startsWith('There are four yoghurts.'));
@@ -248,16 +293,27 @@ void main() {
       }
     });
 
-    test('the seeded house clips point at house/<taskId>.mp4', () {
-      for (final task in tasks) {
-        if (task.submissionType != SubmissionType.video) continue;
-        expect(StarterPackData.houseVideoPath(task.id), 'house/${task.id}.mp4');
+    test('the seeded house clips point at house/<clipTaskId>.mp4', () {
+      for (final MapEntry(key: taskId, value: clip)
+          in StarterPackData.houseClipTaskIds.entries) {
+        final task = StarterPackData.byId(taskId)!;
+        expect(task.submissionType, SubmissionType.video, reason: taskId);
+        expect(StarterPackData.houseVideoPath(clip), 'house/$clip.mp4');
         expect(
-          StarterPackData.houseVideoUrl(task.id),
-          contains('house%2F${task.id}.mp4?alt=media'),
+          StarterPackData.houseVideoUrl(clip),
+          contains('house%2F$clip.mp4?alt=media'),
         );
         // Public read, no download token in the URL.
-        expect(StarterPackData.houseVideoUrl(task.id), isNot(contains('token')));
+        expect(StarterPackData.houseVideoUrl(clip), isNot(contains('token')));
+        // Only clips that were actually uploaded (the round 8 six).
+        expect(const {
+          'starter-01-v2',
+          'starter-02-v2',
+          'starter-05-v2',
+          'starter-08-v2',
+          'starter-09-v2',
+          'starter-10-v2',
+        }, contains(clip));
       }
     });
 

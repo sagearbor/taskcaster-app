@@ -525,21 +525,23 @@ void main() {
       expect(post.meanGrade, closeTo(dave.meanGrade, 1e-9));
     });
 
-    test('video starter tasks get VIDEO house entries at house/<taskId>.mp4',
+    test('video starter tasks with a seeded clip get VIDEO house entries',
         () async {
       await repo.ensureHouseEntries();
 
       final byId = {for (final row in source.posts) row['id']: row};
-      final videoTasks = StarterPackData.tasks()
-          .where((t) => t.submissionType == SubmissionType.video);
+      final videoTasks = StarterPackData.tasks().where((t) =>
+          t.submissionType == SubmissionType.video &&
+          StarterPackData.houseClipTaskIds.containsKey(t.id));
       expect(videoTasks, isNotEmpty);
 
       for (final task in videoTasks) {
+        final clip = StarterPackData.houseClipTaskIds[task.id]!;
         final row = byId['house-${task.id}']!;
         expect(row['mediaType'], SubmissionMediaType.video.name, reason: task.id);
         expect(row['displayName'], StarterPackData.housePosterName);
-        expect(row['videoStoragePath'], 'house/${task.id}.mp4');
-        expect(row['videoUrl'], StarterPackData.houseVideoUrl(task.id));
+        expect(row['videoStoragePath'], 'house/$clip.mp4');
+        expect(row['videoUrl'], StarterPackData.houseVideoUrl(clip));
         // The personas' takes on a video task are text posts: only entry 0
         // has a clip.
         for (var n = 1; n <= 3; n++) {
@@ -548,6 +550,23 @@ void main() {
           expect(persona['videoUrl'], isNull);
           expect(persona['videoStoragePath'], isNull);
         }
+      }
+    });
+
+    test('a video task with no clip in the bucket gets a TEXT entry 0',
+        () async {
+      await repo.ensureHouseEntries();
+
+      final byId = {for (final row in source.posts) row['id']: row};
+      final noClip = StarterPackData.tasks().where((t) =>
+          t.submissionType == SubmissionType.video &&
+          !StarterPackData.houseClipTaskIds.containsKey(t.id));
+      expect(noClip.map((t) => t.id),
+          containsAll(['starter-02-v3', 'starter-12', 'starter-13']));
+      for (final task in noClip) {
+        final row = byId['house-${task.id}']!;
+        expect(row['mediaType'], SubmissionMediaType.text.name, reason: task.id);
+        expect(row['videoUrl'], isNull, reason: task.id);
       }
     });
 
@@ -570,8 +589,8 @@ void main() {
       // A doc seeded by an older build: text, no clip.
       await source.ensureHouseEntries([
         {
-          'id': 'house-starter-01-v2',
-          'taskId': 'starter-01-v2',
+          'id': 'house-starter-08-v2',
+          'taskId': 'starter-08-v2',
           'mediaType': SubmissionMediaType.text.name,
           'text': 'old copy',
           'isHouse': true,
@@ -582,9 +601,9 @@ void main() {
       await repo.ensureHouseEntries();
 
       final row =
-          source.posts.firstWhere((p) => p['id'] == 'house-starter-01-v2');
+          source.posts.firstWhere((p) => p['id'] == 'house-starter-08-v2');
       expect(row['mediaType'], SubmissionMediaType.video.name);
-      expect(row['videoUrl'], StarterPackData.houseVideoUrl('starter-01-v2'));
+      expect(row['videoUrl'], StarterPackData.houseVideoUrl('starter-08-v2'));
       expect(row['text'], isNot('old copy'));
     });
 
@@ -598,8 +617,8 @@ void main() {
 
     test('re-seeding keeps the grades the crowd has already given', () async {
       await repo.ensureHouseEntries();
-      const id = 'house-starter-01-v2';
-      final seed = StarterPackData.houseEntries['starter-01-v2']!.first;
+      const id = 'house-starter-08-v2';
+      final seed = StarterPackData.houseEntries['starter-08-v2']!.first;
       await repo.gradePost(postId: id, graderId: 'me', score: 5);
 
       await repo.ensureHouseEntries();

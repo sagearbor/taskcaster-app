@@ -84,9 +84,43 @@ class HouseReactions {
     ],
   };
 
-  /// Task-specific lines for the ten Starter Pack tasks, keyed by task id
-  /// (see `StarterPackData.tasks`). These do not depend on the stamp.
+  /// Task-specific lines for the Starter Pack tasks, keyed by task id (see
+  /// `StarterPackData.tasks`, and `retiredTasks` for the older ids, which
+  /// keep their lines for games that still hold them). These do not depend
+  /// on the stamp.
   static const Map<String, List<String>> byTask = {
+    // The oven selfie (round 9 copy).
+    'starter-09-v3': [
+      'I counted the stages of panic. I got to six, then I also remembered '
+          'the oven.',
+      'That face is a long way from home. The oven is not.',
+      'Greg has turned your oven off. He was not asked. He wanted to help.',
+    ],
+    // Gather shapes, then: the tallest tower from only what you gathered.
+    'starter-02-v3': [
+      'You gathered for a tower without knowing it was a tower. Greg finds '
+          'that very moving.',
+      'Different shapes, one ambition. The shapes did not share it.',
+      'Greg measured the tower, then the floor, for later.',
+    ],
+    // The one-star review your sofa would leave you.
+    'starter-11': [
+      'The sofa has been shown your reply. It is not getting up.',
+      'Greg read this sitting down. He has since stood up, permanently.',
+      'One star. The sofa was being generous, and it wants you to know.',
+    ],
+    // Win an argument with a door.
+    'starter-12': [
+      'The door has asked for a rematch. I have asked it to stay shut.',
+      'Strong points. The hinge disagreed, but the hinge is biased.',
+      'Greg has sided with the door. He sides with doors.',
+    ],
+    // Sell us a glass of tap water.
+    'starter-13': [
+      'I checked my bank balance afterwards, just to be sure.',
+      'Greg has bought two. He would like to know where to collect them.',
+      'Hand-poured. Locally sourced. Still water. Still overpriced.',
+    ],
     // The oven face, in another country.
     'starter-09-v2': [
       'I counted the layers of realisation. I got to six, then I also '

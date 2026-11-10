@@ -28,7 +28,7 @@
  * Pure apart from the injected `store`, so all of it runs under node:test.
  */
 
-const {starterTask} = require('./starter_tasks');
+const {starterTask, teaserOf} = require('./starter_tasks');
 
 const SITE = 'https://taskmaster-app-3d480.web.app';
 const APP_STORE_URL = 'https://apps.apple.com/app/id6824157028';
@@ -329,13 +329,16 @@ ${actions({
 
 function renderTaskPage(task, fromPostId) {
   const turnUrl = yourTurnUrl(task.id, fromPostId);
+  // A gather -> reveal task shows only its gather stage: the real task is
+  // the surprise, revealed in the app.
+  const teaser = teaserOf(task);
   const body = `<p class="dare">Your task, should you accept it…</p>
-<h1>${esc(task.title)}</h1>
-<div class="stage" style="aspect-ratio:5/3"><div class="text">${esc(task.description)}</div></div>
-${actions({turnUrl, turnSeconds: task.durationSeconds})}`;
+<h1>${esc(teaser.title)}</h1>
+<div class="stage" style="aspect-ratio:5/3"><div class="text">${esc(teaser.description)}</div></div>
+${actions({turnUrl, turnSeconds: teaser.seconds})}`;
   return layout({
-    title: task.title,
-    description: `${task.description} Your turn — ${task.durationSeconds} s.`,
+    title: teaser.title,
+    description: `${teaser.description} Your turn — ${teaser.seconds} s.`,
     canonicalPath: `/t/${task.id}`,
     image: null,
     video: null,

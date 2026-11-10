@@ -149,9 +149,15 @@ void main() {
         {'fromPostId': 'theirs', 'postId': 'mine', 'taskId': 'starter-03'});
   });
 
-  test('resolvePublicTaskId: starter ids, pre-v2 aliases, nothing else', () {
+  test('resolvePublicTaskId: starter ids, short aliases, nothing else', () {
     expect(resolvePublicTaskId('starter-03'), 'starter-03');
-    expect(resolvePublicTaskId('starter-09'), 'starter-09-v2');
+    // A short id lands on the newest version of the task.
+    expect(resolvePublicTaskId('starter-09'), 'starter-09-v3');
+    expect(resolvePublicTaskId('starter-02'), 'starter-02-v3');
+    // Retired tasks still resolve: older games and links point at them.
+    expect(resolvePublicTaskId('starter-09-v2'), 'starter-09-v2');
+    expect(resolvePublicTaskId('starter-01'), 'starter-01-v2');
+    expect(resolvePublicTaskId('starter-11'), 'starter-11');
     expect(resolvePublicTaskId('friend-task'), isNull);
     expect(resolvePublicTaskId('starter-99'), isNull);
   });

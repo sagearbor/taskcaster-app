@@ -51,6 +51,9 @@ class StarterPackData {
     required String rubric,
     required SubmissionType submissionType,
     required int durationSeconds,
+    String? gatherTitle,
+    String? gatherPrompt,
+    int? gatherSeconds,
   }) {
     return Task(
       id: id,
@@ -63,6 +66,9 @@ class StarterPackData {
       rubric: rubric,
       twist: twist,
       durationSeconds: durationSeconds,
+      gatherTitle: gatherTitle,
+      gatherPrompt: gatherPrompt,
+      gatherSeconds: gatherSeconds,
     );
   }
 
@@ -70,23 +76,24 @@ class StarterPackData {
   ///
   /// **The order is the onboarding (WP-05).** Task 1 must be doable in the
   /// next 30 seconds with nothing but a face (the oven selfie), task 2 is a
-  /// sit-still text joke, task 3 a photo; anything that needs props or a walk
-  /// (the egg on a spoon) waits until task 6+. Ids are deliberately NOT
-  /// renumbered when the order changes: posts, montages and the server's
-  /// STARTER_TASK_IDS (functions/src/contract.js) key on the id, so only the
-  /// position moves. Starter games already created keep their old order.
+  /// sit-still text joke, task 3 a photo, and task 4 is the first gather ->
+  /// reveal misdirect (gather shapes for 60 s, THEN learn it is a tower).
+  /// Ids are deliberately NOT renumbered when the order changes: posts,
+  /// montages and the server's STARTER_TASK_IDS (functions/src/contract.js)
+  /// key on the id, so only the position moves. A task whose wording changes
+  /// gets a new id (`-v3`, or the next free number for a task moved in from
+  /// the daily pool) and the old one moves to [retiredTasks]. Starter games
+  /// already created keep their old tasks and order (they hold them inline).
   static List<Task> tasks() => [
         _t(
-          id: 'starter-09-v2',
-          title: 'The face of someone who has just remembered the oven is on '
-              '— in another country',
+          id: 'starter-09-v3',
+          title: 'Selfie: you just remembered the oven is on',
           description:
-              'Selfie video. You have just remembered that you left the oven '
-              'on. You are currently in a different country. It is 3 a.m. '
-              'there. Show us every layer of that realisation arriving, one at '
-              'a time.',
+              'Selfie video. You are a long way from home and you have just '
+              'remembered that the oven is on. Let it land on your face '
+              'slowly, one stage of panic at a time.',
           twist: 'No hands in the shot, and you may say exactly one word.',
-          rubric: 'Number of distinct regrets visible, then the word.',
+          rubric: 'Stages of panic you could count, then the word.',
           submissionType: SubmissionType.video,
           durationSeconds: 30,
         ),
@@ -116,17 +123,33 @@ class StarterPackData {
           durationSeconds: 120,
         ),
         _t(
-          id: 'starter-10-v2',
-          title: 'Your autobiography: the trailer',
+          id: 'starter-02-v3',
+          title: 'The tallest tower, using only what you gathered',
           description:
-              'Your autobiography is out. Its title is the last thing you said '
-              'out loud today. Announce the title, then read the first line of '
-              'the book in a movie-trailer voice.',
-          twist: 'End on a review quote from a household object, read out loud '
-              'in its voice.',
-          rubric: 'Would you watch it.',
+              'Build the tallest freestanding tower you can, using only the '
+              'things you just gathered. Nothing else from the house. Film '
+              'the last three objects going on.',
+          twist: 'The last object goes on with one hand, and you must say '
+              '"and that\'s the tower" before you let go.',
+          rubric: 'Height x how long it stands after you let go.',
           submissionType: SubmissionType.video,
-          durationSeconds: 30,
+          durationSeconds: 90,
+          gatherTitle: 'Gather different shapes',
+          gatherPrompt: 'You have 60 s. Gather as many objects with different '
+              'shapes or numbers of sides as you can. Go.',
+          gatherSeconds: 60,
+        ),
+        _t(
+          id: 'starter-11',
+          title: 'The one-star review your sofa would leave you',
+          description:
+              'Your sofa has been given a voice and an account on a review '
+              'site. Write its review of you as an owner. Three sentences at '
+              'most.',
+          twist: 'It must grudgingly praise exactly one thing about you.',
+          rubric: 'How personally attacked you felt reading it.',
+          submissionType: SubmissionType.text,
+          durationSeconds: 90,
         ),
         _t(
           id: 'starter-06',
@@ -142,6 +165,90 @@ class StarterPackData {
           durationSeconds: 180,
         ),
         _t(
+          id: 'starter-07',
+          title: 'A three-line horror story about your fridge',
+          description:
+              'Write a horror story about your fridge in exactly three lines. '
+              'It must be based on something actually in your fridge right '
+              'now.',
+          twist: 'The last line must be a single word.',
+          rubric: 'Chills, then the word.',
+          submissionType: SubmissionType.text,
+          durationSeconds: 90,
+        ),
+        _t(
+          id: 'starter-12',
+          title: 'Win an argument with a door',
+          description:
+              'A door in your home has had the last word for years. Film the '
+              'argument in which you finally win. Make your case out loud.',
+          twist:
+              "The door may only use its own noises, and it must get the "
+              'final creak.',
+          rubric: 'Who actually won.',
+          submissionType: SubmissionType.video,
+          durationSeconds: 90,
+        ),
+        _t(
+          id: 'starter-13',
+          title: 'Sell us a glass of tap water',
+          description:
+              'You are on a shopping channel. You have one product: a glass of '
+              'tap water. Sell it like the phone lines are about to close.',
+          twist: 'End on the price. It must be alarming.',
+          rubric: 'Would you pay it.',
+          submissionType: SubmissionType.video,
+          durationSeconds: 90,
+        ),
+        _t(
+          id: 'starter-08-v2',
+          title: 'Wear as many things on your head as possible',
+          description:
+              'Balance as many objects as you can on your head. Balanced, not '
+              'tied, not held. Film yourself adding them one at a time and '
+              'keep filming until they fall.',
+          twist: 'Count out loud as each one goes on; the crowd will check.',
+          rubric: 'Number of things x your dignity when they go.',
+          submissionType: SubmissionType.video,
+          durationSeconds: 60,
+        ),
+      ];
+
+  /// Starter tasks that are no longer dealt to new players (round 9 cut the
+  /// egg, the sandwich and the trailer, and rewrote the oven and the tower).
+  /// Starter games created before then still hold these tasks inline, and
+  /// their posts, montages and share links still key on these ids, so they
+  /// must keep resolving: [byId], [allTasks] and the server's
+  /// STARTER_TASK_IDS / starter_tasks.js all include them.
+  static List<Task> retiredTasks() => [
+        _t(
+          id: 'starter-09-v2',
+          title: 'The face of someone who has just remembered the oven is on '
+              '— in another country',
+          description:
+              'Selfie video. You have just remembered that you left the oven '
+              'on. You are currently in a different country. It is 3 a.m. '
+              'there. Show us every layer of that realisation arriving, one at '
+              'a time.',
+          twist: 'No hands in the shot, and you may say exactly one word.',
+          rubric: 'Number of distinct regrets visible, then the word.',
+          submissionType: SubmissionType.video,
+          durationSeconds: 30,
+        ),
+        _t(
+          id: 'starter-10-v2',
+          title: 'Your autobiography: the trailer',
+          description:
+              'Your autobiography is out. Its title is the last thing you said '
+              'out loud today. Announce the title, then read the first line of '
+              'the book in a movie-trailer voice.',
+          twist: 'End on a review quote from a household object, read out loud '
+              'in its voice.',
+          rubric: 'Would you watch it.',
+          submissionType: SubmissionType.video,
+          durationSeconds: 30,
+        ),
+        _t(
           id: 'starter-01-v2',
           title: 'Egg on a spoon, to the far wall and back',
           description:
@@ -153,18 +260,6 @@ class StarterPackData {
           rubric: 'Distance covered before disaster, then narration.',
           submissionType: SubmissionType.video,
           durationSeconds: 30,
-        ),
-        _t(
-          id: 'starter-07',
-          title: 'A three-line horror story about your fridge',
-          description:
-              'Write a horror story about your fridge in exactly three lines. '
-              'It must be based on something actually in your fridge right '
-              'now.',
-          twist: 'The last line must be a single word.',
-          rubric: 'Chills, then the word.',
-          submissionType: SubmissionType.text,
-          durationSeconds: 90,
         ),
         _t(
           id: 'starter-02-v2',
@@ -194,19 +289,30 @@ class StarterPackData {
           submissionType: SubmissionType.video,
           durationSeconds: 90,
         ),
-        _t(
-          id: 'starter-08-v2',
-          title: 'Wear as many things on your head as possible',
-          description:
-              'Balance as many objects as you can on your head. Balanced, not '
-              'tied, not held. Film yourself adding them one at a time and '
-              'keep filming until they fall.',
-          twist: 'Count out loud as each one goes on; the crowd will check.',
-          rubric: 'Number of things x your dignity when they go.',
-          submissionType: SubmissionType.video,
-          durationSeconds: 60,
-        ),
       ];
+
+  /// Every starter task that has ever been dealt: the current ten, then the
+  /// retired ones.
+  static List<Task> allTasks() => [...tasks(), ...retiredTasks()];
+
+  /// The starter task with [id] (current or retired), or null.
+  static Task? byId(String id) {
+    for (final t in allTasks()) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
+  /// The task whose seeded clip a video task's house entry 0 plays. A video
+  /// task missing from this map gets a TEXT entry 0 instead of a broken
+  /// video: new clips are a prod upload (scripts/house_clips/), not a code
+  /// change. The v3 oven reuses the v2 clip, because the clip carries only
+  /// the house line and a 30 s countdown (never the task title), and both
+  /// stayed the same.
+  static const Map<String, String> houseClipTaskIds = {
+    'starter-09-v3': 'starter-09-v2',
+    'starter-08-v2': 'starter-08-v2',
+  };
 
   /// The recurring house personas. [housePosterName] is entry 0 on every task;
   /// these three post the other three takes.
@@ -218,7 +324,8 @@ class StarterPackData {
   /// unlocks a task sees a small crowd, not a placeholder.
   ///
   /// * Entry 0 is always [housePosterName] with the copy it has always had;
-  ///   on a video task it is the seeded clip at [houseVideoPath]. Its document
+  ///   on a video task with a clip in [houseClipTaskIds] it is that seeded
+  ///   clip at [houseVideoPath], otherwise a text post. Its document
   ///   id (`house-<taskId>`) never changes, so the grades it has collected in
   ///   prod survive a re-seed.
   /// * Entries 1-3 are text takes from the recurring personas:
@@ -232,7 +339,7 @@ class StarterPackData {
   /// The text of a video entry is still written: it becomes the post's
   /// fallback text and shows if the seeded clip is ever unavailable.
   static const Map<String, List<HouseEntry>> houseEntries = {
-    'starter-09-v2': [
+    'starter-09-v3': [
       HouseEntry(
         posterName: housePosterName,
         text: "Layer 4 was 'the cat is also in the oven'.",
@@ -333,37 +440,73 @@ class StarterPackData {
         gradeSum: 37,
       ),
     ],
-    'starter-10-v2': [
+    'starter-02-v3': [
       HouseEntry(
         posterName: housePosterName,
-        text: "'I said I'd be five minutes.' — reviewed by the kettle: 'a lie'",
-        stamp: Stamps.noRegrets,
-        gradeCount: 18,
-        gradeSum: 71,
+        text: 'Gathered a lemon, a die, a hexagonal pencil and a traffic cone '
+            'I cannot explain. 31 cm. Stood for two seconds.',
+        stamp: Stamps.technically,
+        gradeCount: 19,
+        gradeSum: 66,
       ),
       HouseEntry(
         posterName: auntPam,
-        text: "Title: 'Is this thing recording'. First line: 'Is this thing "
-            "recording.' The toaster says: 'warm, lovely, a bit much'.",
-        stamp: Stamps.dontAsk,
+        text: 'I gathered eleven round things because I thought it was a ball '
+            'game. The tower was one orange. It stood beautifully.',
+        stamp: Stamps.noRegrets,
         gradeCount: 13,
-        gradeSum: 41,
+        gradeSum: 43,
       ),
       HouseEntry(
         posterName: theIntern,
-        text: "Title: 'Per My Last Email', book one of a trilogy. The printer "
-            "says: 'Paper jam in tray 2. A triumph.' Box set pre-orders open.",
+        text: 'Fourteen shapes, sorted by number of sides before the reveal, '
+            'just in case. Triangle base, sphere on top for drama. 58 cm.',
         stamp: Stamps.nailedIt,
         gradeCount: 16,
-        gradeSum: 61,
+        gradeSum: 65,
       ),
       HouseEntry(
         posterName: daveFromAccounts,
-        text: "Title: 'Fine'. First line: 'It was fine.' The sofa says: 'he "
-            "sat on me'.",
+        text: "Gathered one cushion. Put it down. And that's the tower.",
+        stamp: Stamps.dontAsk,
+        gradeCount: 10,
+        gradeSum: 33,
+      ),
+    ],
+    'starter-11': [
+      HouseEntry(
+        posterName: housePosterName,
+        text: '★☆☆☆☆ Sits on me for nine hours, then goes to bed. Eats '
+            'over me. Loses coins in me as if I were a bank. I will '
+            'admit the posture is excellent, because I am doing all '
+            'of it.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 24,
+        gradeSum: 97,
+      ),
+      HouseEntry(
+        posterName: auntPam,
+        text: '★☆☆☆☆ She talks to me. I am a sofa. She tells me about '
+            'Sandra. Grudgingly: lovely cushions, she made them herself.',
+        stamp: Stamps.dontAsk,
+        gradeCount: 12,
+        gradeSum: 40,
+      ),
+      HouseEntry(
+        posterName: theIntern,
+        text: '★☆☆☆☆ Sorted my cushions by colour, then by firmness, '
+            'then by colour again. Grudgingly: hoovers under me '
+            'weekly, with a spreadsheet.',
         stamp: Stamps.technically,
-        gradeCount: 7,
-        gradeSum: 25,
+        gradeCount: 13,
+        gradeSum: 48,
+      ),
+      HouseEntry(
+        posterName: daveFromAccounts,
+        text: '★☆☆☆☆ Sits. Grudgingly: light.',
+        stamp: Stamps.noRegrets,
+        gradeCount: 9,
+        gradeSum: 31,
       ),
     ],
     'starter-06': [
@@ -399,38 +542,6 @@ class StarterPackData {
         gradeSum: 63,
       ),
     ],
-    'starter-01-v2': [
-      HouseEntry(
-        posterName: housePosterName,
-        text: 'Egg made it 4 steps. Narration made it 30 seconds.',
-        stamp: Stamps.noRegrets,
-        gradeCount: 22,
-        gradeSum: 79,
-      ),
-      HouseEntry(
-        posterName: auntPam,
-        text: 'Used a boiled egg to be safe. It still fell. I narrated it like '
-            'the nature man, David something. Dave from Accounts?',
-        stamp: Stamps.dontAsk,
-        gradeCount: 10,
-        gradeSum: 29,
-      ),
-      HouseEntry(
-        posterName: theIntern,
-        text: 'Far wall and back, egg intact. Three dry runs with a grape first. '
-            'The narration has footnotes.',
-        stamp: Stamps.nailedIt,
-        gradeCount: 14,
-        gradeSum: 53,
-      ),
-      HouseEntry(
-        posterName: daveFromAccounts,
-        text: 'Egg is fine. I did not move.',
-        stamp: Stamps.technically,
-        gradeCount: 6,
-        gradeSum: 14,
-      ),
-    ],
     'starter-07': [
       HouseEntry(
         posterName: housePosterName,
@@ -464,68 +575,73 @@ class StarterPackData {
         gradeSum: 50,
       ),
     ],
-    'starter-02-v2': [
+    'starter-12': [
       HouseEntry(
         posterName: housePosterName,
-        text: 'Seven objects, one shoe, 1.5 seconds of standing.',
-        stamp: Stamps.technically,
-        gradeCount: 19,
-        gradeSum: 64,
+        text: 'Forty seconds of excellent points, made with real '
+            'passion. The door waited, then closed itself very '
+            'slowly. Creak. The door won.',
+        stamp: Stamps.sendHelp,
+        gradeCount: 22,
+        gradeSum: 88,
       ),
       HouseEntry(
         posterName: auntPam,
-        text: 'Shoe, Bible, cat. The cat did not agree to be in the tower and '
-            'is now in the garden.',
-        stamp: Stamps.sendHelp,
+        text: 'I apologised to the door halfway through, which I think '
+            'was a mistake. It creaked in a way I took as '
+            'forgiveness. My husband says it was the wind.',
+        stamp: Stamps.technically,
+        gradeCount: 11,
+        gradeSum: 36,
+      ),
+      HouseEntry(
+        posterName: theIntern,
+        text: 'Prepared a twelve-slide deck. The door opened on slide four '
+            'and let the cat in. Point conceded, minutes taken.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 15,
+        gradeSum: 59,
+      ),
+      HouseEntry(
+        posterName: daveFromAccounts,
+        text: "Said 'no'. Door: creak. Fair.",
+        stamp: Stamps.dontAsk,
+        gradeCount: 8,
+        gradeSum: 27,
+      ),
+    ],
+    'starter-13': [
+      HouseEntry(
+        posterName: housePosterName,
+        text: '\'Locally sourced. Hand-poured. Clear as the day it left '
+            'the pipe.\' Ninety seconds of charm, then the price: '
+            '£2,400, or four easy payments of £900.',
+        stamp: Stamps.nailedIt,
+        gradeCount: 23,
+        gradeSum: 95,
+      ),
+      HouseEntry(
+        posterName: auntPam,
+        text: 'Added a slice of lemon to make it posh. Then a teabag. Sold '
+            'it as tea for £3. My son says I missed the point.',
+        stamp: Stamps.dontAsk,
         gradeCount: 12,
         gradeSum: 39,
       ),
       HouseEntry(
         posterName: theIntern,
-        text: 'Nineteen objects, modelled in CAD the night before. The shoe is '
-            "load-bearing. I said 'and that's the tower' in three languages.",
-        stamp: Stamps.nailedIt,
-        gradeCount: 15,
-        gradeSum: 60,
-      ),
-      HouseEntry(
-        posterName: daveFromAccounts,
-        text: "Shoe. Other shoe. And that's the tower.",
-        stamp: Stamps.noRegrets,
-        gradeCount: 9,
-        gradeSum: 30,
-      ),
-    ],
-    'starter-05-v2': [
-      HouseEntry(
-        posterName: housePosterName,
-        text: 'Pickle, custard, toast, regret. One bite.',
-        stamp: Stamps.sendHelp,
-        gradeCount: 25,
-        gradeSum: 102,
-      ),
-      HouseEntry(
-        posterName: auntPam,
-        text: 'Fish fingers and jam. Honestly not bad. I have made another one '
-            'and I am having it for tea.',
-        stamp: Stamps.noRegrets,
-        gradeCount: 14,
-        gradeSum: 42,
-      ),
-      HouseEntry(
-        posterName: theIntern,
-        text: 'Fourteen ingredients ranked by structural disgust. Sardine '
-            'butter on a waffle base. I have emailed the recipe to HR.',
-        stamp: Stamps.dontAsk,
-        gradeCount: 16,
-        gradeSum: 58,
-      ),
-      HouseEntry(
-        posterName: daveFromAccounts,
-        text: 'Bread, bread, bread. One bite. Dry.',
+        text: 'Tasting notes, a certificate of authenticity and a limited '
+            'run of one. Price: my student loan, plus postage.',
         stamp: Stamps.technically,
-        gradeCount: 5,
-        gradeSum: 11,
+        gradeCount: 14,
+        gradeSum: 52,
+      ),
+      HouseEntry(
+        posterName: daveFromAccounts,
+        text: '\'Water.\' Holds up glass. \'Eleven thousand pounds.\'',
+        stamp: Stamps.noRegrets,
+        gradeCount: 10,
+        gradeSum: 38,
       ),
     ],
     'starter-08-v2': [

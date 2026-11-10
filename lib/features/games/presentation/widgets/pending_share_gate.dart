@@ -77,12 +77,14 @@ class _PendingShareGateState extends State<PendingShareGate> {
   Widget build(BuildContext context) => widget.child;
 }
 
-/// The Starter Pack id for [taskId], accepting pre-v2 short ids
-/// (`starter-09` -> `starter-09-v2`), or null when it is not a public task.
+/// The Starter Pack id for [taskId] (current or retired), accepting short
+/// ids (`starter-09` -> `starter-09-v3`, else `-v2`), or null when it is not
+/// a public task. Mirrors functions/src/starter_tasks.js#starterTask.
 String? resolvePublicTaskId(String taskId) {
-  final ids = [for (final t in StarterPackData.tasks()) t.id];
-  if (ids.contains(taskId)) return taskId;
-  if (ids.contains('$taskId-v2')) return '$taskId-v2';
+  final ids = {for (final t in StarterPackData.allTasks()) t.id};
+  for (final id in [taskId, '$taskId-v3', '$taskId-v2']) {
+    if (ids.contains(id)) return id;
+  }
   return null;
 }
 

@@ -120,7 +120,7 @@ void main() {
         act: (bloc) => bloc.add(const LoadArena(viewerId: me)),
         expect: () => [
           const ArenaLoading(),
-          const ArenaTeaser(taskId: 'starter-09-v2', posts: []),
+          const ArenaTeaser(taskId: 'starter-09-v3', posts: []),
         ],
       );
     });

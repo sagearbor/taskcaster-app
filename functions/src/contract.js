@@ -45,16 +45,25 @@ const isStarterTask = (taskId) => typeof taskId === 'string' && taskId.startsWit
  * lib/features/tasks/data/datasources/starter_pack_data.dart (a test keeps the
  * two in step). Only these may queue a shared 'starter' montage: a made-up
  * `starter-whatever` would otherwise open a fresh montage doc on demand.
+ * Includes the retired ids (StarterPackData.retiredTasks): starter games
+ * created before round 9 still post to them.
  */
 const STARTER_TASK_IDS = new Set([
-  'starter-01-v2',
-  'starter-02-v2',
+  // Current ten.
+  'starter-09-v3',
   'starter-03',
   'starter-04',
-  'starter-05-v2',
+  'starter-02-v3',
+  'starter-11',
   'starter-06',
   'starter-07',
+  'starter-12',
+  'starter-13',
   'starter-08-v2',
+  // Retired, still resolvable.
+  'starter-01-v2',
+  'starter-02-v2',
+  'starter-05-v2',
   'starter-09-v2',
   'starter-10-v2',
 ]);
