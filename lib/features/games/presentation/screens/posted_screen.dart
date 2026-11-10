@@ -616,7 +616,7 @@ class _PostedScreenState extends State<PostedScreen>
     } else {
       final next = _nextIndex;
       if (next != null) {
-        final seconds = _game!.tasks[next].durationSeconds;
+        final seconds = _game!.tasks[next].teaserSeconds;
         label = 'Next task${seconds != null ? ' — $seconds s' : ''}';
         onPressed = () => _goNextTask(next);
       } else {

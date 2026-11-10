@@ -100,9 +100,7 @@ class _SharedPostScreenState extends State<SharedPostScreen> {
     final publicId = resolvePublicTaskId(post.taskId);
     final seconds = publicId == null
         ? null
-        : StarterPackData.tasks()
-            .firstWhere((t) => t.id == publicId)
-            .durationSeconds;
+        : StarterPackData.byId(publicId)?.teaserSeconds;
     final first = post.displayName.trim().split(RegExp(r'\s+')).first;
     final name = first.isEmpty ? 'Someone' : first;
     return SingleChildScrollView(

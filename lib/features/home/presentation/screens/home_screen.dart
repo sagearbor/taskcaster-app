@@ -397,8 +397,9 @@ class _HomeHeroState extends State<HomeHero> {
         final game = plan.starterGame!;
         return NextTaskHeroCard(
           mode: NextTaskHeroMode.hasTask,
-          taskTitle: task.title,
-          timerSeconds: task.durationSeconds,
+          // Never spoil a gather -> reveal task: show the gather stage.
+          taskTitle: task.teaserTitle,
+          timerSeconds: task.teaserSeconds,
           streak: streak,
           subline: plan.dailyDone ? "Today's task: done." : atRiskLine,
           onPrimary: () => widget.onOpenTask(game.id, plan.starterNextIndex),
@@ -410,8 +411,8 @@ class _HomeHeroState extends State<HomeHero> {
         return NextTaskHeroCard(
           key: const Key('home-hero-daily'),
           mode: NextTaskHeroMode.dailyTask,
-          taskTitle: plan.dailyTask.title,
-          timerSeconds: plan.dailyTask.durationSeconds,
+          taskTitle: plan.dailyTask.teaserTitle,
+          timerSeconds: plan.dailyTask.teaserSeconds,
           streak: streak,
           subline: atRiskLine ?? (starterLeft ? null : waitingLine),
           onPrimary: () => bloc.add(const StartDailyTask()),

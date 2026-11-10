@@ -40,6 +40,7 @@ import '../widgets/late_badge.dart';
 import '../widgets/stamp_sticker.dart';
 import '../widgets/submission_progress_widget.dart';
 import '../widgets/countdown_display.dart';
+import '../widgets/gather_reveal.dart';
 import '../widgets/sfx_mute_button.dart';
 import '../widgets/task_countdown.dart';
 import '../widgets/task_reveal_card.dart';
@@ -165,6 +166,12 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   // Arrived from the cold open (autoStart): the player has just read the
   // task, so its description starts collapsed to one line with "More".
   bool _descriptionExpanded = false;
+
+  // Gather -> reveal (round 9). When the gather countdown started (local
+  // only: the TASK clock still starts when the camera or keyboard opens),
+  // and whether the real task has been revealed on this screen.
+  DateTime? _gatherStartedAt;
+  bool _revealed = false;
 
   GameSfx get _sfx =>
       sl.isRegistered<GameSfx>() ? sl<GameSfx>() : const SilentGameSfx();
@@ -870,6 +877,24 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   Widget _buildStarterTaskFlow(BuildContext context, TaskExecutionLoaded state) {
     final task = state.task;
     final started = _clockRunning(state);
+    // Gather -> reveal: until the player is back from gathering, nothing of
+    // the real task (title, description, twist, rubric) is on screen. Once
+    // the task clock runs, the reveal has necessarily happened.
+    final gathering = task.hasGatherPhase && !started && !_revealed;
+
+    if (gathering && _gatherStartedAt == null && _armed) {
+      // Arrived with autoStart: the Start tap was on the cold open / Home
+      // hero, which showed the gather stage. Start gathering now.
+      _gatherStartedAt = DateTime.now();
+    }
+    if (gathering && _gatherStartedAt != null) {
+      return GatherStageView(
+        task: task,
+        startedAt: _gatherStartedAt!,
+        sfx: _sfx,
+        onDone: _revealRealTask,
+      );
+    }
 
     if (!started && !_armed) {
       return SingleChildScrollView(
@@ -877,16 +902,19 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // The teaser: the gather stage on a gather -> reveal task.
             TaskRevealCard(
-              title: task.title,
-              description: task.description,
-              timerSeconds: task.durationSeconds,
+              title: task.teaserTitle,
+              description: task.teaserDescription,
+              timerSeconds: task.teaserSeconds,
             ),
             const SizedBox(height: 24),
             SizedBox(
               height: 60,
               child: FilledButton(
-                onPressed: () => _startStarterTask(context),
+                onPressed: () => gathering
+                    ? _startGather()
+                    : _startStarterTask(context),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppTheme.coral,
                   foregroundColor: Colors.white,
@@ -895,7 +923,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                   ),
                 ),
                 child: Text(
-                  'Start — ${task.durationSeconds ?? 0} s',
+                  'Start — ${task.teaserSeconds ?? 0} s',
                   style: const TextStyle(
                       fontSize: 20, fontWeight: FontWeight.bold),
                 ),
@@ -912,6 +940,10 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_revealed) ...[
+            const SurpriseRevealBanner(),
+            const SizedBox(height: 18),
+          ],
           // Keep the task itself readable while the clock runs — the player
           // is mid-attempt and must be able to re-read what they're doing.
           Text(
@@ -921,7 +953,9 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
-          if (widget.autoStart && !_descriptionExpanded)
+          // Collapsed only when the cold open has just shown it; a revealed
+          // task is new to the player, so it is shown in full.
+          if (widget.autoStart && !_descriptionExpanded && !_revealed)
             _CollapsedDescription(
               text: task.description,
               style: theme.textTheme.bodyMedium,
@@ -969,6 +1003,35 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
         ],
       ),
     );
+  }
+
+  /// "Start" on a gather -> reveal task's card: the gather countdown begins.
+  /// The task clock still starts later, when the camera or keyboard opens.
+  void _startGather() {
+    _sfx
+      ..prime()
+      ..go();
+    setState(() {
+      _armed = true;
+      _gatherStartedAt = DateTime.now();
+    });
+  }
+
+  /// The gather stage is over (zero, or "I'm back"): reveal the real task.
+  void _revealRealTask() {
+    if (_revealed || !mounted) return;
+    HapticFeedback.heavyImpact();
+    // At zero the countdown has just played its fanfare; on an early "I'm
+    // back" this is the only sound, and it runs inside the tap.
+    final started = _gatherStartedAt;
+    final seconds = _lastLoadedTask?.gatherSeconds ?? 0;
+    final timeUp = started != null &&
+        DateTime.now().difference(started).inSeconds >= seconds;
+    if (!timeUp) _sfx.fanfare();
+    setState(() {
+      _revealed = true;
+      _armed = true;
+    });
   }
 
   /// "Start" on the reveal card: accept the task and show the twist and the

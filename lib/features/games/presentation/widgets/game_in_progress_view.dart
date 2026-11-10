@@ -100,7 +100,7 @@ class GameInProgressView extends StatelessWidget {
         UpNextCard(
           upNext: upNext,
           taskCount: game.tasks.length,
-          timerSeconds: current?.durationSeconds,
+          timerSeconds: current?.teaserSeconds,
           onPressed: () {
             if (onUpNext != null) {
               onUpNext!(upNext.action);
@@ -385,7 +385,10 @@ class _AllTasks extends StatelessWidget {
               ),
       ),
       title: Text(
-        task.title,
+        // A gather -> reveal task stays a surprise until you have played it.
+        (mine?.hasSubmitted ?? false) || task.isCompleted
+            ? task.title
+            : task.teaserTitle,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodyMedium?.copyWith(

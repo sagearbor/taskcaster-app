@@ -261,7 +261,8 @@ class _NextUpPanelState extends State<_NextUpPanel> {
   /// Arena's unlocked set answers this without a game read.
   static int? _nextStarterSeconds(Set<String> unlocked) {
     for (final t in StarterPackData.tasks()) {
-      if (!unlocked.contains(t.id)) return t.durationSeconds;
+      // The first thing the button starts is the gather stage, if any.
+      if (!unlocked.contains(t.id)) return t.teaserSeconds;
     }
     return null;
   }
@@ -294,7 +295,7 @@ class _NextUpPanelState extends State<_NextUpPanel> {
       subline = 'Do the next task to unlock more.';
       primaryAction = ArenaScreen.debugOpenNextTask ?? _openNextTask;
     } else if (!dailyDone) {
-      primaryLabel = "Today's task — ${daily.durationSeconds} s";
+      primaryLabel = "Today's task — ${daily.teaserSeconds} s";
       subline = "Today's task is waiting. Same one for everyone.";
       primaryAction = ArenaScreen.debugOpenDailyTask ?? _openDailyTask;
     } else {
@@ -616,12 +617,8 @@ class _ArenaTeaserViewState extends State<_ArenaTeaserView> {
     return 'How ${names.join(' and ')} did on task 1';
   }
 
-  static int? _durationFor(String taskId) {
-    for (final t in StarterPackData.tasks()) {
-      if (t.id == taskId) return t.durationSeconds;
-    }
-    return null;
-  }
+  static int? _durationFor(String taskId) =>
+      StarterPackData.byId(taskId)?.teaserSeconds;
 }
 
 class _ArenaLoadedBody extends StatefulWidget {

@@ -184,15 +184,15 @@ void main() {
     unlockedController.add(<String>{});
     await tester.pump();
     queueController.add([
-      _post('t1', taskId: 'starter-09-v2'),
-      _post('t2', taskId: 'starter-09-v2'),
+      _post('t1', taskId: 'starter-09-v3'),
+      _post('t2', taskId: 'starter-09-v3'),
     ]);
     await tester.pump();
 
     // The tease reads task 1 even though nothing is unlocked...
     verify(() => mockFeedRepository.watchQueue(
           viewerId: 'viewer-1',
-          unlockedTaskIds: {'starter-09-v2'},
+          unlockedTaskIds: {'starter-09-v3'},
         )).called(1);
     expect(find.text('How everyone else did on task 1'), findsOneWidget);
     expect(find.byType(PostCard), findsOneWidget);
@@ -346,7 +346,7 @@ void main() {
     ArenaScreen.debugOpenNextTask = (_) async => opened++;
     await pumpArena(tester);
     await tester.pump();
-    // Task 1 of the pack (starter-09-v2, 30 s) is done; task 2 is next.
+    // Task 1 of the pack (starter-09-v3, 30 s) is done; task 2 is next.
     final pack = StarterPackData.tasks();
     unlockedController.add({pack[0].id});
     await tester.pump();
@@ -709,7 +709,7 @@ void main() {
     testWidgets('only the house entry: name the robot, not everyone',
         (tester) async {
       await tease(tester, [
-        _post('h1', taskId: 'starter-09-v2', isHouse: true),
+        _post('h1', taskId: 'starter-09-v3', isHouse: true),
       ]);
       expect(find.text("How Greg's assistant did on task 1"), findsOneWidget);
       expect(find.text('How everyone else did on task 1'), findsNothing);
@@ -717,8 +717,8 @@ void main() {
 
     testWidgets('one player plus the house names both', (tester) async {
       await tease(tester, [
-        _post('p1', taskId: 'starter-09-v2', displayName: 'Sophie'),
-        _post('h1', taskId: 'starter-09-v2', isHouse: true),
+        _post('p1', taskId: 'starter-09-v3', displayName: 'Sophie'),
+        _post('h1', taskId: 'starter-09-v3', isHouse: true),
       ]);
       expect(find.text("How Sophie and Greg's assistant did on task 1"),
           findsOneWidget);
@@ -726,9 +726,9 @@ void main() {
 
     testWidgets('two or more players: everyone else', (tester) async {
       await tease(tester, [
-        _post('p1', taskId: 'starter-09-v2'),
-        _post('p2', taskId: 'starter-09-v2'),
-        _post('h1', taskId: 'starter-09-v2', isHouse: true),
+        _post('p1', taskId: 'starter-09-v3'),
+        _post('p2', taskId: 'starter-09-v3'),
+        _post('h1', taskId: 'starter-09-v3', isHouse: true),
       ]);
       expect(find.text('How everyone else did on task 1'), findsOneWidget);
     });

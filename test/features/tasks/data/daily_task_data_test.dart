@@ -12,10 +12,83 @@ void main() {
       expect(tasks.length, 30);
       final ids = tasks.map((t) => t.id).toList();
       expect(ids.toSet().length, 30);
-      for (var i = 0; i < 30; i++) {
-        expect(ids[i], 'daily-${(i + 1).toString().padLeft(2, '0')}');
-        expect(DailyTaskData.isDailyTaskId(ids[i]), isTrue);
+      for (final id in ids) {
+        expect(id, matches(RegExp(r'^daily-\d{2}$')));
+        expect(DailyTaskData.isDailyTaskId(id), isTrue);
       }
+    });
+
+    test('a replaced task keeps its pool slot under a new id (round 9)', () {
+      // Slot (index) -> id. The day -> slot rotation never moves, so only
+      // the replaced slots changed task; every other day is untouched.
+      final ids = tasks.map((t) => t.id).toList();
+      const replaced = {
+        1: 'daily-31', // was daily-02, the sofa review (now starter-11)
+        2: 'daily-32', // was daily-03, left hand meets right hand
+        4: 'daily-33', // was daily-05, job for a medieval peasant
+        6: 'daily-34', // was daily-07, the door (now starter-12)
+        11: 'daily-35', // was daily-12, audience of objects
+        17: 'daily-36', // was daily-18, tap water (now starter-13)
+        19: 'daily-37', // was daily-20, pet from a kitchen drawer
+        22: 'daily-38', // was daily-23, prove you are on a beach
+        28: 'daily-39', // was daily-29, an object's worst day
+      };
+      for (var i = 0; i < 30; i++) {
+        expect(ids[i],
+            replaced[i] ?? 'daily-${(i + 1).toString().padLeft(2, '0')}',
+            reason: 'slot $i');
+      }
+    });
+
+    test('the weak and the moved tasks are gone from the pool', () {
+      final titles = tasks.map((t) => t.title).toSet();
+      for (final cut in const [
+        'Introduce your left hand to your right hand',
+        'Prove you are on a beach',
+        'Adopt a pet from one kitchen drawer',
+        'Explain your job to a medieval peasant',
+        'An audience of objects hears something shocking',
+        'An object having the worst day of its life',
+      ]) {
+        expect(titles, isNot(contains(cut)));
+      }
+      // Nothing is both a starter task and a daily task.
+      final starterTitles =
+          StarterPackData.tasks().map((t) => t.title).toSet();
+      expect(titles.intersection(starterTitles), isEmpty);
+    });
+
+    group('gather -> reveal', () {
+      final gather = tasks.where((t) => t.hasGatherPhase).toList();
+
+      test('at least six of the thirty are misdirects', () {
+        expect(gather.length, greaterThanOrEqualTo(6));
+      });
+
+      test('every gather stage is short, clear and ends in Go.', () {
+        for (final t in gather) {
+          expect(t.gatherSeconds, inInclusiveRange(30, 60), reason: t.id);
+          expect(t.gatherTitle?.trim(), isNotEmpty, reason: t.id);
+          expect(t.gatherPrompt, startsWith('You have ${t.gatherSeconds} s.'),
+              reason: t.id);
+          expect(t.gatherPrompt, endsWith('Go.'), reason: t.id);
+          expect('${t.gatherTitle}${t.gatherPrompt}'.contains('!'), isFalse,
+              reason: t.id);
+        }
+      });
+
+      test('the real task uses what was gathered, and the teaser hides it',
+          () {
+        for (final t in gather) {
+          expect(
+            '${t.title} ${t.description}'.toLowerCase(),
+            anyOf(contains('gathered'), contains('fetched')),
+            reason: t.id,
+          );
+          expect(t.teaserTitle, isNot(t.title), reason: t.id);
+          expect(t.teaserDescription, isNot(contains(t.title)), reason: t.id);
+        }
+      });
     });
 
     test('every field a crowd needs is set', () {

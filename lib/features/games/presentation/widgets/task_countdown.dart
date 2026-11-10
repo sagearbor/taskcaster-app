@@ -34,6 +34,10 @@ class TaskCountdown extends StatefulWidget {
   /// Sound effects. Null means silent.
   final GameSfx? sfx;
 
+  /// Called once, the moment the clock crosses zero while on screen (the
+  /// gather stage uses it to reveal the real task).
+  final VoidCallback? onExpired;
+
   /// How many final seconds tick audibly.
   static const int tickSeconds = 5;
 
@@ -44,6 +48,7 @@ class TaskCountdown extends StatefulWidget {
     this.graceSeconds = 30,
     this.now = DateTime.now,
     this.sfx,
+    this.onExpired,
   });
 
   @override
@@ -91,6 +96,7 @@ class _TaskCountdownState extends State<TaskCountdown>
     if (before > 0 && after <= 0) {
       if (_inForeground) sfx?.fanfare();
       _showFlash();
+      widget.onExpired?.call();
     } else if (after > 0 && after <= TaskCountdown.tickSeconds) {
       if (_inForeground) sfx?.tick();
     }

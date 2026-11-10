@@ -95,11 +95,15 @@ class UpNext {
     final remaining = (expected - submitted).clamp(0, expected);
     final unjudged = (submitted - task.judgedCount).clamp(0, submitted);
 
+    // A gather -> reveal task shows only its gather stage until this player
+    // has played it: the real task is the surprise.
+    final played = task.hasPlayerSubmitted(currentUserId) ||
+        task.status == TaskStatus.completed;
     UpNext make(String kicker, String button, UpNextAction action,
             {String? detail, bool urgent = false}) =>
         UpNext(
           kicker: kicker,
-          title: task.title,
+          title: played ? task.title : task.teaserTitle,
           detail: detail,
           buttonLabel: button,
           action: action,
@@ -146,7 +150,9 @@ class UpNext {
 
     if (state == null || state == TaskPlayerState.not_started) {
       return make('YOUR TURN', 'Start', UpNextAction.play,
-          detail: task.description.isEmpty ? null : task.description);
+          detail: task.teaserDescription.isEmpty
+              ? null
+              : task.teaserDescription);
     }
 
     if (state == TaskPlayerState.in_progress) {
