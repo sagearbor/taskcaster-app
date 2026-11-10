@@ -9,11 +9,12 @@ import 'package:taskcaster_app/features/games/domain/repositories/game_repositor
 import 'package:taskcaster_app/features/games/presentation/bloc/games_bloc.dart';
 import 'package:taskcaster_app/features/home/presentation/widgets/play_sheet.dart';
 
-/// WP-06: release builds show exactly three Play rows; everything else sits
+/// WP-06: release builds show exactly four Play rows (party mode added with the in-person pack); everything else sits
 /// behind AppConfig.labModes (--dart-define=LAB_MODES=true).
 void main() {
   const shipped = [
     'Challenge friends',
+    'Party mode (same room)',
     'Join with a code',
     'Drawing Telephone (same room)',
   ];
@@ -83,7 +84,7 @@ void main() {
     return gamesBloc;
   }
 
-  testWidgets('release (Lab off): exactly the three shipped rows',
+  testWidgets('release (Lab off): exactly the shipped rows',
       (tester) async {
     AppConfig.debugLabModesOverride = false;
     await openSheet(tester);
@@ -95,7 +96,7 @@ void main() {
       expect(find.text(name), findsNothing, reason: name);
     }
     expect(find.text('Lab'), findsNothing);
-    expect(find.byType(ListTile), findsNWidgets(3));
+    expect(find.byType(ListTile), findsNWidgets(shipped.length));
   });
 
   testWidgets('Lab on: every row, shipped rows first', (tester) async {

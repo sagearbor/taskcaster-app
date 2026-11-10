@@ -15,6 +15,7 @@ import '../../../trivia/presentation/screens/trivia_start_screen.dart';
 import '../../../treasure_hunt/treasure_hunt_screen.dart';
 import '../../../tower_trials/tower_trials_screen.dart';
 import '../../../house_hunt/presentation/screens/house_hunt_start_screen.dart';
+import '../../../party/presentation/screens/party_setup_screen.dart';
 import '../../../clue_hunt/presentation/screens/clue_hunt_start_screen.dart';
 
 /// The single "Play" entry point (Zone 3). Opens a bottom-sheet picker of the
@@ -24,8 +25,8 @@ import '../../../clue_hunt/presentation/screens/clue_hunt_start_screen.dart';
 /// Quick Play / Balloon Pop (Solo) / Gem Rush dispatch to that bloc, and
 /// Create / Join forward the auth bloc into the pushed route.
 ///
-/// Release builds show three rows (Challenge friends, Join with a code,
-/// Drawing Telephone). Every other mode sits under a "Lab" divider that only
+/// Release builds show four rows (Challenge friends, Party mode, Join with a
+/// code, Drawing Telephone). Every other mode sits under a "Lab" divider that only
 /// renders when [AppConfig.labModesEnabled] is true.
 Future<void> showPlaySheet(BuildContext homeContext) {
   final gamesBloc = homeContext.read<GamesBloc>();
@@ -95,7 +96,7 @@ class _PlaySheetBody extends StatelessWidget {
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
-            // Shipped rows: one game, a way in, one same-room mode.
+            // Shipped rows: one game, the in-person party, a way in, Telephone.
             _PlayRow(
               icon: Icons.group_add,
               color: AppTheme.coral,
@@ -105,6 +106,14 @@ class _PlaySheetBody extends StatelessWidget {
                 Navigator.of(context).pop();
                 gamesBloc.add(const ChallengeFriends());
               },
+            ),
+            _PlayRow(
+              icon: Icons.celebration,
+              color: AppTheme.gold,
+              name: 'Party mode (same room)',
+              description: 'One phone hosts, 2 to 8 of you compete. '
+                  'Secret missions included.',
+              onTap: () => _push(context, const PartySetupScreen()),
             ),
             _PlayRow(
               icon: Icons.keyboard,
