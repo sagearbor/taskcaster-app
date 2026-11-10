@@ -123,13 +123,19 @@ function timestampOf(value) {
 
 /**
  * True when a feed post is a real player video that belongs in a montage.
- * House entries are excluded (they are the prompt, not an attempt).
+ * House entries are excluded (they are the prompt, not an attempt), and so
+ * is a post explicitly made private (`shareable === false`): its owner said
+ * no, an automated e2e walk posts that way (lib/core/config/e2e_mode.dart),
+ * and an operator hides test posts that way (scripts/purge_test_posts.js).
+ * Montages are world-readable, so a private post must never be spliced into
+ * one. An absent flag (friend-game default) still counts.
  */
 function isMontageablePost(post, taskId) {
   if (!post) return false;
   if (taskId !== undefined && post.taskId !== taskId) return false;
   if (post.mediaType !== 'video') return false;
   if (post.isHouse === true) return false;
+  if (post.shareable === false) return false;
   return Boolean(objectPathForPost(post));
 }
 

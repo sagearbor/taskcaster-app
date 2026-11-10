@@ -346,3 +346,19 @@ posts.
 * Trimming/filters and any manual editing UI. Stamps, captions, the
   countdown overlay, and the finale/moments-reel montages (§2.2) are all
   computed server-side; there is no player-facing edit step for any of it.
+
+## 8. Testing against prod
+
+Headless walks against the live web app (agents do one every audit round)
+**must open it with `?e2e=1`**, e.g.
+`https://taskmaster-app-3d480.web.app/?e2e=1`. The flag is persisted in the
+browser (`tc_e2e` in SharedPreferences), so it survives the app stripping the
+query and later reloads; `?e2e=0` clears it. Scripted builds can use
+`--dart-define=E2E=true` instead. In e2e mode every post is created with
+`shareable: false`: it never enters another player's Arena queue, a share page
+or (from the functions deploy that carries the check) a finale montage. See
+`lib/core/config/e2e_mode.dart`. Without the flag, a walk's fake-camera color
+bars land in front of real players as "Guest" (fun audit 2026-11-09). Junk
+that got through anyway is found and reversibly hidden with
+`functions/scripts/purge_test_posts.js` (dry run by default; it never
+deletes).
