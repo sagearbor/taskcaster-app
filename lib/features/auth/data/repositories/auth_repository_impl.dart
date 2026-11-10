@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/models/user.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../../core/utils/funny_names.dart';
 import '../../../friends/domain/repositories/invites_repository.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_data_source.dart';
@@ -40,6 +41,30 @@ class AuthRepositoryImpl implements AuthRepository {
         debugPrint('AuthRepositoryImpl.registerToken failed: $e');
       }
     }());
+  }
+
+  /// A guest's name: whatever they chose, or their [FunnyNames] name when
+  /// they have nothing better than a placeholder ("Guest", empty). In that
+  /// case the funny name is also saved to the profile (Auth displayName and
+  /// users/{uid}, both owner-writable) so friend-facing surfaces that read it
+  /// directly, like invite accepts, carry it too. Best-effort and not
+  /// awaited: the name is derived from the uid, so a failed write just means
+  /// we try again next launch.
+  String _guestName(String userId, String? stored) {
+    final trimmed = stored?.trim() ?? '';
+    // Already named (by us or by them): nothing to write.
+    if (!FunnyNames.isPlaceholder(trimmed) || FunnyNames.isFunnyName(trimmed)) {
+      return trimmed;
+    }
+    final name = FunnyNames.forUid(userId);
+    unawaited(() async {
+      try {
+        await remoteDataSource.updateProfile(displayName: name);
+      } catch (e) {
+        debugPrint('AuthRepositoryImpl could not save the guest name: $e');
+      }
+    }());
+    return name;
   }
 
   @override
@@ -100,11 +125,19 @@ class AuthRepositoryImpl implements AuthRepository {
 
     final createdAtRaw = userData['createdAt'] as String?;
 
+    final storedName = userData['displayName'] as String?;
+    final email = userData['email'] as String?;
+    final String displayName;
+    if (userData['isAnonymous'] == true && email == null) {
+      // Existing guests stored as "Guest" get their funny name here too.
+      displayName = _guestName(userId, storedName);
+    } else {
+      displayName = storedName ?? email?.split('@')[0] ?? 'User';
+    }
+
     return User(
       id: userId,
-      displayName: userData['displayName'] ??
-          userData['email']?.split('@')[0] ??
-          (userData['isAnonymous'] == true ? 'Guest' : 'User'),
+      displayName: displayName,
       email: userData['email'],
       createdAt: createdAtRaw != null
           ? (DateTime.tryParse(createdAtRaw) ?? DateTime.now())
@@ -121,7 +154,7 @@ class AuthRepositoryImpl implements AuthRepository {
     _afterSignIn(userId);
     return User(
       id: userId,
-      displayName: 'Guest',
+      displayName: _guestName(userId, null),
       email: null,
       createdAt: DateTime.now(),
     );

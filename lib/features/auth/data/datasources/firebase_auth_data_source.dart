@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import '../../../../core/utils/funny_names.dart';
 import 'auth_remote_data_source.dart';
 
 /// Asks Apple for an ID credential bound to [hashedNonce]. The production
@@ -174,8 +175,11 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
   /// After a guest is linked, the top-level displayName can still be empty
   /// (the provider's name only lands in providerData). Copy it up so the
   /// profile doc and the app bar show the real name.
+  ///
+  /// A guest's auto-assigned funny name (or the old "Guest") counts as empty
+  /// here, so linking Google still brings in the real name.
   Future<firebase_auth.User> _adoptProviderName(firebase_auth.User user) async {
-    if (user.displayName != null && user.displayName!.trim().isNotEmpty) {
+    if (!FunnyNames.isPlaceholder(user.displayName)) {
       return user;
     }
     final fromProvider = user.providerData
@@ -301,7 +305,7 @@ class FirebaseAuthDataSource implements AuthRemoteDataSource {
     // in the identity token — so set it on the Firebase user when present.
     final givenName = appleCredential.givenName;
     final familyName = appleCredential.familyName;
-    if ((user.displayName == null || user.displayName!.isEmpty) &&
+    if (FunnyNames.isPlaceholder(user.displayName) &&
         (givenName != null || familyName != null)) {
       final fullName =
           [givenName, familyName].whereType<String>().join(' ').trim();
