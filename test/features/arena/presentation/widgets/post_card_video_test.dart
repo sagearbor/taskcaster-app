@@ -111,10 +111,38 @@ void main() {
     expect(find.text('0:18'), findsOneWidget);
   });
 
-  testWidgets('a house clip gets no overlay — it is burned in',
-      (tester) async {
+  testWidgets('a house clip gets no overlay — it is burned in', (tester) async {
     await pump(tester, PostCard(post: videoPost(isHouse: true)));
     expect(find.byType(CountdownBurn), findsNothing);
+  });
+
+  testWidgets(
+      'WP-3: a house clip shows one label and one clock — no HOUSE chip, '
+      'no position pill', (tester) async {
+    await pump(tester, PostCard(post: videoPost(isHouse: true)));
+    expect(find.text('HOUSE'), findsNothing);
+    // The "0:03 / 0:07" readout is gone: the clip's burned-in clock is it.
+    expect(find.textContaining(' / '), findsNothing);
+  });
+
+  testWidgets('WP-3: a player clip with no timer keeps its position pill',
+      (tester) async {
+    await pump(tester, PostCard(post: videoPost(timerSeconds: null)));
+    expect(find.byType(CountdownBurn), findsNothing);
+    expect(find.textContaining(' / '), findsOneWidget);
+  });
+
+  testWidgets('WP-3: never an ART stamp on a clip', (tester) async {
+    await pump(
+      tester,
+      PostCard(post: videoPost(isHouse: true).copyWith(stamp: 'ART')),
+    );
+    expect(find.text('ART'), findsNothing);
+  });
+
+  testWidgets('WP-3: other stamps still show on a clip', (tester) async {
+    await pump(tester, PostCard(post: videoPost()));
+    expect(find.text('NO REGRETS'), findsOneWidget);
   });
 
   testWidgets('a clip that will not load shows the calm placeholder',

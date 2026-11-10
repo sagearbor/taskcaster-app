@@ -45,6 +45,10 @@ class PostCard extends StatefulWidget {
   /// viewer's OWN posts (sharing makes a friend-game post public).
   final VoidCallback? onShare;
 
+  /// Drawn over the media box (not the footer), above the stamp and badges —
+  /// the Arena's grade reveal. Null draws nothing.
+  final Widget? overlay;
+
   const PostCard({
     super.key,
     required this.post,
@@ -53,6 +57,7 @@ class PostCard extends StatefulWidget {
     this.loopVideo = true,
     this.onVideoEnded,
     this.onShare,
+    this.overlay,
   });
 
   @override
@@ -103,6 +108,14 @@ class _PostCardState extends State<PostCard> {
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
+    final isVideo = post.mediaType == SubmissionMediaType.video;
+    // A house clip burns "HOUSE · GREG'S ASSISTANT" into its pixels; a second
+    // HOUSE chip on top of that is just noise.
+    final showHouseChip = post.isHouse && !isVideo;
+    // ART is a still-image stamp. Never put it on a clip (WP-7 fixes the data;
+    // this keeps old posts honest in the meantime).
+    final stamp = post.displayStamp;
+    final shownStamp = isVideo && stamp == Stamps.art ? null : stamp;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -134,16 +147,16 @@ class _PostCardState extends State<PostCard> {
                           const PostBadge('LATE', Color(0xFFE0395E)),
                           const SizedBox(width: 6),
                         ],
-                        if (post.isHouse)
+                        if (showHouseChip)
                           const PostBadge('HOUSE', Color(0xFF6B6478)),
                       ],
                     ),
                   ),
-                  if (post.displayStamp != null)
+                  if (shownStamp != null)
                     Positioned(
                       top: 12,
                       right: 12,
-                      child: StampSticker(post.displayStamp!),
+                      child: StampSticker(shownStamp),
                     ),
                   for (final burst in _bursts)
                     Positioned(
@@ -153,6 +166,8 @@ class _PostCardState extends State<PostCard> {
                         onDone: () => _removeBurst(burst.key),
                       ),
                     ),
+                  if (widget.overlay != null)
+                    Positioned.fill(child: widget.overlay!),
                 ],
               ),
             ),
@@ -240,8 +255,11 @@ class _Media extends StatelessWidget {
           timerSeconds: post.timerSeconds,
           clockOffsetSeconds: post.clockOffsetSeconds,
           isLate: post.isLate,
-          // House clips ship with the countdown already in the pixels.
+          // House clips ship with the countdown already in the pixels, so
+          // they get no overlay and no position pill either: one clock per
+          // card.
           burnedIn: post.isHouse,
+          showPosition: !post.isHouse,
           autoPlay: autoPlay,
           loop: loopVideo,
           onEnded: onVideoEnded,
@@ -309,7 +327,8 @@ class _LinkChip extends StatelessWidget {
         avatar: const Icon(Icons.play_circle_outline, color: AppTheme.violet),
         label: const Text('Watch video'),
         backgroundColor: Colors.white,
-        onPressed: url == null ? null : () => LinkUtils.openExternal(context, url),
+        onPressed:
+            url == null ? null : () => LinkUtils.openExternal(context, url),
       ),
     );
   }
