@@ -31,14 +31,17 @@ FeedPost textPost(String id, {String userId = 'me', String name = 'Me'}) =>
       stamp: 'ART',
     );
 
-/// WP-09: the Posted screen's primary action is sharing the attempt, "See
-/// theirs" is secondary, and a challenge shows both entries side by side.
+/// WP-09 + fun audit WP-5: "See theirs" is the primary action, sharing is a
+/// compact secondary button that still opens the `/c/<postId>` dare link, and
+/// a challenge shows both entries side by side.
 void main() {
   late MockGameRepository games;
   late MockFeedRepository feed;
   late List<String> shared;
   late InMemoryShareStore store;
   late ShareService shareService;
+
+  setUpAll(() => registerFallbackValue(<String>{}));
 
   setUp(() async {
     await sl.reset();
@@ -56,6 +59,11 @@ void main() {
         .thenAnswer((_) => Stream<Game?>.value(null));
     when(() => feed.watchPost('mine'))
         .thenAnswer((_) => Stream.value(textPost('mine')));
+    when(() => feed.watchQueue(
+          viewerId: any(named: 'viewerId'),
+          unlockedTaskIds: any(named: 'unlockedTaskIds'),
+          limit: any(named: 'limit'),
+        )).thenAnswer((_) => Stream.value(const <FeedPost>[]));
     when(() => feed.watchPost('theirs')).thenAnswer((_) =>
         Stream.value(textPost('theirs', userId: 'friend', name: 'Sage Arbor')));
     sl.registerSingleton<GameRepository>(games);
@@ -73,7 +81,7 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('Share your attempt is the primary (filled) action; See theirs is secondary',
+  testWidgets('See theirs is the primary (filled) action; Share is a compact secondary one',
       (tester) async {
     await pump(
       tester,
@@ -85,17 +93,21 @@ void main() {
         shareService: shareService,
       ),
     );
+    await tester.pump(const Duration(seconds: 1));
 
+    final seeTheirs = find.byKey(const Key('see-theirs-button'));
+    expect(tester.widget(seeTheirs), isA<FilledButton>());
     final share = find.byKey(const Key('share-attempt-button'));
     expect(share, findsOneWidget);
-    expect(tester.widget(share), isA<FilledButton>());
-    expect(find.text('Share your attempt'), findsOneWidget);
-    expect(tester.widget(find.byKey(const Key('see-theirs-button'))),
-        isA<OutlinedButton>());
-    // Share sits above See theirs.
-    expect(tester.getTopLeft(share).dy,
-        lessThan(tester.getTopLeft(find.byKey(const Key('see-theirs-button'))).dy));
+    expect(tester.widget(share), isA<OutlinedButton>());
+    expect(find.text('Share it'), findsOneWidget);
+    // See theirs sits above Share, and Share is narrower than the column.
+    expect(tester.getTopLeft(seeTheirs).dy,
+        lessThan(tester.getTopLeft(share).dy));
+    expect(tester.getSize(share).width,
+        lessThan(tester.getSize(seeTheirs).width));
 
+    await tester.ensureVisible(share);
     await tester.tap(share);
     await tester.pump();
     expect(shared.single, contains('https://taskmaster-app-3d480.web.app/c/mine'));
