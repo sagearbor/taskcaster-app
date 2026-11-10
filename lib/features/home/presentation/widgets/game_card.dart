@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/models/game.dart';
+import '../../../../core/models/player_task_status.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/user_avatar.dart';
 
@@ -26,9 +27,32 @@ class GameCard extends StatelessWidget {
     }
   }
 
+  /// Solo, crowd-judged games (the Starter Pack, and the daily game whose
+  /// `Game.isDaily` lands separately in WP-6). No crew to list.
+  bool get _isSolo => game.isStarter || game.gameKind == 'daily';
+
+  /// "1 player" / "3 players".
+  static String playersLabel(int n) => n == 1 ? '1 player' : '$n players';
+
+  /// "7 of 10 graded · 34 pts": how many of the creator's entries have a
+  /// crowd score locked in, and their total.
+  static String soloProgressLabel(Game game) {
+    var graded = 0;
+    var points = 0;
+    for (final t in game.tasks) {
+      final s = t.playerStatuses[game.creatorId];
+      if (s?.state == TaskPlayerState.judged) {
+        graded++;
+        points += s?.score ?? 0;
+      }
+    }
+    return '$graded of ${game.tasks.length} graded · $points pts';
+  }
+
   @override
   Widget build(BuildContext context) {
     final accent = _statusColor(game.status);
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
       child: InkWell(
@@ -84,35 +108,50 @@ class GameCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              Row(
-                children: [
-                  Icon(
-                    Icons.people,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${game.players.length} players',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+              if (_isSolo)
+                Row(
+                  children: [
+                    Icon(Icons.star_rounded, size: 16, color: muted),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        soloProgressLabel(game),
+                        key: const Key('game-card-solo-progress'),
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: muted),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Icon(
-                    Icons.assignment,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${game.tasks.length} tasks',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Icon(Icons.people, size: 16, color: muted),
+                    const SizedBox(width: 4),
+                    Text(
+                      playersLabel(game.players.length),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: muted),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 16),
+                    Icon(Icons.assignment, size: 16, color: muted),
+                    const SizedBox(width: 4),
+                    Text(
+                      game.tasks.length == 1
+                          ? '1 task'
+                          : '${game.tasks.length} tasks',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: muted),
+                    ),
+                  ],
+                ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -150,7 +189,9 @@ class GameCard extends StatelessWidget {
                     ),
                 ],
               ),
-              if (game.players.isNotEmpty) ...[
+              // A solo game's only player is you; a lone "Guest" chip read
+              // like test data.
+              if (game.players.isNotEmpty && !_isSolo) ...[
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,

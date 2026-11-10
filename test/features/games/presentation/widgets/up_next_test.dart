@@ -147,6 +147,46 @@ void main() {
       expect(u.buttonLabel, 'Waiting for the crowd');
     });
 
+    // Fun audit 2026-11-09 #14: the Starter Pack sets judgeId = creator, so
+    // the solo player was told "TIME TO JUDGE · Pick a winner" for their own
+    // entry. A crowd-judged game never offers a judge action.
+    test('crowd-judged, judge is me, all in: waits for the crowd', () {
+      for (final taskStatus in [
+        TaskStatus.waiting_for_submissions,
+        TaskStatus.ready_to_judge,
+      ]) {
+        final u = UpNext.resolve(
+          _game(
+            crowdJudged: true,
+            taskStatus: taskStatus,
+            players: const [
+              Player(userId: 'judge', displayName: 'Me', totalScore: 0),
+            ],
+            statuses: {'judge': _s('judge', TaskPlayerState.submitted)},
+          ),
+          currentUserId: 'judge',
+          isJudge: true,
+        );
+        expect(u.action, isNot(UpNextAction.judge));
+        expect(u.kicker, isNot('TIME TO JUDGE'));
+        expect(u.buttonLabel, 'Waiting for the crowd');
+      }
+    });
+
+    test('crowd-judged non-playing judge is never routed to judging', () {
+      final u = UpNext.resolve(
+        _game(
+          crowdJudged: true,
+          judgePlays: false,
+          taskStatus: TaskStatus.ready_to_judge,
+          statuses: {'judge': _s('judge', TaskPlayerState.submitted)},
+        ),
+        currentUserId: 'judge',
+        isJudge: true,
+      );
+      expect(u.action, isNot(UpNextAction.judge));
+    });
+
     test('completed task shows results with the player score', () {
       final u = UpNext.resolve(
         _game(
