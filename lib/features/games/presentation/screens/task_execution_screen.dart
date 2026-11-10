@@ -13,6 +13,7 @@ import '../../../../core/models/task.dart';
 import '../../../../core/services/photo/photo_capture.dart';
 import '../../../../core/services/plans/plan_repository.dart';
 import '../../../../core/services/plans/plans.dart';
+import '../../../../core/services/sfx/game_sfx.dart';
 import '../../../../core/services/video/video_capture.dart';
 import '../../../../core/services/video/video_policy.dart';
 import '../../../../core/services/video/video_uploader.dart';
@@ -35,6 +36,7 @@ import '../widgets/late_badge.dart';
 import '../widgets/stamp_sticker.dart';
 import '../widgets/submission_progress_widget.dart';
 import '../widgets/countdown_display.dart';
+import '../widgets/sfx_mute_button.dart';
 import '../widgets/task_countdown.dart';
 import '../widgets/task_reveal_card.dart';
 import '../widgets/task_timer_widget.dart';
@@ -156,6 +158,13 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
 
   int get _planCapSeconds => _plan.limits.clipSeconds;
 
+  // Arrived from the cold open (autoStart): the player has just read the
+  // task, so its description starts collapsed to one line with "More".
+  bool _descriptionExpanded = false;
+
+  GameSfx get _sfx =>
+      sl.isRegistered<GameSfx>() ? sl<GameSfx>() : const SilentGameSfx();
+
   @override
   void initState() {
     super.initState();
@@ -196,6 +205,11 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   void _startClockIfNeeded(TaskExecutionLoaded state) {
     if (_clockStartDispatched || _clockRunning(state)) return;
     _clockStartDispatched = true;
+    // "Your time starts now." This always runs inside a tap (Film it, Snap
+    // it, or focusing the text box), which is what lets the web play sound.
+    _sfx
+      ..prime()
+      ..go();
     context.read<TaskExecutionBloc>().add(StartTask(
           gameId: widget.gameId,
           taskIndex: widget.taskIndex,
@@ -282,6 +296,7 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
             return const Text('Task Execution');
           },
         ),
+        actions: const [SfxMuteButton()],
       ),
       body: BlocConsumer<TaskExecutionBloc, TaskExecutionState>(
         listener: (context, state) {
@@ -886,13 +901,21 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
-          Text(task.description, style: theme.textTheme.bodyMedium),
+          if (widget.autoStart && !_descriptionExpanded)
+            _CollapsedDescription(
+              text: task.description,
+              style: theme.textTheme.bodyMedium,
+              onMore: () => setState(() => _descriptionExpanded = true),
+            )
+          else
+            Text(task.description, style: theme.textTheme.bodyMedium),
           const SizedBox(height: 16),
           Center(
             child: started
                 ? TaskCountdown(
                     startedAt: state.userStatus!.startedAt!,
                     durationSeconds: task.durationSeconds ?? 90,
+                    sfx: _sfx,
                   )
                 // Accepted but not running: the full clock, frozen, until
                 // the camera or keyboard opens.
@@ -931,6 +954,8 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
   /// "Start" on the reveal card: accept the task and show the twist and the
   /// capture buttons. Deliberately does NOT start the clock (WP-05).
   void _startStarterTask(BuildContext context) {
+    // A tap: unlock web audio now so the countdown can tick later.
+    _sfx.prime();
     setState(() => _armed = true);
   }
 
@@ -1021,9 +1046,11 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
                   '\u{1F3A5} Film it',
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
                 ),
+                // The clip cap, deliberately smaller than the task clock so
+                // "30 s" and "20 s" never read as the same thing.
                 Text(
-                  'up to $capSeconds s',
-                  style: const TextStyle(fontSize: 13),
+                  '$capSeconds s clip',
+                  style: const TextStyle(fontSize: 12, height: 1.2),
                 ),
               ],
             ),
@@ -1581,6 +1608,61 @@ class _TaskRevealCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The task description squeezed to one line, with "More" when it does not
+/// fit. Used when the player arrives from the cold open, which already showed
+/// the full copy.
+class _CollapsedDescription extends StatelessWidget {
+  final String text;
+  final TextStyle? style;
+  final VoidCallback onMore;
+
+  const _CollapsedDescription({
+    required this.text,
+    required this.style,
+    required this.onMore,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final overflows = painter.didExceedMaxLines;
+        painter.dispose();
+        if (!overflows) return Text(text, style: style);
+        return Row(
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                key: const Key('starter-task-description-collapsed'),
+                style: style,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              key: const Key('starter-task-description-more'),
+              onPressed: onMore,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(48, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('More'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/theme/app_theme.dart';
 import 'package:taskcaster_app/features/games/presentation/widgets/countdown_display.dart';
 
 void main() {
@@ -31,6 +32,39 @@ void main() {
     testWidgets('shows Hurry in the last 10 seconds', (tester) async {
       await tester.pumpWidget(wrap(const CountdownDisplay(remainingSeconds: 8)));
       expect(find.text('Hurry'), findsOneWidget);
+    });
+
+    testWidgets('overtime copy names the grace period', (tester) async {
+      await tester.pumpWidget(
+        wrap(const CountdownDisplay(remainingSeconds: 0, graceSeconds: 15)),
+      );
+      expect(find.text("Overtime: 15 s grace, then it's LATE"), findsOneWidget);
+    });
+
+    testWidgets('violet with time left, coral in the last 10 s',
+        (tester) async {
+      Color digitsColor() => tester
+          .widget<Text>(find.byKey(const Key('countdown-digits')))
+          .style!
+          .color!;
+      await tester
+          .pumpWidget(wrap(const CountdownDisplay(remainingSeconds: 11)));
+      expect(digitsColor(), isNot(AppTheme.coral));
+      await tester
+          .pumpWidget(wrap(const CountdownDisplay(remainingSeconds: 10)));
+      expect(digitsColor(), AppTheme.coral);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('urgent digits do not pulse under reduced motion',
+        (tester) async {
+      await tester.pumpWidget(const MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: Scaffold(body: CountdownDisplay(remainingSeconds: 5)),
+        ),
+      ));
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
     });
 
     testWidgets('renders with no overflow at 390x844 @3x', (tester) async {

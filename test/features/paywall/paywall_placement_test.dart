@@ -291,7 +291,7 @@ void main() {
         (tester) async {
       final uploader = FakeVideoUploader();
       await pumpTask(tester, uploader: uploader);
-      expect(find.text('up to 20 s'), findsOneWidget,
+      expect(find.text('20 s clip'), findsOneWidget,
           reason: 'a guest records 20 s clips');
       await filmAndPost(tester);
       expect(uploader.calls.single.limits, PlanLimits.guest);

@@ -9,7 +9,9 @@ import 'package:taskcaster_app/core/models/game_settings.dart';
 import 'package:taskcaster_app/core/models/player.dart';
 import 'package:taskcaster_app/core/models/player_task_status.dart';
 import 'package:taskcaster_app/core/models/task.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taskcaster_app/core/services/photo/photo_capture.dart';
+import 'package:taskcaster_app/core/services/sfx/game_sfx.dart';
 import 'package:taskcaster_app/core/services/video/video_capture.dart';
 import 'package:taskcaster_app/features/games/domain/repositories/game_repository.dart';
 import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_bloc.dart';
@@ -19,6 +21,7 @@ import 'package:taskcaster_app/features/games/presentation/widgets/countdown_dis
 import 'package:taskcaster_app/features/games/presentation/widgets/task_countdown.dart';
 
 import '../../../../helpers/atomic_task_writes.dart';
+import '../../../../helpers/recording_game_sfx.dart';
 
 class MockGameRepository extends Mock implements GameRepository {}
 
@@ -190,5 +193,147 @@ void main() {
     expect(find.byKey(const Key('starter-clock-waiting')), findsOneWidget);
     expect(find.textContaining('Film it'), findsOneWidget);
     verifyNever(() => repo.updateTaskAtomically(any(), any(), any()));
+  });
+
+  group('clock juice (WP-8)', () {
+    late RecordingGameSfx sfx;
+
+    setUp(() {
+      sfx = RecordingGameSfx();
+      sl.registerLazySingleton<GameSfx>(() => sfx);
+      SharedPreferences.setMockInitialValues({});
+      GameSfx.resetMuteForTest();
+    });
+    tearDown(GameSfx.resetMuteForTest);
+
+    testWidgets('Film it plays "go" as the clock starts, unlocking audio first',
+        (tester) async {
+      await pump(tester, SubmissionType.video);
+      expect(sfx.played, isEmpty);
+
+      await tester.tap(find.textContaining('Film it'));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(sfx.played, ['prime', 'go']);
+    });
+
+    testWidgets('Start on the reveal card unlocks audio but plays nothing',
+        (tester) async {
+      await pump(tester, SubmissionType.video, autoStart: false);
+      await tester.tap(find.text('Start — 30 s'));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(sfx.played, ['prime']);
+    });
+
+    testWidgets('the app bar mute toggle flips and is remembered',
+        (tester) async {
+      await pump(tester, SubmissionType.video);
+      final toggle = find.byKey(const Key('sfx-mute-toggle'));
+      expect(toggle, findsOneWidget);
+      expect(find.byIcon(Icons.volume_up_rounded), findsOneWidget);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(GameSfx.muted.value, isTrue);
+      expect(find.byIcon(Icons.volume_off_rounded), findsOneWidget);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(GameSfx.mutedPrefsKey), isTrue);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(GameSfx.muted.value, isFalse);
+      expect(prefs.getBool(GameSfx.mutedPrefsKey), isFalse);
+    });
+
+    testWidgets('a saved mute choice is loaded', (tester) async {
+      SharedPreferences.setMockInitialValues({GameSfx.mutedPrefsKey: true});
+      await pump(tester, SubmissionType.video);
+      await tester.pump();
+      expect(find.byIcon(Icons.volume_off_rounded), findsOneWidget);
+    });
+
+    testWidgets('Film it shows the clip cap as a small "20 s clip" line',
+        (tester) async {
+      await pump(tester, SubmissionType.video);
+      expect(find.text('20 s clip'), findsOneWidget);
+      expect(find.textContaining('up to'), findsNothing);
+    });
+
+    testWidgets(
+        'from the cold open the description is one line with More; '
+        'More shows it all', (tester) async {
+      await pump(tester, SubmissionType.video);
+      // A narrow phone: the copy does not fit on one line.
+      tester.view.physicalSize = const Size(360, 640) * 2.0;
+      tester.view.devicePixelRatio = 2.0;
+      await tester.pump();
+      expect(find.byKey(const Key('starter-task-description-collapsed')),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('starter-task-description-more')));
+      await tester.pump();
+      expect(find.byKey(const Key('starter-task-description-collapsed')),
+          findsNothing);
+      expect(
+          find.text('Selfie video. Show us every layer of that realisation.'),
+          findsOneWidget);
+    });
+
+    testWidgets('without autoStart the description is shown in full',
+        (tester) async {
+      tester.view.physicalSize = const Size(360, 640) * 2.0;
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pump(tester, SubmissionType.video, autoStart: false);
+      await tester.tap(find.text('Start — 30 s'));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(const Key('starter-task-description-more')),
+          findsNothing);
+    });
+
+    testWidgets('running clock at 360x640, light and dark: no overflow',
+        (tester) async {
+      tester.view.physicalSize = const Size(360, 640) * 2.0;
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+        when(() => repo.getGameStream('game1')).thenAnswer((_) => Stream.value(
+            gameWith(notStartedTask(SubmissionType.video).copyWith(
+                playerStatuses: {
+              'user1': PlayerTaskStatus(
+                playerId: 'user1',
+                state: TaskPlayerState.in_progress,
+                startedAt: DateTime.now().subtract(const Duration(seconds: 25)),
+              ),
+            }))));
+        final bloc = TaskExecutionBloc(gameRepository: repo)
+          ..add(const LoadTask(
+              gameId: 'game1', taskIndex: 0, userId: 'user1'));
+        addTearDown(bloc.close);
+        await tester.pumpWidget(MaterialApp(
+          theme: ThemeData.light(),
+          darkTheme: ThemeData.dark(),
+          themeMode: mode,
+          home: BlocProvider<TaskExecutionBloc>.value(
+            value: bloc,
+            child: const TaskExecutionView(
+              gameId: 'game1',
+              taskIndex: 0,
+              userId: 'user1',
+              autoStart: true,
+            ),
+          ),
+        ));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(TaskCountdown), findsOneWidget);
+        await tester.pump(const Duration(seconds: 1));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(Container());
+      }
+    });
   });
 }
