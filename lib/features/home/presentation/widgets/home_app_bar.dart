@@ -88,7 +88,9 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
-                              user.email ?? 'Guest',
+                              // A guest's funny name is the title above;
+                              // this line just says where it came from.
+                              user.email ?? 'Guest. Name assigned.',
                               style: Theme.of(context)
                                   .textTheme
                                   .bodySmall

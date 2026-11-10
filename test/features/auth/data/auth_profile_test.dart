@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskcaster_app/core/utils/funny_names.dart';
 import 'package:taskcaster_app/features/auth/data/datasources/mock_auth_data_source.dart';
 import 'package:taskcaster_app/features/auth/data/repositories/auth_repository_impl.dart';
 
@@ -75,6 +76,43 @@ void main() {
       expect(user.id, isNotEmpty);
       expect(repository.isCurrentUserAnonymous(), isFalse);
       expect(repository.getCurrentUserId(), user.id);
+    });
+
+    test('a new guest gets their funny name, not "Guest"', () async {
+      final guest = await repository.signInAnonymously();
+      expect(guest.displayName, FunnyNames.forUid(guest.id));
+      expect(guest.displayName, isNot('Guest'));
+
+      // It is saved to the profile, so a fresh read returns the same name.
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      expect(dataSource.getCurrentUserData()?['displayName'],
+          FunnyNames.forUid(guest.id));
+      final current = await repository.getCurrentUser();
+      expect(current?.displayName, FunnyNames.forUid(guest.id));
+    });
+
+    test('an existing guest stored as "Guest" is renamed on next launch',
+        () async {
+      final guest = await repository.signInAnonymously();
+      // Simulate an older build: the profile still says "Guest".
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      await dataSource.updateProfile(displayName: 'Guest');
+      expect(dataSource.getCurrentUserData()?['displayName'], 'Guest');
+
+      final current = await repository.getCurrentUser();
+      expect(current?.displayName, FunnyNames.forUid(guest.id));
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      expect(dataSource.getCurrentUserData()?['displayName'],
+          FunnyNames.forUid(guest.id));
+    });
+
+    test('a guest who picked their own name keeps it', () async {
+      await repository.signInAnonymously();
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      final updated = await repository.updateProfile(displayName: 'Sophie');
+      expect(updated.displayName, 'Sophie');
+      final current = await repository.getCurrentUser();
+      expect(current?.displayName, 'Sophie');
     });
 
     test('sendPasswordReset rejects an invalid email', () async {
