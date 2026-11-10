@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/config/e2e_mode.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../../../../core/models/player_task_status.dart';
@@ -445,7 +446,11 @@ class TaskExecutionBloc extends Bloc<TaskExecutionEvent, TaskExecutionState> {
           // WP-09: Starter Pack attempts are public by design (the share
           // page treats an absent flag the same way); say so explicitly.
           // Friend-game posts stay unset = private until the owner shares.
-          shareable: task.id.startsWith('starter-') ? true : null,
+          // Fun audit WP-1: an automated walk (E2eMode) posts privately, so
+          // its test patterns never reach the public Arena or a finale.
+          shareable: E2eMode.isOn
+              ? false
+              : (task.id.startsWith('starter-') ? true : null),
         ));
       }
 

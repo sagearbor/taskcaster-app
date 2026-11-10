@@ -82,6 +82,24 @@ test('selectClips filters by task, orders by createdAt and caps the count', () =
   assert.deepEqual(selectClips([], {taskId: 't1'}), []);
 });
 
+test('montages leave out private posts (shareable false), keep unset and true', () => {
+  const post = (id, extra = {}) => ({
+    id, taskId: 't1', createdAt: `2026-11-09T10:0${id.length}:00.000Z`,
+    mediaType: 'video', videoStoragePath: `submissions/u/d/${id}`, ...extra,
+  });
+  assert.equal(isMontageablePost(post('x', {shareable: false}), 't1'), false);
+  assert.equal(isMontageablePost(post('x', {shareable: true}), 't1'), true);
+  assert.equal(isMontageablePost(post('x'), 't1'), true);
+  // The queue admission (no taskId) honours it too.
+  assert.equal(isMontageablePost(post('x', {shareable: false})), false);
+  const picked = selectClips([
+    post('a'),
+    post('bb', {shareable: false, hiddenReason: 'test-walk'}),
+    post('ccc', {shareable: true}),
+  ], {taskId: 't1'});
+  assert.deepEqual(picked.map((p) => p.id), ['a', 'ccc']);
+});
+
 test('decideRender: three clips render immediately', () => {
   const now = Date.parse('2026-09-12T12:00:00.000Z');
   const doc = {

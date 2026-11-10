@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
+import 'core/config/e2e_mode.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/backend_unavailable_screen.dart';
 import 'core/theme/theme_controller.dart';
@@ -71,6 +72,11 @@ Future<void> _initFirebase() async {
 
 Future<void> _startApp({required bool useMockServices}) async {
   await ServiceLocator.init(useMockServices: useMockServices);
+
+  // Fun audit WP-1: `?e2e=1` (or a persisted flag) marks an automated walk,
+  // whose posts must stay out of the public Arena. Read before anything can
+  // post, and before the invite service strips the launch query.
+  await E2eMode.init();
 
   // Start capturing friend-invite deep links / install referrer immediately
   // (fire-and-forget: never blocks or crashes startup — the service swallows
