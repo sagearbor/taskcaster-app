@@ -24,6 +24,10 @@ import '../../../arena/domain/repositories/feed_repository.dart';
 import '../../../arena/presentation/screens/arena_screen.dart';
 import '../../../arena/presentation/widgets/share_attempt_button.dart';
 import '../../../arena/presentation/widgets/watch_together_button.dart';
+import '../../../home/domain/streak.dart';
+import '../../../home/presentation/widgets/next_task_hero_card.dart'
+    show StreakChip;
+import '../../../tasks/data/datasources/daily_task_data.dart';
 import '../../../paywall/presentation/paywall_launcher.dart';
 import '../widgets/clip_preview.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -291,12 +295,28 @@ class _TaskExecutionViewState extends State<TaskExecutionView> {
         title: BlocBuilder<TaskExecutionBloc, TaskExecutionState>(
           builder: (context, state) {
             if (state is TaskExecutionLoaded) {
+              // A daily game has exactly one task; "Task 1 of 1" reads like
+              // a bug. It is today's task, the same one everyone has.
+              if (DailyTaskData.isDailyTaskId(state.task.id)) {
+                return const Text("Today's task",
+                    key: Key('task-title-daily'));
+              }
               return Text('Task ${state.taskNumber} of ${state.totalTasks}');
             }
             return const Text('Task Execution');
           },
         ),
-        actions: const [SfxMuteButton()],
+        actions: [
+          BlocBuilder<TaskExecutionBloc, TaskExecutionState>(
+            buildWhen: (a, b) => b is TaskExecutionLoaded,
+            builder: (context, state) =>
+                state is TaskExecutionLoaded &&
+                        DailyTaskData.isDailyTaskId(state.task.id)
+                    ? const _DailyStreakAction()
+                    : const SizedBox.shrink(),
+          ),
+          const SfxMuteButton(),
+        ],
       ),
       body: BlocConsumer<TaskExecutionBloc, TaskExecutionState>(
         listener: (context, state) {
@@ -1663,6 +1683,55 @@ class _CollapsedDescription extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The 🔥 streak beside today's task title: the same chip as Home's hero,
+/// read from the player's own posts. Renders nothing at 0, or when the posts
+/// cannot be read (the streak is a nicety, never an error).
+class _DailyStreakAction extends StatefulWidget {
+  const _DailyStreakAction();
+
+  @override
+  State<_DailyStreakAction> createState() => _DailyStreakActionState();
+}
+
+class _DailyStreakActionState extends State<_DailyStreakAction> {
+  StreamSubscription<List<FeedPost>>? _sub;
+  int _streak = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      final auth = context.read<AuthBloc>().state;
+      final uid = auth is AuthAuthenticated ? auth.user.id : '';
+      if (uid.isEmpty || !sl.isRegistered<FeedRepository>()) return;
+      _sub = sl<FeedRepository>().watchPostsByUser(uid).listen(
+        (posts) {
+          final s = currentStreak(posts, DateTime.now());
+          if (mounted && s != _streak) setState(() => _streak = s);
+        },
+        onError: (Object e) => debugPrint('Daily streak chip: $e'),
+      );
+    } catch (e) {
+      debugPrint('Daily streak chip: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_streak <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Center(child: StreakChip(days: _streak)),
     );
   }
 }

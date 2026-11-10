@@ -79,7 +79,9 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      expect(find.text('YOUR FIRST TEN'), findsOneWidget);
+      // Not a second "Your First Ten" under the app bar's.
+      expect(find.text('YOUR SCORE'), findsOneWidget);
+      expect(find.text('YOUR FIRST TEN'), findsNothing);
       expect(find.text('7/10'), findsOneWidget);
       // 8 + 6 + 8 locked by the crowd.
       expect(find.text('22 pts'), findsOneWidget);

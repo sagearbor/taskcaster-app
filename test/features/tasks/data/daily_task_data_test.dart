@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskcaster_app/core/models/task.dart';
+import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
 import 'package:taskcaster_app/features/tasks/data/datasources/daily_task_data.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/starter_pack_data.dart';
 
 void main() {
   final tasks = DailyTaskData.tasks();
@@ -141,6 +143,59 @@ void main() {
       expect(DailyTaskData.formatUntil(const Duration(minutes: 12)), '12 m');
       expect(DailyTaskData.formatUntil(const Duration(seconds: 20)),
           'under a minute');
+    });
+  });
+
+  group('DailyTaskData.houseEntries', () {
+    const personas = [
+      StarterPackData.auntPam,
+      StarterPackData.theIntern,
+      StarterPackData.daveFromAccounts,
+    ];
+
+    test('two per task: the house, then the rotating persona', () {
+      expect(DailyTaskData.houseEntries.length, tasks.length);
+      for (final (i, t) in tasks.indexed) {
+        final entries = DailyTaskData.houseEntries[t.id];
+        expect(entries, hasLength(2), reason: t.id);
+        expect(entries!.map((e) => e.posterName),
+            [StarterPackData.housePosterName, personas[i % 3]],
+            reason: t.id);
+      }
+    });
+
+    test('short real text, product voice, nothing repeated', () {
+      final texts = <String>[];
+      for (final MapEntry(key: id, value: entries)
+          in DailyTaskData.houseEntries.entries) {
+        for (final e in entries) {
+          expect(e.text.trim(), isNotEmpty, reason: id);
+          expect(e.text.length, lessThan(280), reason: id);
+          expect('\n'.allMatches(e.text).length, lessThanOrEqualTo(2),
+              reason: id);
+          expect(e.text, isNot(contains('!')), reason: '$id: ${e.text}');
+          texts.add(e.text);
+        }
+      }
+      final starterTexts = {
+        for (final list in StarterPackData.houseEntries.values)
+          for (final e in list) e.text,
+      };
+      expect(texts.toSet().length, texts.length);
+      expect(texts.where(starterTexts.contains), isEmpty);
+    });
+
+    test('real, distinct stamps and believable starting grades', () {
+      for (final MapEntry(key: id, value: entries)
+          in DailyTaskData.houseEntries.entries) {
+        for (final e in entries) {
+          expect(Stamps.values, contains(e.stamp), reason: id);
+          expect(e.gradeCount, inInclusiveRange(4, 30), reason: id);
+          expect(e.meanGrade, inInclusiveRange(2.1, 4.6), reason: id);
+        }
+        expect(entries.map((e) => e.stamp).toSet().length, entries.length,
+            reason: id);
+      }
     });
   });
 }

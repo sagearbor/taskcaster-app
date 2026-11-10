@@ -15,6 +15,7 @@ import '../../../games/domain/repositories/game_repository.dart';
 import '../../../games/presentation/bloc/games_bloc.dart';
 import '../../../games/presentation/screens/game_detail_screen.dart';
 import '../../../games/presentation/screens/task_execution_screen.dart';
+import '../../../tasks/data/datasources/daily_task_data.dart';
 import '../../../tasks/data/datasources/starter_pack_data.dart';
 import '../../domain/models/feed_post.dart';
 import '../../domain/models/montage.dart';
@@ -52,6 +53,13 @@ class ArenaScreen extends StatelessWidget {
   static Future<void> Function(BuildContext context)? debugOpenNextTask;
   @visibleForTesting
   static Future<void> Function(BuildContext context)? debugChallengeFriends;
+  @visibleForTesting
+  static Future<void> Function(BuildContext context)? debugOpenDailyTask;
+
+  /// Test hook for "now" on the next-up panel (which UTC day's task, and how
+  /// long until the next). Null in the app: [DateTime.now].
+  @visibleForTesting
+  static DateTime Function()? debugClock;
 
   @override
   Widget build(BuildContext context) {
@@ -190,8 +198,8 @@ class _ArenaEmptyView extends StatelessWidget {
 
 /// The end of the queue is never a dead end: the primary button is the next
 /// Starter Pack task (which is also what unlocks more to grade). With all ten
-/// done it points at tomorrow's daily task and at friends instead. Back stays
-/// as a quiet text link.
+/// done it is today's daily task; once that is posted too, "Done for today"
+/// with the countdown, and Challenge friends. Back stays as a quiet text link.
 class _NextUpPanel extends StatefulWidget {
   final String title;
 
@@ -203,6 +211,50 @@ class _NextUpPanel extends StatefulWidget {
 
 class _NextUpPanelState extends State<_NextUpPanel> {
   bool _busy = false;
+  StreamSubscription<List<FeedPost>>? _postsSub;
+  List<FeedPost> _myPosts = const [];
+
+  DateTime _now() => (ArenaScreen.debugClock ?? DateTime.now)();
+
+  @override
+  void initState() {
+    super.initState();
+    // The viewer's own posts answer "is today's task posted". A read failure
+    // just means the daily task is offered again, which is harmless.
+    final auth = context.read<AuthBloc>().state;
+    final uid = auth is AuthAuthenticated ? auth.user.id : '';
+    if (uid.isEmpty || !sl.isRegistered<FeedRepository>()) return;
+    try {
+      _postsSub = sl<FeedRepository>().watchPostsByUser(uid).listen(
+        (posts) {
+          if (mounted) setState(() => _myPosts = posts);
+        },
+        onError: (Object e) => debugPrint('Arena next-up posts: $e'),
+      );
+    } catch (e) {
+      debugPrint('Arena next-up posts: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _postsSub?.cancel();
+    super.dispose();
+  }
+
+  /// Today's daily task is posted: an entry on today's task id made today
+  /// (UTC). The task id alone is not enough; ids come round every 30 days.
+  bool _dailyDoneToday(Set<String> unlocked, DateTime now) {
+    final task = DailyTaskData.taskFor(now);
+    if (!unlocked.contains(task.id)) return false;
+    final today = DailyTaskData.dayKey(now);
+    return _myPosts.any((p) =>
+        !p.isHouse &&
+        p.taskId == task.id &&
+        // A post whose server timestamp has not landed yet was just made.
+        (p.createdAt.isAtSameMomentAs(FeedPost.unknownCreatedAt) ||
+            DailyTaskData.dayKey(p.createdAt) == today));
+  }
 
   /// The first Starter Pack task the viewer has not posted to, or null once
   /// all ten are done. Posts are the record of what was submitted, so the
@@ -230,12 +282,27 @@ class _NextUpPanelState extends State<_NextUpPanel> {
     final unlocked = context.read<ArenaBloc>().unlockedTaskIds;
     final seconds = _nextStarterSeconds(unlocked);
     final allDone = seconds == null;
+    final now = _now();
+    final daily = DailyTaskData.taskFor(now);
+    final dailyDone = allDone && _dailyDoneToday(unlocked, now);
 
-    final primaryLabel =
-        allDone ? 'Challenge friends' : 'Next task — $seconds s';
-    final primaryAction = allDone
-        ? (ArenaScreen.debugChallengeFriends ?? _challengeFriends)
-        : (ArenaScreen.debugOpenNextTask ?? _openNextTask);
+    final String primaryLabel;
+    final String subline;
+    final Future<void> Function(BuildContext) primaryAction;
+    if (!allDone) {
+      primaryLabel = 'Next task — $seconds s';
+      subline = 'Do the next task to unlock more.';
+      primaryAction = ArenaScreen.debugOpenNextTask ?? _openNextTask;
+    } else if (!dailyDone) {
+      primaryLabel = "Today's task — ${daily.durationSeconds} s";
+      subline = "Today's task is waiting. Same one for everyone.";
+      primaryAction = ArenaScreen.debugOpenDailyTask ?? _openDailyTask;
+    } else {
+      primaryLabel = 'Challenge friends';
+      subline = 'Done for today · new task in '
+          '${DailyTaskData.formatUntil(DailyTaskData.untilNextTask(now))}';
+      primaryAction = ArenaScreen.debugChallengeFriends ?? _challengeFriends;
+    }
 
     return Center(
       child: SingleChildScrollView(
@@ -252,9 +319,8 @@ class _NextUpPanelState extends State<_NextUpPanel> {
             ),
             const SizedBox(height: 8),
             Text(
-              allDone
-                  ? 'Come back tomorrow for the daily task.'
-                  : 'Do the next task to unlock more.',
+              subline,
+              key: const Key('arena-next-up-subline'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -330,6 +396,42 @@ class _NextUpPanelState extends State<_NextUpPanel> {
         if (state is GamesError) {
           messenger.showSnackBar(
             const SnackBar(content: Text("Couldn't open your next task.")),
+          );
+          break;
+        }
+      }
+    } finally {
+      await bloc.close();
+    }
+  }
+
+  /// Opens today's daily task with the clock armed, the same way Home's
+  /// hero does (GamesBloc StartDailyTask -> TaskExecutionScreen autoStart).
+  static Future<void> _openDailyTask(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final bloc = GamesBloc(
+      gameRepository: sl<GameRepository>(),
+      authRepository: sl<AuthRepository>(),
+    )..add(const StartDailyTask());
+    try {
+      await for (final state in bloc.stream) {
+        if (state is DailyTaskReady) {
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => TaskExecutionScreen(
+                gameId: state.gameId,
+                taskIndex: 0,
+                autoStart: true,
+              ),
+            ),
+            (route) => route.isFirst,
+          );
+          break;
+        }
+        if (state is GamesError) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text("Couldn't open today's task.")),
           );
           break;
         }

@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * Seeds the Arena's "house" posts (four per Starter Pack task, posted as
- * userId 'house': `house-<taskId>` plus `house-<taskId>-1..3`) with the Admin SDK, and optionally converts legacy
+ * Seeds the Arena's "house" posts (four per Starter Pack task and two per
+ * Daily Task, posted as userId 'house': `house-<taskId>` plus
+ * `house-<taskId>-1..3`) with the Admin SDK, and optionally converts legacy
  * ISO-string `createdAt` values on feed_posts to Firestore Timestamps.
  *
  * Why a script: firestore.rules deny every client write to a house post (they

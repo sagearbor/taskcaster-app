@@ -25,7 +25,7 @@ class FakeGame extends Fake implements Game {}
 
 const userId = 'walker-1';
 
-Game buildGame(String taskId) => Game(
+Game buildGame(String taskId, {String? kind = Game.kindStarter}) => Game(
       id: 'game-1',
       gameName: 'Your First Ten',
       creatorId: userId,
@@ -55,7 +55,7 @@ Game buildGame(String taskId) => Game(
         ),
       ],
       settings: const GameSettings(crowdJudged: true, shareToArena: true),
-      gameKind: Game.kindStarter,
+      gameKind: kind,
     );
 
 void main() {
@@ -80,9 +80,10 @@ void main() {
     source.dispose();
   });
 
-  Future<String> postPhoto(String taskId) async {
+  Future<String> postPhoto(String taskId,
+      {String? kind = Game.kindStarter}) async {
     when(() => gameRepository.getGameStream('game-1'))
-        .thenAnswer((_) => Stream.value(buildGame(taskId)));
+        .thenAnswer((_) => Stream.value(buildGame(taskId, kind: kind)));
     final b = bloc = TaskExecutionBloc(
       gameRepository: gameRepository,
       feedRepository: feedRepository,
@@ -133,8 +134,33 @@ void main() {
 
   test('e2e on: a friend-game post is private too', () async {
     E2eMode.debugOverride(true);
-    final id = await postPhoto('friend-task-1');
+    final id = await postPhoto('friend-task-1', kind: null);
     final post = await feedRepository.watchPost(id).first;
     expect(post!.shareable, isFalse);
+  });
+
+  test('e2e off: a Daily Task post is public, like the Starter Pack',
+      () async {
+    E2eMode.debugOverride(false);
+    final id = await postPhoto('daily-04', kind: Game.kindDaily);
+    final post = await feedRepository.watchPost(id).first;
+    expect(post!.shareable, isTrue);
+    expect(await strangersQueue('daily-04'), contains(id));
+  });
+
+  test('e2e on: a Daily Task post is private', () async {
+    E2eMode.debugOverride(true);
+    final id = await postPhoto('daily-04', kind: Game.kindDaily);
+    final post = await feedRepository.watchPost(id).first;
+    expect(post!.shareable, isFalse);
+    expect(await strangersQueue('daily-04'), isNot(contains(id)));
+  });
+
+  test('e2e off: a friend-game post stays unset until the owner shares',
+      () async {
+    E2eMode.debugOverride(false);
+    final id = await postPhoto('friend-task-1', kind: null);
+    final post = await feedRepository.watchPost(id).first;
+    expect(post!.shareable, isNull);
   });
 }
