@@ -496,6 +496,22 @@ void main() {
       expect(find.text('Second post'), findsOneWidget);
     });
 
+    testWidgets('the reveal fully covers the media: an opaque scrim',
+        (tester) async {
+      await loadQueue(tester, [_post('p1', gradeCount: 2, gradeSum: 6)]);
+      await tester.tap(find.text('4'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final boxes = tester.widgetList<DecoratedBox>(find.descendant(
+        of: find.byType(GradeRevealOverlay),
+        matching: find.byType(DecoratedBox),
+      ));
+      final scrim = boxes.first.decoration as BoxDecoration;
+      final colors = scrim.gradient?.colors ?? [scrim.color!];
+      expect(colors.every((c) => c.alpha == 255), isTrue);
+    });
+
     testWidgets('a tap anywhere skips the wait', (tester) async {
       await loadQueue(tester, [
         _post('p1', gradeCount: 2, gradeSum: 6),

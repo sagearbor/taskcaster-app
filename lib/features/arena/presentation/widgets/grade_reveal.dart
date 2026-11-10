@@ -100,10 +100,15 @@ class GradeRevealOverlay extends StatelessWidget {
           child: Transform.scale(scale: 0.94 + 0.06 * t, child: child),
         ),
         child: DecoratedBox(
-          // Near-opaque: a text entry's big white words must not read
-          // through the numbers. The clip keeps playing underneath.
-          decoration: BoxDecoration(
-            color: const Color(0xFF120C22).withOpacity(0.9),
+          // Fully opaque: nothing in the entry (a text post's big white
+          // words, a busy photo) may read through the numbers. The clip keeps
+          // playing underneath, unseen, so it doesn't restart.
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF2A1A52), Color(0xFF120C22)],
+            ),
           ),
           child: Padding(
             padding: const EdgeInsets.all(20),
