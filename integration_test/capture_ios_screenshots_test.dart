@@ -1,105 +1,94 @@
-// Captures the same 8 Play/App Store screenshots as
-// scripts/capture_store_screenshots.sh (Android), but on a real booted iOS
-// Simulator, driven by this file's `flutter test -d <device>` process
-// instead of adb/uiautomator (which have no iOS equivalent).
+// Captures the 8 App Store screenshots on a booted iOS Simulator, driven from
+// inside this file's `flutter test -d <device>` process with ordinary
+// WidgetTester finders/taps against the real rendering pipeline.
 //
-// Unlike the Android script (which drives the REAL installed app externally
-// via `adb shell input` taps located by parsing a `uiautomator dump`), this
-// drives the app from INSIDE a `flutter test` process using ordinary
-// `WidgetTester` finders/taps (`find.text`, `tester.tap`,
-// `tester.pumpAndSettle`) — exactly like this repo's regular widget tests,
-// except `IntegrationTestWidgetsFlutterBinding` runs them against the real
-// rendering/gesture pipeline on an actual simulator, not the Dart-VM
-// "flutter tester" target. That's more robust than coordinate/accessibility
-// scraping and needs no separate automation tool.
+// The shots sell the core loop (docs/PRODUCT_DIRECTION.md):
+//   01_cold_open      — the first task, before any sign-in
+//   02_task_clock     — a task mid-attempt, its clock running
+//   03_posted         — the Posted polaroid with its auto-stamp
+//   04_arena_reveal   — grading someone in the Arena: the reveal
+//   05_first_ten      — the Starter Pack recap ("Your First Ten")
+//   06_today_streak   — Home: today's task and the streak
+//   07_house_entries  — the Arena tease of other people's entries
+//   08_friend_game    — a friend game lobby with the invite up
 //
-// Screenshot mechanism: this process cannot itself run `xcrun simctl io
-// screenshot` (an iOS app sandbox — even in the Simulator — can't spawn
-// arbitrary host processes via dart:io Process). Instead, right after each
-// screen settles this test `print()`s a "SHOT_READY:<name>" marker. Flutter
-// forwards `print()` from the on-device test straight through to this
-// process's own stdout (confirmed empirically: a `flutter test -d <sim-udid>`
-// run shows print() output inline, no separate `log stream` needed). The
-// driving shell script (scripts/capture_store_screenshots_ios.sh) tails that
-// stdout and fires `xcrun simctl io <udid> screenshot <out>/<name>.png` the
-// instant each marker appears — precise, and needs no fixed sleep guessing.
+// Data: lib/main_screenshots.dart runs the real app shell on MOCK services.
+// Everything this test seeds (the guest's earlier days, a friend game, a few
+// crowd grades) goes into those in-memory mocks. Nothing here can reach
+// Firebase or production.
 //
-// Requires: Flutter 3.22.2 on PATH, a booted iOS Simulator passed via `-d`,
-// e.g.:
+// Screenshot mechanism: an iOS app sandbox can't run `xcrun simctl`, so after
+// each screen settles this test prints "SHOT_READY:<name>";
+// scripts/capture_store_screenshots_ios.sh tails the `flutter test` output
+// and fires `xcrun simctl io <udid> screenshot <out>/<name>.png` on each one.
+//
 //   flutter test integration_test/capture_ios_screenshots_test.dart \
 //     -d <simulator-udid>
-//
-// Uses lib/main_screenshots.dart's exact init sequence (mock services, no
-// Firebase/network required) — same entry point the Android script builds
-// from, so the same seeded mock games / practice-bot flow are available
-// here too.
 //
 // NEVER run this while another `flutter` build/run is in progress elsewhere
 // in the repo (repo convention: no parallel flutter builds).
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:taskcaster_app/core/di/service_locator.dart';
+import 'package:taskcaster_app/core/models/submission.dart';
+import 'package:taskcaster_app/core/models/task.dart';
+import 'package:taskcaster_app/features/arena/domain/models/feed_post.dart';
+import 'package:taskcaster_app/features/arena/domain/repositories/feed_repository.dart';
+import 'package:taskcaster_app/features/arena/presentation/screens/arena_screen.dart';
+import 'package:taskcaster_app/features/arena/presentation/widgets/grade_bar.dart';
+import 'package:taskcaster_app/features/auth/presentation/bloc/auth_bloc.dart';
+import 'package:taskcaster_app/features/games/domain/repositories/game_repository.dart';
+import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_bloc.dart';
+import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_event.dart';
+import 'package:taskcaster_app/features/games/presentation/bloc/task_execution_state.dart';
+import 'package:taskcaster_app/features/games/presentation/screens/game_detail_screen.dart';
+import 'package:taskcaster_app/features/games/presentation/screens/task_execution_screen.dart';
+import 'package:taskcaster_app/features/tasks/data/datasources/daily_task_data.dart';
 import 'package:taskcaster_app/main_screenshots.dart' as app;
 
 /// Small delay after pumpAndSettle before printing a shot's "ready" marker —
-/// gives the just-composited frame a moment to actually reach the display
-/// before the external script's `xcrun simctl io screenshot` fires.
-const _settleBuffer = Duration(milliseconds: 400);
+/// gives the just-composited frame a moment to reach the display before the
+/// external script's `xcrun simctl io screenshot` fires.
+const _settleBuffer = Duration(milliseconds: 600);
+
+Future<void> _settle(WidgetTester tester) async {
+  try {
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 6),
+    );
+  } catch (_) {
+    // A looping animation (a pulsing chip, a ticking clock) never settles;
+    // that is fine for a screenshot.
+  }
+}
 
 Future<void> _ready(WidgetTester tester, String shotName) async {
-  await tester.pumpAndSettle();
+  await _settle(tester);
   await Future<void>.delayed(_settleBuffer);
   // ignore: avoid_print
   print('SHOT_READY:$shotName');
-  // Give the external screenshot command time to actually run before this
-  // test moves on and starts changing what's on screen. Pump gently (not a
-  // bare Future.delayed) so any still-running mock-data-source timers /
-  // stream emissions during the wait are reflected in the tree.
-  for (var i = 0; i < 20; i++) {
+  // Give the external screenshot command time to run before this test moves
+  // on and starts changing what's on screen.
+  for (var i = 0; i < 25; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
 }
 
-/// Repeatedly pumps (real time, not FakeAsync) until [finder] matches at
-/// least one widget. A plain `ListView(children: [...])` only builds
-/// Elements for children within the current viewport + cache extent (the
-/// full Dart widget list exists, but off-screen ones have no Element yet) —
-/// the exact same "off-screen nodes don't exist yet" class of bug the
-/// Android capture script hit with uiautomator's semantics-tree culling — so
-/// if a plain wait doesn't turn it up, this also tries scrolling the
-/// nearest Scrollable down (then up) before giving up. On total failure it
-/// prints a diagnostic dump of every currently-mounted Text widget before
-/// throwing, so a broken finder fails loudly with enough context to fix it
-/// instead of a bare "Bad state: No element".
+/// Pumps (real time) until [finder] matches. On failure, prints every
+/// mounted Text so a broken finder fails with enough context to fix it.
 Future<void> _waitFor(WidgetTester tester, Finder finder, String what,
-    {int maxTries = 15}) async {
+    {int maxTries = 40}) async {
   for (var i = 0; i < maxTries; i++) {
     if (finder.evaluate().isNotEmpty) return;
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 250));
   }
   if (finder.evaluate().isNotEmpty) return;
-
-  if (find.byType(Scrollable).evaluate().isNotEmpty) {
-    final scrollable = find.byType(Scrollable).first;
-    try {
-      await tester.scrollUntilVisible(finder, 250, scrollable: scrollable);
-      await tester.pumpAndSettle();
-      if (finder.evaluate().isNotEmpty) return;
-    } catch (_) {
-      // Not found scrolling down; try scrolling back up in case it's above
-      // the current position instead.
-      try {
-        await tester.scrollUntilVisible(finder, -250, scrollable: scrollable);
-        await tester.pumpAndSettle();
-        if (finder.evaluate().isNotEmpty) return;
-      } catch (_) {
-        // fall through to the diagnostic dump below.
-      }
-    }
-  }
-
   final visibleTexts = tester
       .widgetList<Text>(find.byType(Text))
       .map((t) => t.data ?? t.textSpan?.toPlainText())
@@ -110,202 +99,252 @@ Future<void> _waitFor(WidgetTester tester, Finder finder, String what,
   throw StateError('Timed out waiting for $what');
 }
 
-Future<void> _tapText(WidgetTester tester, String text, {bool first = false}) async {
-  // IMPORTANT: check existence on the plain (un-`.first`-wrapped) finder.
-  // A `.first`-wrapped Finder's `.evaluate()` throws "Bad state: No element"
-  // immediately when there are zero matches (it isn't a safe/lazy
-  // existence check like a normal finder), which would break _waitFor's
-  // retry loop by throwing on its very first (empty) attempt instead of
-  // actually waiting.
-  final baseFinder = find.text(text);
-  await _waitFor(tester, baseFinder, '"$text"');
-  final tapFinder = first ? baseFinder.first : baseFinder;
-  await tester.ensureVisible(tapFinder);
-  await tester.pumpAndSettle();
-  await tester.tap(tapFinder);
-  await tester.pumpAndSettle();
+Future<void> _tap(WidgetTester tester, Finder finder, String what) async {
+  await _waitFor(tester, finder, what);
+  await tester.ensureVisible(finder.first);
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.tap(finder.first);
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
+NavigatorState _nav(WidgetTester tester) =>
+    tester.state<NavigatorState>(find.byType(Navigator).first);
+
+Future<void> _popToHome(WidgetTester tester) async {
+  _nav(tester).popUntil((r) => r.isFirst);
+  await _settle(tester);
+}
+
+/// Seeds an entry through the same bloc the task screen uses, so the game,
+/// the submission and the Arena post all line up exactly as a real attempt.
+Future<void> _seedEntry({
+  required String gameId,
+  required int taskIndex,
+  required String userId,
+  required String displayName,
+  required String text,
+}) async {
+  final bloc = TaskExecutionBloc(
+    gameRepository: sl<GameRepository>(),
+    feedRepository: sl<FeedRepository>(),
+  );
+  bloc.add(LoadTask(gameId: gameId, taskIndex: taskIndex, userId: userId));
+  await bloc.stream.firstWhere((s) => s is TaskExecutionLoaded);
+  bloc.add(StartTask(gameId: gameId, taskIndex: taskIndex, userId: userId));
+  await bloc.stream.firstWhere((s) =>
+      s is TaskExecutionLoaded && s.userStatus?.startedAt != null);
+  await Future<void>.delayed(const Duration(milliseconds: 1500));
+  bloc.add(SubmitTask(
+    gameId: gameId,
+    taskIndex: taskIndex,
+    userId: userId,
+    displayName: displayName,
+    text: text,
+  ));
+  await bloc.stream.firstWhere(
+      (s) => s is TaskExecutionSubmitted || s is TaskExecutionError);
+  await bloc.close();
 }
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('capture the 8 store-listing screenshots', (tester) async {
+  // An empty description on purpose: the live test binding paints the test's
+  // name in the top-left corner of the screen, which would end up in every
+  // screenshot.
+  testWidgets('', (tester) async {
     app.main();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
 
-    // 1. Onboarding — "Party games for everyone" (first/only page, fresh
-    // launch of a mock-services app has no persisted "seen onboarding" flag).
-    // The driving script uninstalls the app first specifically so this is
-    // always reachable, but tolerate a stale install (e.g. a debug rerun on
-    // an already-provisioned simulator) skipping straight to the login
-    // screen instead of failing the whole capture over one missed shot.
+    // ---- 01: the cold open — the first task, nobody signed in yet --------
+    final coldStart = find.textContaining('Start —');
+    await _waitFor(tester, coldStart, 'the cold open');
+    await _ready(tester, '01_cold_open');
+
+    // Start: guest sign-in, the Starter Pack opens on task 1.
+    await _tap(tester, coldStart, 'cold open Start');
+    await _waitFor(tester, find.byKey(const Key('starter-task-title')),
+        'Starter task 1');
+    await _settle(tester);
+
+    final ctx = tester.element(find.byType(Navigator).first);
+    final auth = BlocProvider.of<AuthBloc>(ctx).state as AuthAuthenticated;
+    final uid = auth.user.id;
+    final name = auth.user.displayName;
+    final games = sl<GameRepository>();
+    final feed = sl<FeedRepository>();
+    final starter = (await games.getGamesStream().first)
+        .firstWhere((g) => g.isStarter && g.players.any((p) => p.userId == uid));
+
+    // ---- 07: the Arena tease — everyone else's entries on task 1 ---------
+    await _popToHome(tester);
+    await _tap(tester, find.text('Arena — see how others did'),
+        'the Arena tease row');
+    await _waitFor(tester, find.byKey(const Key('arena-your-turn')),
+        'the Arena tease');
+    await _ready(tester, '07_house_entries');
+    await _popToHome(tester);
+
+    // ---- 02: a text task mid-attempt, clock running ----------------------
+    final textIndex = starter.tasks
+        .indexWhere((t) => t.submissionType == SubmissionType.text);
+    _nav(tester).push(MaterialPageRoute<void>(
+      builder: (_) => TaskExecutionScreen(
+        gameId: starter.id,
+        taskIndex: textIndex,
+        autoStart: true,
+      ),
+    ));
+    await _waitFor(tester, find.byType(TextField), 'the write box');
+    await tester.enterText(find.byType(TextField).first,
+        'The kettle is now "Steve". Steve screams when he is happy.');
+    await tester.pump(const Duration(milliseconds: 300));
+    FocusManager.instance.primaryFocus?.unfocus();
+    // Let the clock visibly run.
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await _ready(tester, '02_task_clock');
+
+    // ---- 03: Posted — the polaroid and its stamp -------------------------
+    await _tap(tester, find.text('Post it'), 'Post it');
+    await _waitFor(tester, find.text('Posted.'), 'the Posted screen');
     for (var i = 0; i < 30; i++) {
-      if (find.text("Let's play").evaluate().isNotEmpty ||
-          find.text('Sign in or create account').evaluate().isNotEmpty) {
-        break;
-      }
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 100));
     }
-    if (find.text("Let's play").evaluate().isNotEmpty) {
-      await _ready(tester, '01_onboarding');
-      await _tapText(tester, "Let's play");
-    } else {
-      // ignore: avoid_print
-      print('DIAGNOSTIC: onboarding not shown (stale app install?) — '
-          'skipping 01_onboarding shot.');
+    await _ready(tester, '03_posted');
+
+    // ---- 04: the Arena — grade an entry, catch the reveal ----------------
+    await _tap(tester, find.byKey(const Key('see-theirs-button')),
+        'See theirs');
+    final gradeFive = find.descendant(
+        of: find.byType(GradeBar), matching: find.text('5'));
+    await _waitFor(tester, gradeFive, 'the grade bar');
+    await _settle(tester);
+    ArenaScreen.revealHold = const Duration(seconds: 12);
+    await tester.tap(gradeFive.first);
+    await tester.pump(const Duration(milliseconds: 100));
+    await _waitFor(tester, find.byKey(const Key('grade-reveal')), 'the reveal');
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
     }
+    await _ready(tester, '04_arena_reveal');
+    ArenaScreen.revealHold = ArenaScreen.defaultRevealHold;
+    await _popToHome(tester);
 
-    // 2. Guest sign-in (login screen's one big "Play" button) -> Home.
-    await _tapText(tester, 'Play');
-    // AuthBloc: AuthLoading (spinner) -> AuthAuthenticated -> HomeScreen,
-    // which mounts its own GamesBloc and dispatches LoadGames(). Wait for a
-    // Home-only landmark (not just any "Play" text, which also exists on the
-    // login screen we're leaving) before treating this as settled.
-    await _waitFor(tester, find.text('Invites from friends'),
-        'Home screen ("Invites from friends")');
-    await _ready(tester, '02_home');
-
-    // 3. Play sheet — the Home screen's own big "Play" button.
-    await _tapText(tester, 'Play', first: true);
-    await _waitFor(tester, find.text('Quick Play'), 'the Play sheet');
-    await _ready(tester, '03_play_sheet');
-
-    // 4. Game lobby — dismiss the sheet, open the seeded lobby game
-    // ("Saturday Night Shenanigans", 3-player, invite code PARTY1) directly.
-    // Pop it via the root NavigatorState directly rather than tapping a
-    // barrier/background coordinate — coordinate- and
-    // ModalBarrier-hit-testing both proved unreliable across screen sizes
-    // (either missed the barrier and mis-tapped a still-visible sheet row
-    // underneath, e.g. into "Tower Trials"/"Quick Play"). A direct
-    // NavigatorState.pop() is deterministic regardless of screen geometry.
-    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
-    await tester.pumpAndSettle();
-    await _tapText(tester, 'Saturday Night Shenanigans');
-    await _waitFor(tester, find.text('Creator'), 'the game lobby');
-    await _ready(tester, '04_game_lobby');
-
-    // Back to Home for the Quick Play flow (5+6+7).
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await _waitFor(tester, find.text('Invites from friends'), 'Home screen');
-
-    await _tapText(tester, 'Play', first: true);
-    await _tapText(tester, 'Quick Play');
-    await tester.pumpAndSettle(const Duration(seconds: 2));
-
-    // Open the current task via the game screen's "Up next" hero button.
-    await _tapText(tester, 'Start', first: true);
-
-    // 5. Task view — a prebuilt task with the video-link submit box.
-    await _waitFor(tester, find.byType(TextField), 'the task submit field');
-    await _ready(tester, '05_task_view');
-
-    await tester.enterText(
-        find.byType(TextField).first, 'https://youtube.com/watch?v=demo123');
-    await tester.pumpAndSettle();
-    await _tapText(tester, 'Submit Video');
-    await tester.pumpAndSettle(const Duration(seconds: 2));
-
-    // Judging: solo Quick Play makes the guest both sole player and judge.
-    await _tapText(tester, 'Judge', first: true);
-    await _tapText(tester, 'Judge All Submissions');
-
-    // 6. Judging screen — scoring a submission (score chips visible). Wait
-    // for the verdict scale's own heading, not just pumpAndSettle timing —
-    // this screen is reached via an async bloc load, and pumpAndSettle can
-    // return once its own animations quiesce even if a later async state
-    // update (unrelated to any AnimationController) hasn't landed yet.
-    await _waitFor(tester, find.text('Your verdict, judge'), 'the judging screen');
-    await _ready(tester, '06_judging');
-
-    // "Finish" pushes TaskScoreboardScreen only if the shared GameDetailBloc
-    // is already in a GameDetailLoaded state at that instant (see
-    // submission_review_screen.dart's JudgingCompleted listener); if not, it
-    // falls back to popping twice, landing back on the "Judge Submissions"
-    // list instead of ever reaching the scoreboard. This looks like a
-    // pre-existing race in the app (outside this script's scope to fix),
-    // that this test's fast automated pace can trigger far more often than
-    // a real user would — so retry the score -> reveal -> finish sequence a
-    // couple of times (each retry gives GameDetailBloc more real wall-clock
-    // time to settle) rather than either hard-failing the whole 8-shot
-    // capture or silently accepting a wrong screenshot.
-    var reachedScoreboard = false;
-    for (var attempt = 0; attempt < 3 && !reachedScoreboard; attempt++) {
-      // The score chip's Semantics(label: 'Score N points') wraps a
-      // Text('N') child whose own implicit semantics merge in and change
-      // the resolved label, so bySemanticsLabel doesn't reliably match —
-      // tap the visible digit text directly instead.
-      if (find.text('8').evaluate().isEmpty) {
-        // A retry landed back on "Judge Submissions" instead of "Review
-        // Submissions" — step back in via "Judge All Submissions" first.
-        await _tapText(tester, 'Judge All Submissions');
-      }
-      await _tapText(tester, '8', first: true);
-      await _tapText(tester, 'Reveal the scores');
-      await _tapText(tester, 'Finish');
-
-      for (var i = 0; i < 20; i++) {
-        if (find.textContaining('Results').evaluate().isNotEmpty) {
-          reachedScoreboard = true;
-          break;
-        }
-        await tester.pump(const Duration(milliseconds: 300));
+    // ---- Seed the guest's history (mock store only) ----------------------
+    // Four earlier days of posts, so today's post makes a 5-day streak.
+    final now = DateTime.now();
+    for (var k = 1; k <= 4; k++) {
+      final day = now.subtract(Duration(days: k));
+      final task = DailyTaskData.taskFor(day);
+      await feed.createPost(FeedPost(
+        id: '',
+        gameId: DailyTaskData.gameIdFor(uid, DailyTaskData.dayKey(day)),
+        taskId: task.id,
+        taskTitle: task.title,
+        userId: uid,
+        displayName: name,
+        mediaType: SubmissionMediaType.text,
+        text: 'Day -$k entry',
+        createdAt: day,
+      ));
+    }
+    // A few more Starter Pack entries, so the recap has something to show.
+    const entries = <String>[
+      'Remembered the oven. Then remembered I do not own an oven.',
+      'I am the lamp now. Nobody has noticed. Day three.',
+      'Mona Lisa, but she is a dishcloth and a spoon.',
+      'It went in the fridge. It did not come out.',
+    ];
+    var seeded = 0;
+    for (var i = 0; i < starter.tasks.length && seeded < entries.length; i++) {
+      if (i == textIndex) continue;
+      await _seedEntry(
+        gameId: starter.id,
+        taskIndex: i,
+        userId: uid,
+        displayName: name,
+        text: entries[seeded++],
+      );
+    }
+    // The crowd has been at them.
+    final mine = await feed.watchPostsByUser(uid).first;
+    var g = 0;
+    for (final p in mine.where((p) => p.gameId == starter.id)) {
+      for (var j = 0; j < 3; j++) {
+        await feed.gradePost(
+            postId: p.id, graderId: 'crowd-${g++}', score: 3 + (g + j) % 3);
       }
     }
-    if (!reachedScoreboard) {
-      // ignore: avoid_print
-      print('DIAGNOSTIC: never reached the scoreboard screen after 3 '
-          'attempts — capturing whatever is currently on screen for '
-          '07_scoreboard instead of failing the whole 8-shot run.');
-    }
-
-    // 7. Scoreboard — animated reveal (confetti + WINNER badge).
-    await _ready(tester, '07_scoreboard');
-
-    // Back to Home. TaskScoreboardScreen (and some fallback screens landed
-    // on above) has `automaticallyImplyLeading: false` — no standard back
-    // button for tester.pageBack() to find — so pop the root Navigator
-    // directly instead, which works regardless of which screen we're
-    // actually on.
-    final navigator =
-        tester.state<NavigatorState>(find.byType(Navigator).first);
-    for (var i = 0; i < 8; i++) {
-      if (find.text('Invites from friends').evaluate().isNotEmpty) break;
-      if (navigator.canPop()) {
-        navigator.pop();
+    // The mock store ships demo games the guest isn't in; a real guest's
+    // Home never lists strangers' games, so clear them out of the mock.
+    for (final game in await games.getGamesStream().first) {
+      if (!game.players.any((p) => p.userId == uid)) {
+        await games.deleteGame(game.id);
       }
-      await tester.pumpAndSettle();
     }
-    await _waitFor(tester, find.text('Invites from friends'), 'Home screen');
+    await _settle(tester);
 
-    // 8. Drawing Telephone canvas — Play sheet -> Drawing Telephone ->
-    // Options -> Practice solo (fully offline, deterministic, no
-    // networking) -> submit a prompt -> sketch a few strokes.
-    await _tapText(tester, 'Play', first: true);
-    await _tapText(tester, 'Drawing Telephone');
+    // ---- 06: Home — today's task and the streak --------------------------
+    // Earlier taps scrolled Home down to the Arena row; back to the top.
+    final homeScroll = find.byType(Scrollable).first;
+    for (var i = 0; i < 3; i++) {
+      await tester.drag(homeScroll, const Offset(0, 1500));
+      await _settle(tester);
+    }
+    await _waitFor(tester, find.byKey(const Key('hero-streak-chip')),
+        'the streak chip');
+    await _ready(tester, '06_today_streak');
 
-    await _tapText(tester, 'Options');
-    await _tapText(tester, 'Practice solo — play vs bots, no internet');
-    await tester.pumpAndSettle(const Duration(seconds: 1));
+    // ---- 05: Your First Ten — the Starter Pack recap ---------------------
+    _nav(tester).push(MaterialPageRoute<void>(
+      builder: (_) => GameDetailScreen(gameId: starter.id),
+    ));
+    await _waitFor(tester, find.textContaining('First Ten'), 'the recap');
+    await _ready(tester, '05_first_ten');
+    await _popToHome(tester);
 
-    // Round 1 asks for a prompt; the default player name ("Player") is fine.
-    await _waitFor(tester, find.byType(TextField), 'the prompt field');
-    await tester.enterText(
-        find.byType(TextField).first, 'A dinosaur riding a skateboard');
-    await tester.pumpAndSettle();
-    await _tapText(tester, 'Submit prompt');
-    await tester.pumpAndSettle(const Duration(seconds: 1));
+    // ---- 08: a friend game, lobby with the crew arriving -----------------
+    final friendId = await games.createGame('Friday Night Tasks', uid, uid);
+    final friendGame = (await games.getGameStream(friendId).first)!;
+    for (final f in const [
+      ('friend-1', 'Priya'),
+      ('friend-2', 'Marcus'),
+      ('friend-3', 'Jo'),
+    ]) {
+      await games.joinGame(friendGame.inviteCode, f.$1, f.$2);
+    }
+    await games.addTasksToGame(friendId, const [
+      Task(
+        id: 'friend-task-1',
+        title: 'Make the most magnificent sandwich',
+        description: 'Only what is in your kitchen right now.',
+        taskType: TaskType.video,
+        submissions: [],
+      ),
+      Task(
+        id: 'friend-task-2',
+        title: 'Wear as many hats as possible',
+        description: 'Each one has to stay on for five seconds.',
+        taskType: TaskType.video,
+        submissions: [],
+      ),
+    ]);
+    // The mock's createGame names the creator "Creator"; read as "You".
+    final crewed = (await games.getGameStream(friendId).first)!;
+    await games.updateGame(
+      friendId,
+      crewed.copyWith(players: [
+        for (final p in crewed.players)
+          p.userId == uid ? p.copyWith(displayName: 'You') : p,
+      ]),
+    );
+    _nav(tester).push(MaterialPageRoute<void>(
+      builder: (_) => GameDetailScreen(gameId: friendId),
+    ));
+    await _waitFor(tester, find.text('Friday Night Tasks'), 'the friend game');
+    await _ready(tester, '08_friend_game');
 
-    // Sketch a few strokes so the canvas isn't blank in the screenshot.
-    await _waitFor(tester, find.byType(GestureDetector), 'the drawing canvas');
-    final canvasCenter = tester.getCenter(find.byType(GestureDetector).last);
-    await tester.dragFrom(
-        canvasCenter - const Offset(60, 0), const Offset(120, 0));
-    await tester.pumpAndSettle();
-    await tester.dragFrom(
-        canvasCenter - const Offset(0, 40), const Offset(0, 80));
-    await tester.pumpAndSettle();
-
-    await _ready(tester, '08_drawing_telephone_canvas');
   });
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # iOS-Simulator counterpart to scripts/capture_store_screenshots.sh. Captures
-# the same 8 shots from docs/STORE_LISTING.md's shot list, for the two iOS
+# the 8 shots from docs/STORE_LISTING.md's shot list, for the two iOS
 # device classes the Assets checklist lists as "to capture": the 6.9"
 # iPhone class (iPhone 17 Pro Max simulator) and the iPad 13" class (iPad Pro
 # 13-inch (M5) simulator). Output goes to docs/store/screenshots/ios/<slug>/.
@@ -24,9 +24,15 @@
 #      the instant each marker appears.
 #
 # Usage: scripts/capture_store_screenshots_ios.sh
+#        ONLY=6.9in scripts/capture_store_screenshots_ios.sh   # one device
 #
-# Requires: Xcode + iOS Simulator (confirmed present: Xcode 26.3), Flutter
-# 3.22.2 on PATH (tmp/flutter-3.22.2/bin).
+# Requires: Xcode + iOS Simulator (confirmed present: Xcode 26.3) and the
+# repo's Flutter on PATH (~/flutter/bin, prepended below). macOS has no
+# `timeout`, so nothing here uses it; a hung run is the test's own job to fail
+# (its finders give up with a DIAGNOSTIC line).
+#
+# Data: the test runs lib/main_screenshots.dart on MOCK services and seeds only
+# those in-memory mocks. It never touches Firebase / production.
 #
 # NEVER run this while another `flutter` build/run is in progress elsewhere
 # in the repo (repo convention: no parallel flutter builds). Never run the
@@ -35,7 +41,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
-export PATH="$REPO_ROOT/tmp/flutter-3.22.2/bin:$PATH"
+export PATH="$HOME/flutter/bin:$PATH"
 
 TEST_FILE="integration_test/capture_ios_screenshots_test.dart"
 OUT_ROOT="$REPO_ROOT/docs/store/screenshots/ios"
@@ -72,6 +78,8 @@ boot_device() {
 run_and_capture() {
   local udid="$1" out_dir="$2"
   mkdir -p "$out_dir"
+  # Old shot names must not linger next to the new set.
+  rm -f "$out_dir"/*.png
   local log="$REPO_ROOT/tmp/ios_screenshots_$$.log"
 
   # Fresh install every run so onboarding (shot 1) always shows — a
@@ -87,7 +95,7 @@ run_and_capture() {
   # until the flutter test process exits.
   local last_line=0
   while kill -0 "$test_pid" 2>/dev/null; do
-    sleep 1
+    sleep 0.2
     local total_lines
     total_lines="$(wc -l <"$log" 2>/dev/null || echo 0)"
     if [ "$total_lines" -gt "$last_line" ]; then
@@ -116,13 +124,20 @@ run_and_capture() {
 overall_status=0
 for entry in "${DEVICES[@]}"; do
   IFS=':' read -r device_type slug friendly <<<"$entry"
+  if [ -n "${ONLY:-}" ] && [ "$ONLY" != "$slug" ]; then continue; fi
   echo "== $friendly =="
   udid="$(boot_device "$device_type")"
   echo "Booted $udid"
+  # Apple's marketing status bar: 9:41, full signal, full battery.
+  xcrun simctl status_bar "$udid" override --time "9:41" \
+    --dataNetwork wifi --wifiMode active --wifiBars 3 \
+    --cellularMode active --cellularBars 4 \
+    --batteryState charged --batteryLevel 100 >/dev/null 2>&1 || true
   out_dir="$OUT_ROOT/$slug"
   if ! run_and_capture "$udid" "$out_dir"; then
     overall_status=1
   fi
+  xcrun simctl status_bar "$udid" clear >/dev/null 2>&1 || true
   echo "Shutting down $udid"
   xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
   echo "-- $friendly done. Screenshots in $out_dir --"

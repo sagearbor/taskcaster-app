@@ -178,22 +178,25 @@ Source icon: `assets/icons/app_icon.png` (1024×1024), adaptive foreground
 | Play phone screenshots | 2–8, 16:9 or 9:16, 320–3840 px each side | Done — `docs/store/screenshots/` (8, 1080×2424, `scripts/capture_store_screenshots.sh`) |
 | Play 7" / 10" tablet screenshots | optional but recommended, ≥ 1 each | Optional — not done |
 | iOS app icon | 1024×1024, no alpha | Done — `ios: true` + `remove_alpha_ios: true` in `flutter_launcher_icons`, regenerated (`ios/Runner/Assets.xcassets/AppIcon.appiconset/`) |
-| iOS 6.9" screenshots | 1320×2868 (portrait), 3–10 | Done — `docs/store/screenshots/ios/6.9in/` (8, exactly 1320×2868, `scripts/capture_store_screenshots_ios.sh` on the iPhone 17 Pro Max simulator). Shot 07 (scoreboard) currently captures a fallback "Judge Submissions" screen instead of the intended animated reveal — see the script's own header comment and the newest `tmp/wrapups/*.yaml` for the suspected app-level cause; re-run the script once that's fixed. |
+| iOS 6.9" screenshots | 1320×2868 (portrait), 3–10 | Partly — `docs/store/screenshots/ios/6.9in/` has 5 of the 8 (03, 04, 05, 07, 08), 1320×2868, `scripts/capture_store_screenshots_ios.sh` on the iPhone 17 Pro Max simulator (recaptured 2026-11-11). 01, 02 and 06 are held back: on the iOS 26 simulator with Flutter 3.22.2 every emoji (⏱ ✍️ 🔥) renders as a "?" box, Skia or Impeller alike. Likely the same on real iOS 26 devices — check on a tester's iPhone; the fix is probably a Flutter upgrade. Re-run the script after. |
 | iOS 6.5" screenshots | 1284×2778 or 1242×2688 | To capture (can be scaled from the 6.9" set above) |
-| iPad 13" screenshots | only if the app is not iPhone-only — mark iPhone-only in Xcode to skip | Done — `docs/store/screenshots/ios/ipad-13in/` (8, 2064×2752, same script, iPad Pro 13-inch (M5) simulator). Same shot-07 caveat as above. |
+| iPad 13" screenshots | only if the app is not iPhone-only — mark iPhone-only in Xcode to skip | Not kept — the app runs in iPhone compatibility mode on iPad (letterboxed window), which is not a usable store shot. The script still captures `ipad-13in/` if the app ever gets an iPad layout. |
 
 ### Screenshot shot list (same order on both stores)
 
 Capture on a Pixel-class emulator at 1080×2400 (Play, `scripts/capture_store_screenshots.sh`) and the iPhone 17 Pro Max + iPad Pro 13-inch (M5) simulators (iOS, `scripts/capture_store_screenshots_ios.sh`), light theme, with a guest account:
 
-1. Onboarding — "Party games for everyone"
-2. Home — invites section + Play
-3. Play sheet — choosing a game mode
-4. Game lobby — invite code + player list
-5. Task view — a prebuilt task with the submit box
-6. Judging screen — scoring a submission
-7. Scoreboard — animated reveal
-8. Drawing Telephone canvas (offline mode badge visible)
+1. Cold open — the first task, before any sign-in (`01_cold_open`)
+2. A task mid-attempt, clock running (`02_task_clock`)
+3. Posted — the polaroid and its auto-stamp (`03_posted`)
+4. Arena — grading an entry, the reveal (`04_arena_reveal`)
+5. Your First Ten — the Starter Pack recap (`05_first_ten`)
+6. Home — today's task and the 🔥 streak (`06_today_streak`)
+7. Arena tease — everyone else's entries on task 1 (`07_house_entries`)
+8. A friend game — lobby with the invite code (`08_friend_game`)
+
+The iOS set (`scripts/capture_store_screenshots_ios.sh`) follows this list;
+the Android script still captures the older set and needs the same update.
 
 Add a short caption per screenshot in the listing (e.g. "225+ ready-made
 tasks", "Draw, describe, draw again", "Judge your friends").

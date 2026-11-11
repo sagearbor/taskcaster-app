@@ -44,8 +44,12 @@ class ArenaScreen extends StatelessWidget {
   static const String yourTurnResult = 'your-turn';
 
   /// How long the grade reveal holds before the next post slides in. Any tap
-  /// skips it.
-  static const Duration revealHold = Duration(milliseconds: 1200);
+  /// skips it. Not const only so the store-screenshot capture
+  /// (integration_test/capture_ios_screenshots_test.dart) can hold it long
+  /// enough for `simctl io screenshot`; the app never changes it.
+  static Duration revealHold = defaultRevealHold;
+
+  static const Duration defaultRevealHold = Duration(milliseconds: 1200);
 
   /// Test hooks for the "nothing left to grade" buttons. Null in the app,
   /// which opens the real task / lobby screens.
