@@ -6,6 +6,7 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../../core/config/environment.dart';
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/services/moderation/moderation_service.dart';
 import '../../../../core/services/sfx/game_sfx.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/error_view.dart';
@@ -28,6 +29,7 @@ import '../widgets/finale_card.dart';
 import '../widgets/grade_bar.dart';
 import '../widgets/grade_reveal.dart';
 import '../widgets/post_card.dart';
+import '../widgets/post_menu.dart';
 
 /// The Arena: a watch-and-grade queue, one post at a time, gated to tasks the
 /// viewer has already submitted (see docs/PRODUCT_DIRECTION.md §2.3).
@@ -71,11 +73,24 @@ class ArenaScreen extends StatelessWidget {
     final viewerId = authState is AuthAuthenticated ? authState.user.id : '';
 
     return BlocProvider(
-      create: (_) => ArenaBloc(feedRepository: sl<FeedRepository>())
-        ..add(LoadArena(viewerId: viewerId)),
+      create: (_) => ArenaBloc(
+        feedRepository: sl<FeedRepository>(),
+        moderation: ModerationService.fromLocator(),
+      )..add(LoadArena(viewerId: viewerId)),
       child: const _ArenaView(),
     );
   }
+}
+
+/// The "⋯" report / block menu for [post], or null for the viewer's own post
+/// (or when the bloc runs without moderation).
+Widget? _menuFor(BuildContext context, FeedPost post) {
+  final moderation = context.read<ArenaBloc>().moderation;
+  if (moderation == null) return null;
+  final authState = context.read<AuthBloc>().state;
+  final viewerId = authState is AuthAuthenticated ? authState.user.id : '';
+  if (viewerId.isNotEmpty && post.userId == viewerId) return null;
+  return PostMenu(post: post, moderation: moderation, viewerId: viewerId);
 }
 
 class _ArenaView extends StatelessWidget {
@@ -538,6 +553,7 @@ class _ArenaTeaserViewState extends State<_ArenaTeaserView> {
                     child: PostCard(
                       key: ValueKey('tease-${posts[index].id}'),
                       post: posts[index],
+                      menu: _menuFor(context, posts[index]),
                     ),
                   ),
                   Padding(
@@ -725,6 +741,7 @@ class _ArenaLoadedBodyState extends State<_ArenaLoadedBody> {
               // Over the media only, so the name and caption stay readable.
               overlay:
                   reveal == null ? null : GradeRevealOverlay(reveal: reveal),
+              menu: reveal == null ? _menuFor(context, post) : null,
             ),
           ),
           Padding(

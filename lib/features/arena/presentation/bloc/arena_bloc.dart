@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/config/e2e_mode.dart';
+import '../../../../core/services/moderation/moderation_service.dart';
 import '../../../../core/utils/friendly_errors.dart';
 import '../../domain/models/feed_post.dart';
 import '../../domain/repositories/feed_repository.dart';
@@ -46,6 +47,10 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
   /// Grades needed before the viewer's own posts get boosted.
   static const int boostThreshold = 3;
 
+  /// The longest the Arena waits for the device's cached block list before
+  /// showing the queue anyway.
+  static const Duration moderationLoadTimeout = Duration(seconds: 2);
+
   /// How many posts the zero-post tease shows.
   static const int teaserSize = 3;
 
@@ -61,13 +66,49 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
   bool _boostRequested = false;
   Set<String> _unlockedTaskIds = const {};
 
-  ArenaBloc({required this.feedRepository, String? teaserTaskId})
-      : teaserTaskId = teaserTaskId ?? StarterPackData.tasks().first.id,
+  /// Report / block (App Store 1.2). Null: nothing is filtered (tests that
+  /// don't care about moderation).
+  final ModerationService? moderation;
+  StreamSubscription<void>? _moderationSub;
+
+  /// The last snapshot from the store, kept so a report or block can re-filter
+  /// the queue without waiting for the next Firestore emit.
+  _ArenaSnapshot? _lastSnapshot;
+
+  ArenaBloc({
+    required this.feedRepository,
+    String? teaserTaskId,
+    this.moderation,
+  })  : teaserTaskId = teaserTaskId ?? StarterPackData.tasks().first.id,
         super(const ArenaInitial()) {
     on<LoadArena>(_onLoadArena);
     on<GradeCurrent>(_onGradeCurrent);
     on<SkipCurrent>(_onSkipCurrent);
     on<TapCurrent>(_onTapCurrent);
+    on<ModerationChanged>(_onModerationChanged);
+    _moderationSub =
+        moderation?.changes.listen((_) => add(const ModerationChanged()));
+  }
+
+  @override
+  Future<void> close() async {
+    await _moderationSub?.cancel();
+    return super.close();
+  }
+
+  /// Taken down, reported by this viewer, or by someone they blocked.
+  bool _hidden(FeedPost post) =>
+      post.hidden || (moderation?.hides(post) ?? false);
+
+  void _onModerationChanged(
+    ModerationChanged event,
+    Emitter<ArenaState> emit,
+  ) {
+    final snapshot = _lastSnapshot;
+    if (snapshot == null) return;
+    final s = state;
+    if (s is! ArenaLoaded && s is! ArenaTeaser && s is! ArenaEmpty) return;
+    emit(_stateFor(snapshot));
   }
 
   Future<void> _onLoadArena(LoadArena event, Emitter<ArenaState> emit) async {
@@ -76,7 +117,18 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
     _index = 0;
     _gradedThisSession = 0;
     _boostRequested = false;
+    _lastSnapshot = null;
     emit(const ArenaLoading());
+
+    // The device's cached block list first, so the very first queue emit is
+    // already filtered; the account's list follows live.
+    // Bounded: a device cache that never answers must not hold the Arena
+    // on its skeleton (the live list still applies when it lands).
+    try {
+      await moderation?.load(event.viewerId).timeout(moderationLoadTimeout);
+    } catch (e) {
+      debugPrint('ArenaBloc could not load moderation state: $e');
+    }
 
     try {
       _totalGradedByMe = await feedRepository.gradedCountBy(event.viewerId);
@@ -157,8 +209,13 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
     return controller.stream;
   }
 
-  ArenaState _stateFor(_ArenaSnapshot snapshot) {
-    _unlockedTaskIds = snapshot.unlockedTaskIds;
+  ArenaState _stateFor(_ArenaSnapshot raw) {
+    _lastSnapshot = raw;
+    _unlockedTaskIds = raw.unlockedTaskIds;
+    final snapshot = _ArenaSnapshot(
+      raw.unlockedTaskIds,
+      raw.posts.where((p) => !_hidden(p)).toList(),
+    );
 
     if (snapshot.unlockedTaskIds.isEmpty) {
       // The tease: the funniest few entries for task 1, watch-only. The
@@ -166,9 +223,7 @@ class ArenaBloc extends Bloc<ArenaEvent, ArenaState> {
       // are all no-ops in this state.
       _queue = const [];
       _index = 0;
-      final top = snapshot.posts
-          .where((p) => p.taskId == teaserTaskId)
-          .toList()
+      final top = snapshot.posts.where((p) => p.taskId == teaserTaskId).toList()
         ..sort(_teaseOrder);
       return ArenaTeaser(
         taskId: teaserTaskId,

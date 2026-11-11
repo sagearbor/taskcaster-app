@@ -228,12 +228,25 @@ service cloud.firestore {
                 'planLastEventMs', 'planLastEventType', 'usage'];
       }
 
+      // Arena moderation (App Store 1.2): the uids (and `house:<persona>`
+      // keys) this player has blocked, so the block follows the account.
+      // Written only by the owner, like the rest of the profile (the
+      // create/update rules below are owner-only); when present it must be a
+      // list, capped so the doc can't be bloated.
+      function blockedUidsOk() {
+        return !request.resource.data.keys().hasAny(['blockedUids']) ||
+               (request.resource.data.blockedUids is list &&
+                request.resource.data.blockedUids.size() <= 500);
+      }
+
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId &&
-                       !request.resource.data.keys().hasAny(serverOwnedPlanFields());
+                       !request.resource.data.keys().hasAny(serverOwnedPlanFields()) &&
+                       blockedUidsOk();
       allow update: if isSignedIn() && request.auth.uid == userId &&
                        !request.resource.data.diff(resource.data).affectedKeys()
-                          .hasAny(serverOwnedPlanFields());
+                          .hasAny(serverOwnedPlanFields()) &&
+                       blockedUidsOk();
       allow delete: if isSignedIn() && request.auth.uid == userId;
 
       // ---- Friend graph ----
@@ -418,9 +431,11 @@ service cloud.firestore {
       // A post its owner made private (`shareable == false`). Friend-game
       // posts with the flag unset still reach the cross-game Arena by design
       // (games.settings.shareToArena), where strangers list and grade them,
-      // so only an explicit "no" makes a post private.
+      // so only an explicit "no" makes a post private. A post moderation took
+      // down (`hidden == true`, set only by onReportCreated) is private too.
       function isPrivatePost() {
-        return resource.data.get('shareable', null) == false;
+        return resource.data.get('shareable', null) == false ||
+               resource.data.get('hidden', false) == true;
       }
 
       // The reader is on the roster of the game the post was made in.
@@ -473,6 +488,36 @@ service cloud.firestore {
                          request.auth.uid in getAfter(postPath()).data.get('graderIds', []);
         allow update, delete: if false;
       }
+    }
+
+    // ---- Reports (App Store 1.2) ----
+    // "⋯ > Report post" in the Arena. One doc per (post, reporter), id
+    // `{postId}_{reporterUid}`, so reporting the same post twice is an update
+    // and refused. Written by the signed-in reporter as themselves, about a
+    // post that exists, naming its real author, never their own post; the
+    // keys and the reason list are fixed. Nobody reads, edits or withdraws a
+    // report from a client: the onReportCreated Cloud Function (Admin SDK)
+    // logs each one and hides a post after 3 (functions/src/reports.js).
+    match /reports/{reportId} {
+      function reportOk() {
+        let d = request.resource.data;
+        let uid = request.auth.uid;
+        let postPath = /databases/$(database)/documents/feed_posts/$(d.postId);
+        return d.keys().hasOnly(['postId', 'authorId', 'reporterId', 'reason', 'createdAt']) &&
+               d.keys().hasAll(['postId', 'authorId', 'reporterId', 'reason', 'createdAt']) &&
+               d.reporterId == uid &&
+               d.postId is string && d.postId.size() > 0 && d.postId.size() <= 200 &&
+               reportId == d.postId + '_' + uid &&
+               d.authorId is string &&
+               d.authorId != uid &&
+               d.reason in ['inappropriate', 'spam', 'harassment', 'other'] &&
+               d.createdAt == request.time &&
+               exists(postPath) &&
+               get(postPath).data.userId == d.authorId;
+      }
+
+      allow create: if isSignedIn() && reportOk();
+      allow read, update, delete: if false;
     }
 
     // ---- Share attributions (WP-09) ----

@@ -96,6 +96,8 @@ class FeedRepositoryImpl implements FeedRepository {
           // A post its owner made private is not the crowd's to grade (the
           // rules refuse a stranger reading it by id).
           if (p.shareable == false) return false;
+          // Taken down after enough reports (onReportCreated).
+          if (p.hidden) return false;
           return true;
         }).toList()
           ..sort(_queueOrder);

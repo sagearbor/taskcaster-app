@@ -146,6 +146,12 @@ class FeedPost extends Equatable {
   /// your own post from the app sets it to true.
   final bool? shareable;
 
+  /// Taken down by moderation: the `onReportCreated` Cloud Function sets it
+  /// once a post collects enough distinct reports. Server-owned (the rules
+  /// keep it out of every client update) and never written by the app, so it
+  /// is read here but left out of [toMap].
+  final bool hidden;
+
   const FeedPost({
     required this.id,
     required this.gameId,
@@ -179,6 +185,7 @@ class FeedPost extends Equatable {
     this.timerSeconds,
     this.graderIds = const [],
     this.shareable,
+    this.hidden = false,
   });
 
   /// Parses a stored post. Defensive by design: one bad document must never
@@ -231,6 +238,7 @@ class FeedPost extends Equatable {
           ? (map['graderIds'] as List).whereType<String>().toList()
           : const [],
       shareable: map['shareable'] is bool ? map['shareable'] as bool : null,
+      hidden: _bool(map['hidden']),
     );
   }
 
@@ -337,6 +345,7 @@ class FeedPost extends Equatable {
     int? timerSeconds,
     List<String>? graderIds,
     bool? shareable,
+    bool? hidden,
   }) {
     return FeedPost(
       id: id ?? this.id,
@@ -371,6 +380,7 @@ class FeedPost extends Equatable {
       timerSeconds: timerSeconds ?? this.timerSeconds,
       graderIds: graderIds ?? this.graderIds,
       shareable: shareable ?? this.shareable,
+      hidden: hidden ?? this.hidden,
     );
   }
 
@@ -382,6 +392,11 @@ class FeedPost extends Equatable {
     if (transcoded != null && transcoded.isNotEmpty) return transcoded;
     return videoUrl;
   }
+
+  /// Who a block applies to. Every house persona posts under the one
+  /// `house` uid, so a house post is keyed by its persona name instead —
+  /// blocking one persona must not silence the other three.
+  String get authorKey => isHouse ? 'house:$displayName' : userId;
 
   /// Mean crowd grade (1..5), or null while nobody has graded it.
   double? get meanGrade => gradeCount == 0 ? null : gradeSum / gradeCount;
@@ -432,5 +447,6 @@ class FeedPost extends Equatable {
         clockOffsetSeconds,
         timerSeconds,
         shareable,
+        hidden,
       ];
 }

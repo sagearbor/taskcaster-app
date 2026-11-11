@@ -48,6 +48,7 @@ import '../../features/friends/data/repositories/mock_invites_repository.dart';
 
 import '../services/invite/pending_invite_service.dart';
 import '../services/share/share_service.dart';
+import '../services/moderation/moderation_service.dart';
 import '../services/ai_task_service.dart';
 import '../services/notification_service.dart';
 import '../services/ar/ar_capability_service.dart';
@@ -130,6 +131,17 @@ class ServiceLocator {
     sl.registerLazySingleton<ShareService>(
       () => ShareService(
         store: useMockServices ? InMemoryShareStore() : FirestoreShareStore(),
+      ),
+    );
+
+    // Arena report / block (App Store 1.2). Mock builds keep reports and
+    // the block list in memory; the device cache is SharedPreferences either
+    // way.
+    sl.registerLazySingleton<ModerationService>(
+      () => ModerationService(
+        store: useMockServices
+            ? InMemoryModerationStore()
+            : FirestoreModerationStore(),
       ),
     );
 

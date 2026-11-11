@@ -16,6 +16,7 @@ import '../../../../core/theme/theme_controller.dart';
 import '../../../ar_lab/presentation/screens/ar_lab_screen.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../paywall/presentation/paywall_launcher.dart';
+import 'blocked_players_screen.dart';
 import '../../../paywall/presentation/screens/paywall_screen.dart'
     show planSubtitle, planTitle;
 
@@ -249,6 +250,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Get notified about task deadlines and judging'),
               value: _notificationsEnabled,
               onChanged: _setNotifications,
+            ),
+          ),
+          const SizedBox(height: 20),
+          _sectionHeader(context, 'Safety'),
+          Card(
+            child: ListTile(
+              key: const Key('settings-blocked-players'),
+              leading: const Icon(Icons.block_rounded, color: AppTheme.violet),
+              title: const Text('Blocked players'),
+              subtitle: const Text('People whose Arena posts you don\'t see'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const BlockedPlayersScreen(),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 20),
