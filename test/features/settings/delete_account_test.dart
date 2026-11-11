@@ -149,6 +149,9 @@ void main() {
       await tapAndAwaitTerminalState(tester, find.text('Delete My Account'));
 
       verify(() => mockAuthRepository.deleteAccount()).called(1);
+      // Newer Flutter page transitions outlast the helper's 400 ms pump;
+      // no snackbar here, so settling is safe.
+      await tester.pumpAndSettle();
       // AuthAccountDeleted -> the listener pops back to the first route.
       expect(find.text('Root screen'), findsOneWidget);
       expect(find.byType(SettingsScreen), findsNothing);

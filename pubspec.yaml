@@ -3,7 +3,7 @@ description: A cross-platform party game app for TaskCaster-style challenges
 
 publish_to: 'none'
 
-version: 1.6.0+38
+version: 1.6.0+39
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -151,6 +151,9 @@ flutter_launcher_icons:
   min_sdk_android: 28
 
 flutter:
+  config:
+    # CocoaPods only: SPM + Pods both define Firebase (Flutter 3.47).
+    enable-swift-package-manager: false
   uses-material-design: true
 
   assets:

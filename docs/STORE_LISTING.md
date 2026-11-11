@@ -178,22 +178,26 @@ Source icon: `assets/icons/app_icon.png` (1024×1024), adaptive foreground
 | Play phone screenshots | 2–8, 16:9 or 9:16, 320–3840 px each side | Done — `docs/store/screenshots/` (8, 1080×2424, `scripts/capture_store_screenshots.sh`) |
 | Play 7" / 10" tablet screenshots | optional but recommended, ≥ 1 each | Optional — not done |
 | iOS app icon | 1024×1024, no alpha | Done — `ios: true` + `remove_alpha_ios: true` in `flutter_launcher_icons`, regenerated (`ios/Runner/Assets.xcassets/AppIcon.appiconset/`) |
-| iOS 6.9" screenshots | 1320×2868 (portrait), 3–10 | Done — `docs/store/screenshots/ios/6.9in/` (8, exactly 1320×2868, `scripts/capture_store_screenshots_ios.sh` on the iPhone 17 Pro Max simulator). Shot 07 (scoreboard) currently captures a fallback "Judge Submissions" screen instead of the intended animated reveal — see the script's own header comment and the newest `tmp/wrapups/*.yaml` for the suspected app-level cause; re-run the script once that's fixed. |
+| iOS 6.9" screenshots | 1320×2868 (portrait), 3–10 | Done — `docs/store/screenshots/ios/6.9in/` (8, exactly 1320×2868, `scripts/capture_store_screenshots_ios.sh` on the iPhone 17 Pro Max simulator, mock services + E2E mode). Recaptured 2026-11-11 for the 1.6 loop (shot list below). |
 | iOS 6.5" screenshots | 1284×2778 or 1242×2688 | To capture (can be scaled from the 6.9" set above) |
-| iPad 13" screenshots | only if the app is not iPhone-only — mark iPhone-only in Xcode to skip | Done — `docs/store/screenshots/ios/ipad-13in/` (8, 2064×2752, same script, iPad Pro 13-inch (M5) simulator). Same shot-07 caveat as above. |
+| iPad 13" screenshots | only if the app is not iPhone-only — mark iPhone-only in Xcode to skip | Not needed — the app is iPhone-only (`TARGETED_DEVICE_FAMILY = 1` since the first TestFlight build), so App Store Connect asks for none. The old Sept set was removed (it showed a UI that no longer exists). If iPad support is ever turned on, `WITH_IPAD=1 scripts/capture_store_screenshots_ios.sh` captures 2064×2752 shots on the iPad Pro 13-inch (M5) simulator, forced into Full Screen Apps mode. |
 
 ### Screenshot shot list (same order on both stores)
 
-Capture on a Pixel-class emulator at 1080×2400 (Play, `scripts/capture_store_screenshots.sh`) and the iPhone 17 Pro Max + iPad Pro 13-inch (M5) simulators (iOS, `scripts/capture_store_screenshots_ios.sh`), light theme, with a guest account:
+Capture on a Pixel-class emulator at 1080×2400 (Play, `scripts/capture_store_screenshots.sh`) and the iPhone 17 Pro Max simulator (iOS, `scripts/capture_store_screenshots_ios.sh`), light theme, with a guest account:
 
-1. Onboarding — "Party games for everyone"
-2. Home — invites section + Play
-3. Play sheet — choosing a game mode
-4. Game lobby — invite code + player list
-5. Task view — a prebuilt task with the submit box
-6. Judging screen — scoring a submission
-7. Scoreboard — animated reveal
-8. Drawing Telephone canvas (offline mode badge visible)
+1. Home — today's task and the 🔥 streak (`01_daily_task`)
+2. A task mid-attempt, clock running (`02_task_clock`)
+3. Arena — grading someone's entry, the reveal (`03_arena_reveal`)
+4. Party mode — one phone, the room competes (`04_party_mode`)
+5. Your First Ten — the Starter Pack recap (`05_first_ten`)
+6. Posted — the polaroid and its auto-stamp (`06_posted`)
+7. Play sheet — friends, party, join with a code, Telephone (`07_play_sheet`)
+8. Cold open — the first task, before any sign-in (`08_cold_open`)
+
+The iOS set (`scripts/capture_store_screenshots_ios.sh`) follows this list;
+the Android script (`scripts/capture_store_screenshots.sh`) still captures
+the older set and needs the same update.
 
 Add a short caption per screenshot in the listing (e.g. "225+ ready-made
 tasks", "Draw, describe, draw again", "Judge your friends").

@@ -61,17 +61,28 @@ class AppTheme {
     colors: [Color(0xFF7C3AED), Color(0xFF6D28D9), Color(0xFF4C1D95)],
   );
 
+  /// Emoji fallback by name. On devices this is the system emoji font; the
+  /// store-screenshot build registers the Mac's copy under the same name
+  /// because the iOS 26 simulator's reduced emoji font draws as boxes.
+  static const emojiFallback = <String>['Apple Color Emoji'];
+
   static TextTheme _textTheme(Color onColor) {
     TextStyle d(double size, [FontWeight w = FontWeight.w600, double ls = -0.3]) =>
         TextStyle(
             fontFamily: _display,
+            fontFamilyFallback: emojiFallback,
             fontWeight: w,
             fontSize: size,
             color: onColor,
             letterSpacing: ls);
     TextStyle b(double size, [FontWeight w = FontWeight.w400, double h = 1.4]) =>
         TextStyle(
-            fontFamily: _body, fontWeight: w, fontSize: size, color: onColor, height: h);
+            fontFamily: _body,
+            fontFamilyFallback: emojiFallback,
+            fontWeight: w,
+            fontSize: size,
+            color: onColor,
+            height: h);
     return TextTheme(
       displayLarge: d(40, FontWeight.w600, -0.5),
       displayMedium: d(32),
@@ -116,6 +127,7 @@ class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: cream,
       fontFamily: _body,
+      fontFamilyFallback: emojiFallback,
       textTheme: _textTheme(ink),
       extensions: const [AppTokens.light],
       appBarTheme: const AppBarTheme(
@@ -140,7 +152,7 @@ class AppTheme {
           letterSpacing: 0.2,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 6,
         color: surface,
         surfaceTintColor: Colors.transparent,
@@ -265,6 +277,7 @@ class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: darkBg,
       fontFamily: _body,
+      fontFamilyFallback: emojiFallback,
       textTheme: _textTheme(onDark),
       extensions: const [AppTokens.dark],
       appBarTheme: const AppBarTheme(
@@ -289,7 +302,7 @@ class AppTheme {
           letterSpacing: 0.2,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         color: darkSurface,
         surfaceTintColor: Colors.transparent,
@@ -374,7 +387,7 @@ class AppTheme {
         backgroundColor: violetLight,
         foregroundColor: violetDeep,
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: darkSurfaceHigh,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
