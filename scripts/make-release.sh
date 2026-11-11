@@ -2,6 +2,7 @@
 # Build a signed Android App Bundle for Google Play.
 # Requires android/key.properties + the upload keystore (see docs/PLAY_RELEASE.md).
 set -euo pipefail
+export PATH="$HOME/flutter/bin:/opt/homebrew/bin:$PATH"  # flutter/pod/firebase even in a bare shell
 cd "$(dirname "$0")/.."
 
 # Flutter ignores JAVA_HOME when Android Studio ships its own JDK, and Android
