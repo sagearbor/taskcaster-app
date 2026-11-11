@@ -10,7 +10,7 @@ import '../../../../core/theme/app_theme.dart';
 ///  - [unreadCount] > 0: "Arena — N new to grade" with a count badge;
 ///  - [tease]: the viewer has posted nothing yet, so the Arena is a peek at
 ///    other people's entries rather than a grading queue;
-///  - otherwise the plain "Arena — grade the crowd".
+///  - otherwise the plain "Arena — grade everyone's attempts".
 class ArenaEntryButton extends StatelessWidget {
   final VoidCallback onTap;
 
@@ -38,7 +38,7 @@ class ArenaEntryButton extends StatelessWidget {
     // unreadable on the dark surface).
     final primary = Theme.of(context).colorScheme.primary;
     final label =
-        tease ? 'Arena — see how others did' : 'Arena — grade the crowd';
+        tease ? 'Arena — see how others did' : "Arena — grade everyone's attempts";
     return SizedBox(
       width: double.infinity,
       height: 56,
