@@ -137,7 +137,8 @@ function timestampOf(value) {
  * no, an automated e2e walk posts that way (lib/core/config/e2e_mode.dart),
  * and an operator hides test posts that way (scripts/purge_test_posts.js).
  * Montages are world-readable, so a private post must never be spliced into
- * one. An absent flag (friend-game default) still counts.
+ * one. An absent flag (friend-game default) still counts. A post moderation
+ * took down (`hidden === true`, set by onReportCreated) is out too.
  */
 function isMontageablePost(post, taskId) {
   if (!post) return false;
@@ -145,6 +146,8 @@ function isMontageablePost(post, taskId) {
   if (post.mediaType !== 'video') return false;
   if (post.isHouse === true) return false;
   if (post.shareable === false) return false;
+  // Taken down after enough user reports (reports.js).
+  if (post.hidden === true) return false;
   return Boolean(objectPathForPost(post));
 }
 

@@ -49,6 +49,10 @@ class PostCard extends StatefulWidget {
   /// the Arena's grade reveal. Null draws nothing.
   final Widget? overlay;
 
+  /// The "⋯" report / block menu (PostMenu), drawn at the end of the footer's
+  /// name row. Pass it only for posts that are NOT the viewer's own.
+  final Widget? menu;
+
   const PostCard({
     super.key,
     required this.post,
@@ -58,6 +62,7 @@ class PostCard extends StatefulWidget {
     this.onVideoEnded,
     this.onShare,
     this.overlay,
+    this.menu,
   });
 
   @override
@@ -201,6 +206,7 @@ class _PostCardState extends State<PostCard> {
                         icon: const Icon(Icons.ios_share_rounded, size: 20),
                         onPressed: widget.onShare,
                       ),
+                    if (widget.menu != null) widget.menu!,
                   ],
                 ),
                 Text(

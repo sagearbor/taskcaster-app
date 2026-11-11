@@ -82,9 +82,14 @@ function parseSharePath(path) {
  *                        Pack attempt (shown cross-game in the Arena to
  *                        everyone) or a seeded house entry. A friend-game
  *                        post stays private until its owner shares it.
+ *   hidden === true      taken down by moderation: private, overriding all
+ *                        of the above.
  */
 function isShareablePost(post) {
   if (!post || typeof post !== 'object') return false;
+  // Taken down after enough user reports (reports.js): never public, whatever
+  // its owner chose.
+  if (post.hidden === true) return false;
   if (post.shareable === true) return true;
   if (post.shareable === false) return false;
   if (post.isHouse === true) return true;

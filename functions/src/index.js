@@ -39,6 +39,7 @@ const montage = require('./montage');
 const {hasDrawtext} = require('./ffmpeg');
 const {deliverGradePush, deliverToUser, firestoreStore} = require('./push');
 const peerGrading = require('./peer_grading');
+const reports = require('./reports');
 const {
   MAX_CLIPS,
   montageDocId,
@@ -315,6 +316,42 @@ exports.onPeerGradeCreated = onDocumentCreated(
     logger.info('peer grading: settled after grade', {
       gameId: event.params.gameId, taskId: grade.taskId, status: out.status,
       locked: (out.locks || []).length, complete: Boolean(out.complete),
+    });
+  },
+);
+
+/**
+ * A player reported an Arena post (reports/{postId}_{reporterUid}, create-only
+ * per firestore.rules). Log it — this log line is the review queue the terms'
+ * 24-hour promise runs on — and once HIDE_AT_REPORTS different people have
+ * reported the same post, take it down (`hidden: true`). See reports.js.
+ */
+exports.onReportCreated = onDocumentCreated(
+  {
+    document: `${reports.REPORTS}/{reportId}`,
+    region: REGION,
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    maxInstances: 5,
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const report = snap.data() || {};
+    const out = await reports.handleReportInStore({
+      store: reports.firestoreReportStore({db: db()}),
+      report,
+      nowIso,
+    });
+    logger.warn('moderation: post reported', {
+      reportId: event.params.reportId,
+      postId: out.postId,
+      authorId: report.authorId,
+      reporterId: report.reporterId,
+      reason: report.reason,
+      reportCount: out.reportCount,
+      hidden: out.hidden,
+      decision: out.reason,
     });
   },
 );

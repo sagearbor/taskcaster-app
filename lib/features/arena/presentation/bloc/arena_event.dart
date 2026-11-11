@@ -47,3 +47,10 @@ class GradeCurrent extends ArenaEvent {
 class SkipCurrent extends ArenaEvent {
   const SkipCurrent();
 }
+
+/// The viewer reported a post or blocked / unblocked someone: re-filter the
+/// queue from the last snapshot. Added by the bloc itself, from
+/// `ModerationService.changes`.
+class ModerationChanged extends ArenaEvent {
+  const ModerationChanged();
+}

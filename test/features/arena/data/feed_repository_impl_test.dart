@@ -109,6 +109,21 @@ void main() {
       expect(queue.map((p) => p.userId), ['other']);
     });
 
+    test('never shows a post moderation took down (hidden: true)', () async {
+      // `hidden` is server-owned (onReportCreated), so it only ever arrives
+      // on the stored document, never through FeedPost.toMap.
+      await source.createPost({
+        ...makePost(userId: 'reported').toMap(),
+        'hidden': true,
+      });
+      await repo.createPost(makePost(userId: 'other'));
+
+      final queue = await repo
+          .watchQueue(viewerId: 'me', unlockedTaskIds: const {'starter-01-v2'})
+          .first;
+      expect(queue.map((p) => p.userId), ['other']);
+    });
+
     test('drops a post as soon as the viewer grades it', () async {
       final id = await repo.createPost(makePost(userId: 'other'));
       expect(
