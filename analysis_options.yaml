@@ -18,6 +18,10 @@ analyzer:
     - .claude/**
     - third_party/**
     - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

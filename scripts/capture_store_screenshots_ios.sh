@@ -29,7 +29,7 @@
 #          # own simulators ("Shots iPhone 17 Pro Max", ...), created on demand
 #
 # Requires: Xcode + iOS Simulator (confirmed present: Xcode 26.3) and the
-# repo's Flutter on PATH (~/flutter/bin, prepended below). macOS has no
+# repo's Flutter on PATH (~/flutter-stable/bin, prepended below). macOS has no
 # `timeout`, so nothing here uses it; a hung run is the test's own job to fail
 # (its finders give up with a DIAGNOSTIC line).
 #
@@ -44,7 +44,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
-export PATH="$HOME/flutter/bin:$PATH"
+export PATH="$HOME/flutter-stable/bin:$PATH"
 
 TEST_FILE="integration_test/capture_ios_screenshots_test.dart"
 OUT_ROOT="$REPO_ROOT/docs/store/screenshots/ios"

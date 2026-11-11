@@ -5,7 +5,7 @@
 # The export step may show ONE macOS dialog asking to let codesign use the
 # "iPhone Distribution: Sage Arbor" key — click "Always Allow".
 set -euo pipefail
-export PATH="$HOME/flutter/bin:/opt/homebrew/bin:$PATH"  # flutter/pod/firebase even in a bare shell
+export PATH="$HOME/flutter-stable/bin:/opt/homebrew/bin:$PATH"  # flutter/pod/firebase even in a bare shell
 cd "$(dirname "$0")/.."
 source ~/.config/asc/asc.env
 FLUTTER=${FLUTTER:-flutter}

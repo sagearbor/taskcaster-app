@@ -13,6 +13,8 @@
 /// flutter build apk --debug -t lib/main_screenshots.dart
 /// ```
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -26,6 +28,7 @@ import 'main.dart' show TaskCasterApp;
 
 void main() async {
   await _initializeApp();
+  await _loadHostEmojiFont();
 
   runApp(
     const ErrorBoundary(
@@ -61,4 +64,22 @@ Future<void> _initializeApp() async {
   await ServiceLocator.init(useMockServices: true);
 
   await ThemeController.instance.load();
+}
+
+/// The iOS 26 simulator ships only a reduced emoji font that Flutter draws as
+/// boxes. A simulator app can read the Mac's files, so register the Mac's
+/// Apple Color Emoji under the theme's fallback name (AppTheme.emojiFallback).
+/// No-op anywhere that file does not exist (devices, Android, CI).
+Future<void> _loadHostEmojiFont() async {
+  const path = '/System/Library/Fonts/Apple Color Emoji.ttc';
+  try {
+    final f = File(path);
+    if (!f.existsSync()) return;
+    final bytes = await f.readAsBytes();
+    final loader = FontLoader('Apple Color Emoji')
+      ..addFont(Future.value(ByteData.sublistView(bytes)));
+    await loader.load();
+  } catch (_) {
+    // Screenshots still work, just with boxes for emoji.
+  }
 }
