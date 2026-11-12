@@ -28,7 +28,21 @@ if [[ $STEP == archive || $STEP == all ]]; then
     -configuration Release -destination 'generic/platform=iOS' \
     -archivePath "$ARCHIVE" archive "${AUTH[@]}"
 fi
+unlock_signing_keychain() {
+  # The distribution cert lives in a separate keychain that macOS locks at
+  # every login/reboot. Its password is stored once in the login keychain
+  # (service "fitrival-signing-keychain"), so unlock it here without a prompt.
+  local kc=~/.config/fitrival/fitrival-signing.keychain-db pw
+  [[ -f $kc ]] || return 0
+  if pw=$(security find-generic-password -s fitrival-signing-keychain -w 2>/dev/null); then
+    security unlock-keychain -p "$pw" "$kc"
+  else
+    echo "Signing keychain may be locked; run: security unlock-keychain $kc" >&2
+  fi
+}
+
 if [[ $STEP == export || $STEP == all ]]; then
+  unlock_signing_keychain
   xcodebuild -exportArchive -archivePath "$ARCHIVE" \
     -exportOptionsPlist ios/ExportOptions.plist -exportPath build/ios/ipa "${AUTH[@]}"
 fi
