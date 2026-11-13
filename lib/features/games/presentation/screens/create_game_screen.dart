@@ -296,10 +296,10 @@ class _CreateGameScreenState extends State<CreateGameScreen> {
                     onChanged: _isLoading
                         ? null
                         : (v) => setState(() => _taskmasterMode = v),
-                    title: const Text('Taskmaster mode'),
+                    title: const Text('Judge mode'),
                     subtitle: Text(
                       _taskmasterMode
-                          ? 'You judge every entry yourself, Taskmaster-style.'
+                          ? 'You judge every entry yourself.'
                           : 'Off: everyone grades everyone else, 1 to 5. '
                               'Nobody has to sit out as judge.',
                       style: theme.textTheme.bodySmall

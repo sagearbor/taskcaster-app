@@ -302,7 +302,7 @@ void main() {
     testWidgets('off by default: a new friend game is graded by everyone',
         (tester) async {
       await pumpCreate(tester);
-      expect(find.text('Taskmaster mode'), findsOneWidget);
+      expect(find.text('Judge mode'), findsOneWidget);
       await tester.tap(find.byKey(const Key('create-and-invite')));
       await tester.pumpAndSettle();
       verify(() => repo.createGame(any(), 'me', 'me',
